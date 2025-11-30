@@ -5,10 +5,16 @@
 //!
 //! # Configuration Directory Structure
 //!
-//! LazyJira uses XDG-compliant configuration directories:
+//! LazyJira stores configuration in the OS-specific config directory:
+//!
+//! | Platform | Path |
+//! |----------|------|
+//! | Linux | `~/.config/lazyjira/` |
+//! | macOS | `~/Library/Application Support/lazyjira/` |
+//! | Windows | `C:\Users\<User>\AppData\Roaming\lazyjira\` |
 //!
 //! ```text
-//! ~/.config/lazyjira/
+//! <config_dir>/lazyjira/
 //! ├── config.toml      # Main configuration file
 //! └── cache/           # Issue cache (future)
 //! ```
@@ -104,8 +110,10 @@ impl Default for Config {
 impl Config {
     /// Get the configuration directory path.
     ///
-    /// Returns the XDG-compliant configuration directory for LazyJira,
-    /// typically `~/.config/lazyjira/` on Linux/macOS.
+    /// Returns the OS-specific configuration directory for LazyJira:
+    /// - Linux: `~/.config/lazyjira/`
+    /// - macOS: `~/Library/Application Support/lazyjira/`
+    /// - Windows: `C:\Users\<User>\AppData\Roaming\lazyjira\`
     pub fn config_dir() -> Result<PathBuf> {
         dirs::config_dir()
             .ok_or(ConfigError::NoConfigDir)
@@ -114,8 +122,10 @@ impl Config {
 
     /// Get the configuration file path.
     ///
-    /// Returns the path to the main configuration file,
-    /// typically `~/.config/lazyjira/config.toml`.
+    /// Returns the path to the main configuration file:
+    /// - Linux: `~/.config/lazyjira/config.toml`
+    /// - macOS: `~/Library/Application Support/lazyjira/config.toml`
+    /// - Windows: `C:\Users\<User>\AppData\Roaming\lazyjira\config.toml`
     pub fn config_path() -> Result<PathBuf> {
         Self::config_dir().map(|p| p.join("config.toml"))
     }

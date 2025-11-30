@@ -8,13 +8,13 @@ mod theme;
 mod views;
 
 pub use components::{
-    ConfirmDialog, ErrorDialog, InlineLoader, LoadingIndicator, Modal, Notification,
-    NotificationManager, NotificationType, ProfilePicker, ProfilePickerAction, SpinnerStyle, Table,
-    TextInput,
+    ConfirmDialog, ErrorDialog, InlineLoader, LoadingIndicator, Modal, MultiSelect, Notification,
+    NotificationManager, NotificationType, ProfilePicker, ProfilePickerAction, SelectItem,
+    SpinnerStyle, Table, TextInput,
 };
 pub use theme::{issue_type_prefix, priority_style, status_style, truncate, Theme};
 pub use views::{
-    DeleteProfileDialog, DetailAction, DetailView, FilterView, FormField, FormMode, ListAction,
-    ListView, ProfileFormAction, ProfileFormData, ProfileFormView, ProfileListAction,
-    ProfileListView, ProfileSummary,
+    DeleteProfileDialog, DetailAction, DetailView, FilterPanelAction, FilterPanelView, FormField,
+    FormMode, ListAction, ListView, ProfileFormAction, ProfileFormData, ProfileFormView,
+    ProfileListAction, ProfileListView, ProfileSummary,
 };

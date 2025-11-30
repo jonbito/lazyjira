@@ -6,7 +6,7 @@ mod list;
 mod profile;
 
 pub use detail::{DetailAction, DetailView};
-pub use filter::FilterView;
+pub use filter::{FilterPanelAction, FilterPanelView};
 pub use list::{ListAction, ListView};
 pub use profile::{
     DeleteProfileDialog, FormField, FormMode, ProfileFormAction, ProfileFormData,

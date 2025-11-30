@@ -14,15 +14,15 @@ use ratatui::{
 };
 
 use crate::api::auth;
-use crate::api::types::Issue;
+use crate::api::types::{FilterOptions, FilterState, Issue};
 use crate::config::{Config, ConfigError, Profile};
 use crate::error::AppError;
 use crate::events::Event;
 use crate::ui::{
-    DeleteProfileDialog, DetailAction, DetailView, ErrorDialog, FormField, ListAction, ListView,
-    LoadingIndicator, Notification, NotificationManager, ProfileFormAction, ProfileFormData,
-    ProfileFormView, ProfileListAction, ProfileListView, ProfilePicker, ProfilePickerAction,
-    ProfileSummary,
+    DeleteProfileDialog, DetailAction, DetailView, ErrorDialog, FilterPanelAction,
+    FilterPanelView, FormField, ListAction, ListView, LoadingIndicator, Notification,
+    NotificationManager, ProfileFormAction, ProfileFormData, ProfileFormView, ProfileListAction,
+    ProfileListView, ProfilePicker, ProfilePickerAction, ProfileSummary,
 };
 
 /// The current view/screen state of the application.
@@ -79,6 +79,12 @@ pub struct App {
     profile_form_view: ProfileFormView,
     /// Delete profile confirmation dialog.
     delete_profile_dialog: DeleteProfileDialog,
+    /// Filter panel view.
+    filter_panel: FilterPanelView,
+    /// Current filter state.
+    filter_state: FilterState,
+    /// Available filter options (cached).
+    filter_options: Option<FilterOptions>,
 }
 
 impl App {
@@ -118,6 +124,9 @@ impl App {
             profile_list_view: ProfileListView::new(),
             profile_form_view: ProfileFormView::new_add(),
             delete_profile_dialog: DeleteProfileDialog::new(),
+            filter_panel: FilterPanelView::new(),
+            filter_state: FilterState::new(),
+            filter_options: None,
         }
     }
 
@@ -152,6 +161,9 @@ impl App {
             profile_list_view: ProfileListView::new(),
             profile_form_view: ProfileFormView::new_add(),
             delete_profile_dialog: DeleteProfileDialog::new(),
+            filter_panel: FilterPanelView::new(),
+            filter_state: FilterState::new(),
+            filter_options: None,
         }
     }
 
@@ -572,6 +584,72 @@ impl App {
         Ok(())
     }
 
+    // ========================================================================
+    // Filter methods
+    // ========================================================================
+
+    /// Get a reference to the current filter state.
+    pub fn filter_state(&self) -> &FilterState {
+        &self.filter_state
+    }
+
+    /// Get a mutable reference to the filter state.
+    pub fn filter_state_mut(&mut self) -> &mut FilterState {
+        &mut self.filter_state
+    }
+
+    /// Set the available filter options.
+    pub fn set_filter_options(&mut self, options: FilterOptions) {
+        self.filter_panel.set_options(options.clone());
+        self.filter_options = Some(options);
+    }
+
+    /// Get the filter options if loaded.
+    pub fn filter_options(&self) -> Option<&FilterOptions> {
+        self.filter_options.as_ref()
+    }
+
+    /// Check if filter options have been loaded.
+    pub fn has_filter_options(&self) -> bool {
+        self.filter_options.is_some()
+    }
+
+    /// Open the filter panel.
+    pub fn open_filter_panel(&mut self) {
+        debug!("Opening filter panel");
+        self.filter_panel.show_with_state(&self.filter_state);
+        self.state = AppState::FilterPanel;
+    }
+
+    /// Apply the given filter state.
+    pub fn apply_filter(&mut self, filter: FilterState) {
+        debug!("Applying filter: {:?}", filter.summary());
+        // Update filter summary for display
+        let summary = if filter.is_empty() {
+            None
+        } else {
+            Some(filter.summary().join(", "))
+        };
+        self.list_view.set_filter_summary(summary);
+        self.filter_state = filter;
+        // Set list to loading - the runner will trigger a refresh
+        self.list_view.set_loading(true);
+        self.state = AppState::IssueList;
+    }
+
+    /// Clear all filters.
+    pub fn clear_filters(&mut self) {
+        debug!("Clearing all filters");
+        self.filter_state.clear();
+        self.list_view.set_filter_summary(None);
+        self.list_view.set_loading(true);
+    }
+
+    /// Get the JQL query string from the current filter state.
+    pub fn filter_jql(&self) -> String {
+        self.filter_state.to_jql()
+    }
+
     /// Returns whether the application should quit.
     pub fn should_quit(&self) -> bool {
         self.should_quit
@@ -761,8 +839,7 @@ impl App {
                             // TODO: Trigger async refresh
                         }
                         ListAction::OpenFilter => {
-                            debug!("Opening filter panel");
-                            self.state = AppState::FilterPanel;
+                            self.open_filter_panel();
                         }
                     }
                 }
@@ -797,8 +874,16 @@ impl App {
                 }
             }
             AppState::FilterPanel => {
-                if key_event.code == KeyCode::Esc {
-                    self.state = AppState::IssueList;
+                if let Some(action) = self.filter_panel.handle_input(key_event) {
+                    match action {
+                        FilterPanelAction::Apply(filter) => {
+                            self.apply_filter(filter);
+                        }
+                        FilterPanelAction::Cancel => {
+                            debug!("Filter panel cancelled");
+                            self.state = AppState::IssueList;
+                        }
+                    }
                 }
             }
             AppState::ProfileSelect => {
@@ -941,11 +1026,15 @@ impl App {
                 // Use the ProfileListView for profile management
                 self.profile_list_view.render(frame, area);
             }
+            AppState::FilterPanel => {
+                // Render list view in background with filter panel overlay
+                self.list_view.render(frame, area);
+                self.filter_panel.render(frame, area);
+            }
             _ => {
                 // For other states, use the placeholder rendering
                 let content = match self.state {
                     AppState::ProfileSelect => self.render_profile_select_view(),
-                    AppState::FilterPanel => self.render_filter_panel_view(),
                     AppState::Help => self.render_help_view(),
                     AppState::Exiting => self.render_exiting_view(),
                     _ => vec![],
@@ -1030,19 +1119,6 @@ impl App {
         ]
     }
 
-    /// Render filter panel view content (placeholder).
-    fn render_filter_panel_view(&self) -> Vec<Line<'static>> {
-        vec![
-            Line::raw(""),
-            Line::styled("Filter Panel", Style::default().fg(Color::Green)),
-            Line::raw(""),
-            Line::styled(
-                "Filter options will appear here.",
-                Style::default().fg(Color::DarkGray),
-            ),
-        ]
-    }
-
     /// Render help view content.
     fn render_help_view(&self) -> Vec<Line<'static>> {
         vec![
@@ -1085,6 +1161,14 @@ impl App {
             Line::raw("  s       - Set as default profile"),
             Line::raw("  Space   - Switch to profile"),
             Line::raw("  q / Esc - Go back"),
+            Line::raw(""),
+            Line::styled("Filter Panel:", Style::default().fg(Color::Yellow)),
+            Line::raw("  Tab/h/l - Switch section"),
+            Line::raw("  j/k     - Navigate in section"),
+            Line::raw("  Space   - Toggle selection"),
+            Line::raw("  c       - Clear all filters"),
+            Line::raw("  Enter   - Apply filters"),
+            Line::raw("  Esc     - Cancel"),
             Line::raw(""),
             Line::styled(
                 "Press Esc or q to close this help screen",

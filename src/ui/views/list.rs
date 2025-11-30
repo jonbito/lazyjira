@@ -43,6 +43,8 @@ pub struct ListView {
     profile_name: Option<String>,
     /// Pending 'g' key for gg navigation.
     pending_g: bool,
+    /// Filter summary to display in the status bar.
+    filter_summary: Option<String>,
 }
 
 impl ListView {
@@ -58,6 +60,7 @@ impl ListView {
             loading: false,
             profile_name: None,
             pending_g: false,
+            filter_summary: None,
         }
     }
 
@@ -83,6 +86,16 @@ impl ListView {
     /// Set the current profile name.
     pub fn set_profile_name(&mut self, name: Option<String>) {
         self.profile_name = name;
+    }
+
+    /// Set the filter summary to display.
+    pub fn set_filter_summary(&mut self, summary: Option<String>) {
+        self.filter_summary = summary;
+    }
+
+    /// Get the current filter summary.
+    pub fn filter_summary(&self) -> Option<&str> {
+        self.filter_summary.as_deref()
     }
 
     /// Get the currently selected issue.
@@ -368,7 +381,7 @@ impl ListView {
             String::new()
         };
 
-        let status_line = Line::from(vec![
+        let mut spans = vec![
             Span::styled(
                 format!(" {} ", profile_text),
                 Style::default().fg(Color::Black).bg(Color::Cyan),
@@ -376,13 +389,24 @@ impl ListView {
             Span::raw(" "),
             Span::styled(issue_count_text, Style::default().fg(Color::Gray)),
             Span::styled(selected_text, Style::default().fg(Color::DarkGray)),
-            Span::raw(" | "),
-            Span::styled(
-                "j/k:navigate  Enter:open  r:refresh  f:filter  p:profile  ?:help",
-                Style::default().fg(Color::DarkGray),
-            ),
-        ]);
+        ];
 
+        // Add filter summary if active
+        if let Some(summary) = &self.filter_summary {
+            spans.push(Span::raw(" "));
+            spans.push(Span::styled(
+                format!("[Filter: {}]", summary),
+                Style::default().fg(Color::Yellow),
+            ));
+        }
+
+        spans.push(Span::raw(" | "));
+        spans.push(Span::styled(
+            "j/k:navigate  Enter:open  r:refresh  f:filter  p:profile  ?:help",
+            Style::default().fg(Color::DarkGray),
+        ));
+
+        let status_line = Line::from(spans);
         let paragraph = Paragraph::new(status_line);
         frame.render_widget(paragraph, area);
     }

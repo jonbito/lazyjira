@@ -10,7 +10,10 @@ use tracing::{debug, error, info, instrument, warn};
 
 use super::auth::Auth;
 use super::error::{ApiError, Result};
-use super::types::{CurrentUser, Issue, SearchResult};
+use super::types::{
+    BoardsResponse, CurrentUser, FilterOption, FilterOptions, Issue, LabelsResponse, Project,
+    SearchResult, SprintsResponse, Status, User,
+};
 use crate::config::Profile;
 
 /// Default request timeout in seconds.
@@ -322,6 +325,155 @@ impl JiraClient {
     /// Get the base URL.
     pub fn base_url(&self) -> &str {
         &self.base_url
+    }
+
+    // ========================================================================
+    // Filter Options API Methods
+    // ========================================================================
+
+    /// Get all available statuses for the JIRA instance.
+    #[instrument(skip(self))]
+    pub async fn get_statuses(&self) -> Result<Vec<Status>> {
+        debug!("Fetching statuses");
+        let url = format!("{}/rest/api/3/status", self.base_url);
+        let statuses: Vec<Status> = self.get(&url).await?;
+        debug!("Found {} statuses", statuses.len());
+        Ok(statuses)
+    }
+
+    /// Get all projects the user has access to.
+    #[instrument(skip(self))]
+    pub async fn get_projects(&self) -> Result<Vec<Project>> {
+        debug!("Fetching projects");
+        let url = format!("{}/rest/api/3/project", self.base_url);
+        let projects: Vec<Project> = self.get(&url).await?;
+        debug!("Found {} projects", projects.len());
+        Ok(projects)
+    }
+
+    /// Search for users by query string.
+    ///
+    /// # Arguments
+    ///
+    /// * `query` - Search query for username or display name
+    /// * `max_results` - Maximum number of results to return (default 50)
+    #[instrument(skip(self), fields(query = %query))]
+    pub async fn search_users(&self, query: &str, max_results: u32) -> Result<Vec<User>> {
+        debug!("Searching users");
+        let url = format!(
+            "{}/rest/api/3/user/search?query={}&maxResults={}",
+            self.base_url,
+            urlencoding::encode(query),
+            max_results.min(100)
+        );
+        let users: Vec<User> = self.get(&url).await?;
+        debug!("Found {} users", users.len());
+        Ok(users)
+    }
+
+    /// Get assignable users for a project.
+    ///
+    /// # Arguments
+    ///
+    /// * `project_key` - The project key to get assignable users for
+    #[instrument(skip(self), fields(project = %project_key))]
+    pub async fn get_assignable_users(&self, project_key: &str) -> Result<Vec<User>> {
+        debug!("Fetching assignable users for project");
+        let url = format!(
+            "{}/rest/api/3/user/assignable/search?project={}",
+            self.base_url,
+            urlencoding::encode(project_key)
+        );
+        let users: Vec<User> = self.get(&url).await?;
+        debug!("Found {} assignable users", users.len());
+        Ok(users)
+    }
+
+    /// Get all labels used in the JIRA instance.
+    #[instrument(skip(self))]
+    pub async fn get_labels(&self) -> Result<Vec<String>> {
+        debug!("Fetching labels");
+        let url = format!("{}/rest/api/3/label", self.base_url);
+        let response: LabelsResponse = self.get(&url).await?;
+        debug!("Found {} labels", response.values.len());
+        Ok(response.values)
+    }
+
+    /// Get all boards the user has access to.
+    #[instrument(skip(self))]
+    pub async fn get_boards(&self) -> Result<Vec<super::types::Board>> {
+        debug!("Fetching boards");
+        let url = format!("{}/rest/agile/1.0/board", self.base_url);
+        let response: BoardsResponse = self.get(&url).await?;
+        debug!("Found {} boards", response.values.len());
+        Ok(response.values)
+    }
+
+    /// Get sprints for a board.
+    ///
+    /// # Arguments
+    ///
+    /// * `board_id` - The board ID to get sprints for
+    /// * `state` - Optional filter by sprint state (active, future, closed)
+    #[instrument(skip(self), fields(board_id = board_id))]
+    pub async fn get_sprints(
+        &self,
+        board_id: u64,
+        state: Option<&str>,
+    ) -> Result<Vec<super::types::Sprint>> {
+        debug!("Fetching sprints for board");
+        let mut url = format!("{}/rest/agile/1.0/board/{}/sprint", self.base_url, board_id);
+        if let Some(state) = state {
+            url.push_str(&format!("?state={}", state));
+        }
+        let response: SprintsResponse = self.get(&url).await?;
+        debug!("Found {} sprints", response.values.len());
+        Ok(response.values)
+    }
+
+    /// Fetch all filter options in one call.
+    ///
+    /// This method fetches statuses, projects, and labels.
+    /// Users and sprints need to be fetched separately with project/board context.
+    #[instrument(skip(self))]
+    pub async fn get_filter_options(&self) -> Result<FilterOptions> {
+        debug!("Fetching all filter options");
+
+        // Fetch statuses, projects, and labels in parallel would be ideal,
+        // but for simplicity we'll do them sequentially for now.
+        let statuses = self.get_statuses().await.unwrap_or_default();
+        let projects = self.get_projects().await.unwrap_or_default();
+        let labels = self.get_labels().await.unwrap_or_default();
+
+        let mut options = FilterOptions::new();
+
+        // Convert statuses
+        for status in statuses {
+            options
+                .statuses
+                .push(FilterOption::new(&status.id, &status.name));
+        }
+
+        // Convert projects
+        for project in projects {
+            options
+                .projects
+                .push(FilterOption::new(&project.key, &project.name));
+        }
+
+        // Convert labels (ID and label are the same for labels)
+        for label in labels {
+            options.labels.push(FilterOption::new(&label, &label));
+        }
+
+        debug!(
+            "Loaded filter options: {} statuses, {} projects, {} labels",
+            options.statuses.len(),
+            options.projects.len(),
+            options.labels.len()
+        );
+
+        Ok(options)
     }
 }
 

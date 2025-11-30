@@ -548,6 +548,357 @@ impl Default for AtlassianDoc {
     }
 }
 
+// ============================================================================
+// Filter Types
+// ============================================================================
+
+/// Sprint filter options.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SprintFilter {
+    /// Filter by current/open sprints.
+    Current,
+    /// Filter by a specific sprint ID.
+    Specific(String),
+}
+
+/// Filter state for issues.
+///
+/// This struct holds all the filter criteria that can be applied to issues.
+/// It can generate a JQL query string from the current filter state.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FilterState {
+    /// Filter by statuses (multi-select).
+    pub statuses: Vec<String>,
+    /// Filter by assignee account IDs (multi-select).
+    pub assignees: Vec<String>,
+    /// Special flag to filter by current user ("Assigned to me").
+    pub assignee_is_me: bool,
+    /// Filter by project key.
+    pub project: Option<String>,
+    /// Filter by labels (multi-select).
+    pub labels: Vec<String>,
+    /// Filter by components (multi-select).
+    pub components: Vec<String>,
+    /// Filter by sprint.
+    pub sprint: Option<SprintFilter>,
+}
+
+impl FilterState {
+    /// Create a new empty filter state.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Convert the filter state to a JQL query string.
+    ///
+    /// Returns an empty string if no filters are active.
+    pub fn to_jql(&self) -> String {
+        let mut clauses = Vec::new();
+
+        if !self.statuses.is_empty() {
+            let statuses = self
+                .statuses
+                .iter()
+                .map(|s| format!("\"{}\"", s))
+                .collect::<Vec<_>>()
+                .join(", ");
+            clauses.push(format!("status IN ({})", statuses));
+        }
+
+        if self.assignee_is_me {
+            clauses.push("assignee = currentUser()".to_string());
+        } else if !self.assignees.is_empty() {
+            let assignees = self
+                .assignees
+                .iter()
+                .map(|a| format!("\"{}\"", a))
+                .collect::<Vec<_>>()
+                .join(", ");
+            clauses.push(format!("assignee IN ({})", assignees));
+        }
+
+        if let Some(project) = &self.project {
+            clauses.push(format!("project = \"{}\"", project));
+        }
+
+        if !self.labels.is_empty() {
+            let labels = self
+                .labels
+                .iter()
+                .map(|l| format!("\"{}\"", l))
+                .collect::<Vec<_>>()
+                .join(", ");
+            clauses.push(format!("labels IN ({})", labels));
+        }
+
+        if !self.components.is_empty() {
+            let components = self
+                .components
+                .iter()
+                .map(|c| format!("\"{}\"", c))
+                .collect::<Vec<_>>()
+                .join(", ");
+            clauses.push(format!("component IN ({})", components));
+        }
+
+        match &self.sprint {
+            Some(SprintFilter::Current) => {
+                clauses.push("sprint IN openSprints()".to_string());
+            }
+            Some(SprintFilter::Specific(id)) => {
+                clauses.push(format!("sprint = {}", id));
+            }
+            None => {}
+        }
+
+        if clauses.is_empty() {
+            String::new()
+        } else {
+            clauses.join(" AND ")
+        }
+    }
+
+    /// Check if the filter state is empty (no filters applied).
+    pub fn is_empty(&self) -> bool {
+        self.statuses.is_empty()
+            && self.assignees.is_empty()
+            && !self.assignee_is_me
+            && self.project.is_none()
+            && self.labels.is_empty()
+            && self.components.is_empty()
+            && self.sprint.is_none()
+    }
+
+    /// Clear all filters.
+    pub fn clear(&mut self) {
+        *self = Self::default();
+    }
+
+    /// Get a summary of active filters for display.
+    pub fn summary(&self) -> Vec<String> {
+        let mut parts = Vec::new();
+
+        if !self.statuses.is_empty() {
+            parts.push(format!("Status: {}", self.statuses.join(", ")));
+        }
+
+        if self.assignee_is_me {
+            parts.push("Assigned to me".to_string());
+        } else if !self.assignees.is_empty() {
+            parts.push(format!("Assignee: {} selected", self.assignees.len()));
+        }
+
+        if let Some(project) = &self.project {
+            parts.push(format!("Project: {}", project));
+        }
+
+        if !self.labels.is_empty() {
+            parts.push(format!("Labels: {}", self.labels.join(", ")));
+        }
+
+        if !self.components.is_empty() {
+            parts.push(format!("Components: {}", self.components.join(", ")));
+        }
+
+        match &self.sprint {
+            Some(SprintFilter::Current) => {
+                parts.push("Sprint: Current".to_string());
+            }
+            Some(SprintFilter::Specific(name)) => {
+                parts.push(format!("Sprint: {}", name));
+            }
+            None => {}
+        }
+
+        parts
+    }
+
+    /// Toggle a status in the filter.
+    pub fn toggle_status(&mut self, status: &str) {
+        if let Some(pos) = self.statuses.iter().position(|s| s == status) {
+            self.statuses.remove(pos);
+        } else {
+            self.statuses.push(status.to_string());
+        }
+    }
+
+    /// Toggle a label in the filter.
+    pub fn toggle_label(&mut self, label: &str) {
+        if let Some(pos) = self.labels.iter().position(|l| l == label) {
+            self.labels.remove(pos);
+        } else {
+            self.labels.push(label.to_string());
+        }
+    }
+
+    /// Toggle a component in the filter.
+    pub fn toggle_component(&mut self, component: &str) {
+        if let Some(pos) = self.components.iter().position(|c| c == component) {
+            self.components.remove(pos);
+        } else {
+            self.components.push(component.to_string());
+        }
+    }
+
+    /// Toggle an assignee in the filter.
+    pub fn toggle_assignee(&mut self, account_id: &str) {
+        if let Some(pos) = self.assignees.iter().position(|a| a == account_id) {
+            self.assignees.remove(pos);
+        } else {
+            self.assignees.push(account_id.to_string());
+        }
+    }
+
+    /// Set the project filter.
+    pub fn set_project(&mut self, project: Option<String>) {
+        self.project = project;
+    }
+
+    /// Set the sprint filter.
+    pub fn set_sprint(&mut self, sprint: Option<SprintFilter>) {
+        self.sprint = sprint;
+    }
+
+    /// Toggle "Assigned to me" filter.
+    pub fn toggle_assigned_to_me(&mut self) {
+        self.assignee_is_me = !self.assignee_is_me;
+        if self.assignee_is_me {
+            // Clear other assignees when "Assigned to me" is selected
+            self.assignees.clear();
+        }
+    }
+}
+
+/// A selectable filter option.
+#[derive(Debug, Clone)]
+pub struct FilterOption {
+    /// The unique identifier for this option.
+    pub id: String,
+    /// The display label for this option.
+    pub label: String,
+}
+
+impl FilterOption {
+    /// Create a new filter option.
+    pub fn new(id: impl Into<String>, label: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            label: label.into(),
+        }
+    }
+}
+
+/// Available filter options fetched from JIRA.
+#[derive(Debug, Clone, Default)]
+pub struct FilterOptions {
+    /// Available statuses.
+    pub statuses: Vec<FilterOption>,
+    /// Available users/assignees.
+    pub users: Vec<FilterOption>,
+    /// Available projects.
+    pub projects: Vec<FilterOption>,
+    /// Available labels.
+    pub labels: Vec<FilterOption>,
+    /// Available components.
+    pub components: Vec<FilterOption>,
+    /// Available sprints.
+    pub sprints: Vec<FilterOption>,
+}
+
+impl FilterOptions {
+    /// Create empty filter options.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Check if filter options have been loaded.
+    pub fn is_loaded(&self) -> bool {
+        // Consider loaded if we have at least statuses
+        !self.statuses.is_empty()
+    }
+}
+
+/// A JIRA sprint.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Sprint {
+    /// The sprint ID.
+    pub id: u64,
+    /// The sprint name.
+    pub name: String,
+    /// The sprint state (future, active, closed).
+    pub state: String,
+    /// The sprint start date.
+    #[serde(default)]
+    pub start_date: Option<String>,
+    /// The sprint end date.
+    #[serde(default)]
+    pub end_date: Option<String>,
+}
+
+/// Response from the sprints endpoint.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SprintsResponse {
+    /// Maximum results per page.
+    pub max_results: u32,
+    /// Starting index.
+    pub start_at: u32,
+    /// Whether this is the last page.
+    #[serde(default)]
+    pub is_last: bool,
+    /// The list of sprints.
+    #[serde(default)]
+    pub values: Vec<Sprint>,
+}
+
+/// Response from the labels endpoint.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LabelsResponse {
+    /// The list of labels.
+    pub values: Vec<String>,
+    /// Total number of labels.
+    #[serde(default)]
+    pub total: u32,
+    /// Maximum results per page.
+    #[serde(default, rename = "maxResults")]
+    pub max_results: u32,
+    /// Starting index.
+    #[serde(default, rename = "startAt")]
+    pub start_at: u32,
+    /// Whether this is the last page.
+    #[serde(default, rename = "isLast")]
+    pub is_last: bool,
+}
+
+/// A JIRA board.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Board {
+    /// The board ID.
+    pub id: u64,
+    /// The board name.
+    pub name: String,
+    /// The board type (scrum, kanban).
+    #[serde(rename = "type")]
+    pub board_type: String,
+}
+
+/// Response from the boards endpoint.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BoardsResponse {
+    /// Maximum results per page.
+    pub max_results: u32,
+    /// Starting index.
+    pub start_at: u32,
+    /// Whether this is the last page.
+    #[serde(default)]
+    pub is_last: bool,
+    /// The list of boards.
+    #[serde(default)]
+    pub values: Vec<Board>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1189,5 +1540,201 @@ mod tests {
         assert!(issue.assignee().is_none());
         assert_eq!(issue.assignee_name(), "Unassigned");
         assert_eq!(issue.priority_name(), "None");
+    }
+
+    // ========================================================================
+    // FilterState tests
+    // ========================================================================
+
+    #[test]
+    fn test_filter_state_default() {
+        let filter = FilterState::default();
+        assert!(filter.is_empty());
+        assert_eq!(filter.to_jql(), "");
+    }
+
+    #[test]
+    fn test_filter_state_with_statuses() {
+        let mut filter = FilterState::new();
+        filter.toggle_status("Open");
+        filter.toggle_status("In Progress");
+
+        assert!(!filter.is_empty());
+        let jql = filter.to_jql();
+        assert_eq!(jql, r#"status IN ("Open", "In Progress")"#);
+    }
+
+    #[test]
+    fn test_filter_state_toggle_status_removes() {
+        let mut filter = FilterState::new();
+        filter.toggle_status("Open");
+        assert_eq!(filter.statuses.len(), 1);
+
+        filter.toggle_status("Open");
+        assert!(filter.statuses.is_empty());
+    }
+
+    #[test]
+    fn test_filter_state_assigned_to_me() {
+        let mut filter = FilterState::new();
+        filter.toggle_assigned_to_me();
+
+        assert!(!filter.is_empty());
+        assert!(filter.assignee_is_me);
+        assert_eq!(filter.to_jql(), "assignee = currentUser()");
+    }
+
+    #[test]
+    fn test_filter_state_assigned_to_me_clears_assignees() {
+        let mut filter = FilterState::new();
+        filter.toggle_assignee("user1");
+        filter.toggle_assignee("user2");
+        assert_eq!(filter.assignees.len(), 2);
+
+        filter.toggle_assigned_to_me();
+        assert!(filter.assignee_is_me);
+        assert!(filter.assignees.is_empty());
+    }
+
+    #[test]
+    fn test_filter_state_with_assignees() {
+        let mut filter = FilterState::new();
+        filter.toggle_assignee("user1");
+        filter.toggle_assignee("user2");
+
+        let jql = filter.to_jql();
+        assert_eq!(jql, r#"assignee IN ("user1", "user2")"#);
+    }
+
+    #[test]
+    fn test_filter_state_with_project() {
+        let mut filter = FilterState::new();
+        filter.set_project(Some("PROJ".to_string()));
+
+        assert_eq!(filter.to_jql(), r#"project = "PROJ""#);
+    }
+
+    #[test]
+    fn test_filter_state_with_labels() {
+        let mut filter = FilterState::new();
+        filter.toggle_label("bug");
+        filter.toggle_label("urgent");
+
+        assert_eq!(filter.to_jql(), r#"labels IN ("bug", "urgent")"#);
+    }
+
+    #[test]
+    fn test_filter_state_with_components() {
+        let mut filter = FilterState::new();
+        filter.toggle_component("frontend");
+        filter.toggle_component("api");
+
+        assert_eq!(filter.to_jql(), r#"component IN ("frontend", "api")"#);
+    }
+
+    #[test]
+    fn test_filter_state_with_current_sprint() {
+        let mut filter = FilterState::new();
+        filter.set_sprint(Some(SprintFilter::Current));
+
+        assert_eq!(filter.to_jql(), "sprint IN openSprints()");
+    }
+
+    #[test]
+    fn test_filter_state_with_specific_sprint() {
+        let mut filter = FilterState::new();
+        filter.set_sprint(Some(SprintFilter::Specific("123".to_string())));
+
+        assert_eq!(filter.to_jql(), "sprint = 123");
+    }
+
+    #[test]
+    fn test_filter_state_combined_filters() {
+        let mut filter = FilterState::new();
+        filter.toggle_status("Open");
+        filter.toggle_assigned_to_me();
+        filter.set_project(Some("PROJ".to_string()));
+        filter.toggle_label("bug");
+        filter.set_sprint(Some(SprintFilter::Current));
+
+        let jql = filter.to_jql();
+        assert!(jql.contains(r#"status IN ("Open")"#));
+        assert!(jql.contains("assignee = currentUser()"));
+        assert!(jql.contains(r#"project = "PROJ""#));
+        assert!(jql.contains(r#"labels IN ("bug")"#));
+        assert!(jql.contains("sprint IN openSprints()"));
+        // All clauses connected with AND
+        assert_eq!(jql.matches(" AND ").count(), 4);
+    }
+
+    #[test]
+    fn test_filter_state_clear() {
+        let mut filter = FilterState::new();
+        filter.toggle_status("Open");
+        filter.toggle_assigned_to_me();
+        filter.set_project(Some("PROJ".to_string()));
+
+        assert!(!filter.is_empty());
+
+        filter.clear();
+        assert!(filter.is_empty());
+        assert_eq!(filter.to_jql(), "");
+    }
+
+    #[test]
+    fn test_filter_state_summary() {
+        let mut filter = FilterState::new();
+        filter.toggle_status("Open");
+        filter.toggle_assigned_to_me();
+        filter.set_project(Some("PROJ".to_string()));
+
+        let summary = filter.summary();
+        assert!(summary.iter().any(|s| s.contains("Status: Open")));
+        assert!(summary.iter().any(|s| s.contains("Assigned to me")));
+        assert!(summary.iter().any(|s| s.contains("Project: PROJ")));
+    }
+
+    #[test]
+    fn test_filter_option_new() {
+        let opt = FilterOption::new("id123", "My Label");
+        assert_eq!(opt.id, "id123");
+        assert_eq!(opt.label, "My Label");
+    }
+
+    #[test]
+    fn test_filter_options_is_loaded() {
+        let mut opts = FilterOptions::new();
+        assert!(!opts.is_loaded());
+
+        opts.statuses.push(FilterOption::new("1", "Open"));
+        assert!(opts.is_loaded());
+    }
+
+    #[test]
+    fn test_parse_sprint() {
+        let json = r#"{
+            "id": 123,
+            "name": "Sprint 1",
+            "state": "active"
+        }"#;
+
+        let sprint: Sprint = serde_json::from_str(json).unwrap();
+        assert_eq!(sprint.id, 123);
+        assert_eq!(sprint.name, "Sprint 1");
+        assert_eq!(sprint.state, "active");
+    }
+
+    #[test]
+    fn test_parse_board() {
+        let json = r#"{
+            "id": 1,
+            "name": "My Board",
+            "type": "scrum"
+        }"#;
+
+        let board: Board = serde_json::from_str(json).unwrap();
+        assert_eq!(board.id, 1);
+        assert_eq!(board.name, "My Board");
+        assert_eq!(board.board_type, "scrum");
     }
 }

@@ -151,8 +151,12 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
             needs_fetch = false;
             let jql = app.effective_jql();
             // New JIRA API requires bounded queries - default to showing user's issues
-            let default_jql = "assignee = currentUser() OR reporter = currentUser() ORDER BY updated DESC";
-            let jql_query = if jql.is_empty() { default_jql } else { &jql };
+            // Use the current sort state from the list view for ordering
+            let default_jql = format!(
+                "assignee = currentUser() OR reporter = currentUser() {}",
+                app.list_view().sort().to_jql()
+            );
+            let jql_query = if jql.is_empty() { &default_jql } else { &jql };
 
             debug!("Fetching issues with JQL: {}", jql_query);
 

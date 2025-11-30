@@ -724,13 +724,27 @@ impl App {
     /// Get the effective JQL query.
     ///
     /// Returns the current direct JQL query if set, otherwise generates JQL
-    /// from the filter state.
+    /// from the filter state. Appends the current sort order from the list view
+    /// unless the query already contains an ORDER BY clause.
     pub fn effective_jql(&self) -> String {
-        if let Some(jql) = &self.current_jql {
+        let base_jql = if let Some(jql) = &self.current_jql {
             jql.clone()
         } else {
             self.filter_state.to_jql()
+        };
+
+        // If empty, let caller handle default query
+        if base_jql.is_empty() {
+            return base_jql;
         }
+
+        // If already has ORDER BY, don't modify (user explicitly set sort)
+        if base_jql.to_uppercase().contains("ORDER BY") {
+            return base_jql;
+        }
+
+        // Append sort clause from list view
+        format!("{} {}", base_jql, self.list_view.sort().to_jql())
     }
 
     /// Set the JQL history.

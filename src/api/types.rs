@@ -927,6 +927,189 @@ pub struct BoardsResponse {
     pub values: Vec<Board>,
 }
 
+// ============================================================================
+// Issue Update Types
+// ============================================================================
+
+/// Request body for updating an issue.
+///
+/// Uses the JIRA REST API v3 issue update format.
+/// Both `fields` and `update` can be used together.
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct IssueUpdateRequest {
+    /// Direct field updates (simple set operations).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fields: Option<FieldUpdates>,
+    /// Complex update operations (add, remove, set).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub update: Option<UpdateOperations>,
+}
+
+/// Direct field updates for an issue.
+///
+/// Each field that is `Some` will be updated to the provided value.
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct FieldUpdates {
+    /// Update the issue summary.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    /// Update the issue description (in Atlassian Document Format).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<AtlassianDoc>,
+    /// Update the assignee.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assignee: Option<UserRef>,
+    /// Update the priority.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub priority: Option<PriorityRef>,
+    /// Update story points (customfield_10016).
+    #[serde(rename = "customfield_10016", skip_serializing_if = "Option::is_none")]
+    pub story_points: Option<f32>,
+    /// Update sprint assignment (customfield_10020).
+    #[serde(rename = "customfield_10020", skip_serializing_if = "Option::is_none")]
+    pub sprint: Option<i64>,
+}
+
+/// Reference to a user by account ID.
+#[derive(Debug, Clone, Serialize)]
+pub struct UserRef {
+    /// The user's account ID.
+    #[serde(rename = "accountId")]
+    pub account_id: String,
+}
+
+impl UserRef {
+    /// Create a new user reference.
+    pub fn new(account_id: impl Into<String>) -> Self {
+        Self {
+            account_id: account_id.into(),
+        }
+    }
+
+    /// Create an "unassigned" user reference (null assignee).
+    pub fn unassigned() -> Option<Self> {
+        None
+    }
+}
+
+/// Reference to a priority by ID.
+#[derive(Debug, Clone, Serialize)]
+pub struct PriorityRef {
+    /// The priority ID.
+    pub id: String,
+}
+
+impl PriorityRef {
+    /// Create a new priority reference.
+    pub fn new(id: impl Into<String>) -> Self {
+        Self { id: id.into() }
+    }
+}
+
+/// Complex update operations for list fields.
+///
+/// Used for operations like add/remove on labels and components.
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct UpdateOperations {
+    /// Label add/remove operations.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<Vec<LabelOperation>>,
+    /// Component add/remove operations.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub components: Option<Vec<ComponentOperation>>,
+}
+
+/// Operation to add or remove a label.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LabelOperation {
+    /// Add a label.
+    Add(String),
+    /// Remove a label.
+    Remove(String),
+}
+
+/// Operation to add or remove a component.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ComponentOperation {
+    /// Add a component by name.
+    Add { name: String },
+    /// Remove a component by name.
+    Remove { name: String },
+}
+
+// ============================================================================
+// Transition Types
+// ============================================================================
+
+/// Response from the transitions endpoint.
+#[derive(Debug, Clone, Deserialize)]
+pub struct TransitionsResponse {
+    /// Available transitions for the issue.
+    pub transitions: Vec<Transition>,
+}
+
+/// A workflow transition for an issue.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Transition {
+    /// The transition ID.
+    pub id: String,
+    /// The transition name (e.g., "Start Progress", "Done").
+    pub name: String,
+    /// The target status after this transition.
+    pub to: TransitionTarget,
+    /// Fields that may be required or available during this transition.
+    #[serde(default)]
+    pub fields: std::collections::HashMap<String, TransitionField>,
+}
+
+/// The target status of a transition.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TransitionTarget {
+    /// The status ID.
+    pub id: String,
+    /// The status name.
+    pub name: String,
+    /// The status category.
+    #[serde(default)]
+    pub status_category: Option<StatusCategory>,
+}
+
+/// A field that may be required during a transition.
+#[derive(Debug, Clone, Deserialize)]
+pub struct TransitionField {
+    /// Whether this field is required for the transition.
+    pub required: bool,
+    /// The field name.
+    pub name: String,
+}
+
+/// Request to perform a status transition.
+#[derive(Debug, Clone, Serialize)]
+pub struct TransitionRequest {
+    /// The transition to perform.
+    pub transition: TransitionRef,
+    /// Optional fields to set during the transition.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fields: Option<FieldUpdates>,
+}
+
+/// Reference to a transition by ID.
+#[derive(Debug, Clone, Serialize)]
+pub struct TransitionRef {
+    /// The transition ID.
+    pub id: String,
+}
+
+impl TransitionRef {
+    /// Create a new transition reference.
+    pub fn new(id: impl Into<String>) -> Self {
+        Self { id: id.into() }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1772,5 +1955,240 @@ mod tests {
         assert_eq!(board.id, 1);
         assert_eq!(board.name, "My Board");
         assert_eq!(board.board_type, "scrum");
+    }
+
+    // ========================================================================
+    // Issue Update Types tests
+    // ========================================================================
+
+    #[test]
+    fn test_issue_update_request_serialization() {
+        let update = IssueUpdateRequest {
+            fields: Some(FieldUpdates {
+                summary: Some("New summary".to_string()),
+                ..Default::default()
+            }),
+            update: None,
+        };
+
+        let json = serde_json::to_string(&update).unwrap();
+        assert!(json.contains("\"summary\":\"New summary\""));
+        assert!(!json.contains("\"update\""));
+    }
+
+    #[test]
+    fn test_issue_update_request_empty() {
+        let update = IssueUpdateRequest::default();
+        let json = serde_json::to_string(&update).unwrap();
+        assert_eq!(json, "{}");
+    }
+
+    #[test]
+    fn test_field_updates_serialization() {
+        let fields = FieldUpdates {
+            summary: Some("Test".to_string()),
+            story_points: Some(5.0),
+            ..Default::default()
+        };
+
+        let json = serde_json::to_string(&fields).unwrap();
+        assert!(json.contains("\"summary\":\"Test\""));
+        assert!(json.contains("\"customfield_10016\":5.0"));
+    }
+
+    #[test]
+    fn test_user_ref_new() {
+        let user_ref = UserRef::new("abc123");
+        assert_eq!(user_ref.account_id, "abc123");
+    }
+
+    #[test]
+    fn test_user_ref_serialization() {
+        let user_ref = UserRef::new("abc123");
+        let json = serde_json::to_string(&user_ref).unwrap();
+        assert_eq!(json, r#"{"accountId":"abc123"}"#);
+    }
+
+    #[test]
+    fn test_priority_ref_new() {
+        let priority_ref = PriorityRef::new("2");
+        assert_eq!(priority_ref.id, "2");
+    }
+
+    #[test]
+    fn test_priority_ref_serialization() {
+        let priority_ref = PriorityRef::new("2");
+        let json = serde_json::to_string(&priority_ref).unwrap();
+        assert_eq!(json, r#"{"id":"2"}"#);
+    }
+
+    #[test]
+    fn test_label_operation_add_serialization() {
+        let op = LabelOperation::Add("bug".to_string());
+        let json = serde_json::to_string(&op).unwrap();
+        assert_eq!(json, r#"{"add":"bug"}"#);
+    }
+
+    #[test]
+    fn test_label_operation_remove_serialization() {
+        let op = LabelOperation::Remove("bug".to_string());
+        let json = serde_json::to_string(&op).unwrap();
+        assert_eq!(json, r#"{"remove":"bug"}"#);
+    }
+
+    #[test]
+    fn test_component_operation_add_serialization() {
+        let op = ComponentOperation::Add {
+            name: "frontend".to_string(),
+        };
+        let json = serde_json::to_string(&op).unwrap();
+        assert_eq!(json, r#"{"add":{"name":"frontend"}}"#);
+    }
+
+    #[test]
+    fn test_component_operation_remove_serialization() {
+        let op = ComponentOperation::Remove {
+            name: "frontend".to_string(),
+        };
+        let json = serde_json::to_string(&op).unwrap();
+        assert_eq!(json, r#"{"remove":{"name":"frontend"}}"#);
+    }
+
+    #[test]
+    fn test_update_operations_with_labels() {
+        let ops = UpdateOperations {
+            labels: Some(vec![
+                LabelOperation::Add("new-label".to_string()),
+                LabelOperation::Remove("old-label".to_string()),
+            ]),
+            ..Default::default()
+        };
+
+        let json = serde_json::to_string(&ops).unwrap();
+        assert!(json.contains("\"labels\""));
+        assert!(json.contains(r#"{"add":"new-label"}"#));
+        assert!(json.contains(r#"{"remove":"old-label"}"#));
+    }
+
+    // ========================================================================
+    // Transition Types tests
+    // ========================================================================
+
+    #[test]
+    fn test_parse_transitions_response() {
+        let json = r#"{
+            "transitions": [
+                {
+                    "id": "11",
+                    "name": "Start Progress",
+                    "to": {
+                        "id": "3",
+                        "name": "In Progress"
+                    }
+                },
+                {
+                    "id": "21",
+                    "name": "Done",
+                    "to": {
+                        "id": "10",
+                        "name": "Done",
+                        "statusCategory": {
+                            "id": 3,
+                            "key": "done",
+                            "name": "Done"
+                        }
+                    }
+                }
+            ]
+        }"#;
+
+        let response: TransitionsResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.transitions.len(), 2);
+        assert_eq!(response.transitions[0].id, "11");
+        assert_eq!(response.transitions[0].name, "Start Progress");
+        assert_eq!(response.transitions[0].to.name, "In Progress");
+        assert_eq!(response.transitions[1].to.status_category.as_ref().unwrap().key, "done");
+    }
+
+    #[test]
+    fn test_parse_transition_with_fields() {
+        let json = r#"{
+            "id": "31",
+            "name": "Resolve Issue",
+            "to": {
+                "id": "5",
+                "name": "Resolved"
+            },
+            "fields": {
+                "resolution": {
+                    "required": true,
+                    "name": "Resolution"
+                }
+            }
+        }"#;
+
+        let transition: Transition = serde_json::from_str(json).unwrap();
+        assert_eq!(transition.id, "31");
+        assert!(transition.fields.contains_key("resolution"));
+        assert!(transition.fields["resolution"].required);
+    }
+
+    #[test]
+    fn test_transition_ref_new() {
+        let tr = TransitionRef::new("11");
+        assert_eq!(tr.id, "11");
+    }
+
+    #[test]
+    fn test_transition_request_serialization() {
+        let request = TransitionRequest {
+            transition: TransitionRef::new("11"),
+            fields: None,
+        };
+
+        let json = serde_json::to_string(&request).unwrap();
+        assert_eq!(json, r#"{"transition":{"id":"11"}}"#);
+    }
+
+    #[test]
+    fn test_transition_request_with_fields() {
+        let request = TransitionRequest {
+            transition: TransitionRef::new("11"),
+            fields: Some(FieldUpdates {
+                summary: Some("Updated summary".to_string()),
+                ..Default::default()
+            }),
+        };
+
+        let json = serde_json::to_string(&request).unwrap();
+        assert!(json.contains(r#""transition":{"id":"11"}"#));
+        assert!(json.contains(r#""summary":"Updated summary""#));
+    }
+
+    #[test]
+    fn test_full_issue_update_request() {
+        let update = IssueUpdateRequest {
+            fields: Some(FieldUpdates {
+                summary: Some("New title".to_string()),
+                assignee: Some(UserRef::new("user123")),
+                priority: Some(PriorityRef::new("2")),
+                story_points: Some(3.0),
+                ..Default::default()
+            }),
+            update: Some(UpdateOperations {
+                labels: Some(vec![LabelOperation::Add("urgent".to_string())]),
+                components: Some(vec![ComponentOperation::Add {
+                    name: "API".to_string(),
+                }]),
+            }),
+        };
+
+        let json = serde_json::to_string(&update).unwrap();
+        assert!(json.contains("\"summary\":\"New title\""));
+        assert!(json.contains("\"accountId\":\"user123\""));
+        assert!(json.contains("\"id\":\"2\""));
+        assert!(json.contains("\"customfield_10016\":3.0"));
+        assert!(json.contains(r#"{"add":"urgent"}"#));
+        assert!(json.contains(r#"{"add":{"name":"API"}}"#));
     }
 }

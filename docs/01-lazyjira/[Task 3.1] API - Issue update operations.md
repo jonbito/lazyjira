@@ -345,3 +345,25 @@ pub enum ApiError {
 - [ ] Updates invalidate cache
 - [ ] All common update scenarios covered
 - [ ] Integration tests with mock server
+
+## Implementation Notes
+
+### Completed: 2024-11-30
+
+**Files Modified:**
+- `src/api/types.rs`: Added issue update types (`IssueUpdateRequest`, `FieldUpdates`, `UserRef`, `PriorityRef`, `UpdateOperations`, `LabelOperation`, `ComponentOperation`) and transition types (`TransitionsResponse`, `Transition`, `TransitionTarget`, `TransitionField`, `TransitionRequest`, `TransitionRef`)
+- `src/api/error.rs`: Added new error variants (`UpdateFailed`, `TransitionFailed`, `Conflict`, `PermissionDenied`) and 409 Conflict handling
+- `src/api/client.rs`: Implemented `update_issue`, `get_transitions`, `transition_issue`, `get_priorities` methods and convenience methods (`update_summary`, `update_assignee`, `update_priority`, `add_labels`, `remove_labels`, `add_components`, `remove_components`, `update_story_points`, `update_sprint`)
+- `src/api/mod.rs`: Exported new types for public API
+- `src/error.rs`: Added user-friendly error messages for new API error variants
+
+**Key Implementation Decisions:**
+- Used JIRA REST API v3 update format with both `fields` (direct set) and `update` (add/remove operations)
+- Implemented PUT method with retry logic for transient failures
+- Implemented POST (no content) method for transitions that return 204
+- Custom field IDs used for story points (`customfield_10016`) and sprint (`customfield_10020`) - these may need configuration for different JIRA instances
+- Error mapping converts generic Forbidden to PermissionDenied for clearer messaging
+
+**Test Coverage:**
+- 24 new unit tests for serialization and deserialization
+- All 448 tests passing

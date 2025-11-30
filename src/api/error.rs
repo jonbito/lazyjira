@@ -44,6 +44,22 @@ pub enum ApiError {
     /// Connection validation failed.
     #[error("Connection validation failed: {0}")]
     ConnectionFailed(String),
+
+    /// Failed to update an issue.
+    #[error("Failed to update issue: {0}")]
+    UpdateFailed(String),
+
+    /// Failed to transition an issue.
+    #[error("Failed to transition issue: {0}")]
+    TransitionFailed(String),
+
+    /// Conflict error - issue was modified by another user.
+    #[error("Conflict: issue was modified by another user. Please refresh and try again")]
+    Conflict,
+
+    /// Permission denied for modifying this issue.
+    #[error("You don't have permission to modify this issue")]
+    PermissionDenied,
 }
 
 /// Result type for API operations.
@@ -56,6 +72,7 @@ impl ApiError {
             401 => ApiError::Unauthorized,
             403 => ApiError::Forbidden,
             404 => ApiError::NotFound(context.to_string()),
+            409 => ApiError::Conflict,
             429 => ApiError::RateLimited,
             500..=599 => ApiError::ServerError(format!("HTTP {}: {}", status, context)),
             _ => ApiError::ServerError(format!("Unexpected HTTP {}: {}", status, context)),
@@ -99,6 +116,12 @@ mod tests {
     fn test_error_from_status_500() {
         let err = ApiError::from_status(StatusCode::INTERNAL_SERVER_ERROR, "test");
         assert!(matches!(err, ApiError::ServerError(_)));
+    }
+
+    #[test]
+    fn test_error_from_status_409() {
+        let err = ApiError::from_status(StatusCode::CONFLICT, "test");
+        assert!(matches!(err, ApiError::Conflict));
     }
 
     #[test]

@@ -11,8 +11,10 @@ use tracing::{debug, error, info, instrument, warn};
 use super::auth::Auth;
 use super::error::{ApiError, Result};
 use super::types::{
-    BoardsResponse, CurrentUser, FilterOption, FilterOptions, Issue, LabelsResponse, Project,
-    SearchResult, SprintsResponse, Status, User,
+    BoardsResponse, CurrentUser, FieldUpdates, FilterOption, FilterOptions, Issue,
+    IssueUpdateRequest, LabelOperation, LabelsResponse, Priority, Project, SearchResult,
+    SprintsResponse, Status, Transition, TransitionRef, TransitionRequest, TransitionsResponse,
+    UpdateOperations, User, UserRef,
 };
 use crate::config::Profile;
 
@@ -416,6 +418,122 @@ impl JiraClient {
         ApiError::from_status(status, &context)
     }
 
+    /// Perform a PUT request with authentication and error handling.
+    ///
+    /// Includes retry logic for transient failures (rate limiting, server errors).
+    #[instrument(skip(self, body), fields(url = %url))]
+    async fn put<B: serde::Serialize + std::fmt::Debug>(
+        &self,
+        url: &str,
+        body: &B,
+    ) -> Result<()> {
+        let mut attempts = 0;
+        let mut last_error: Option<ApiError> = None;
+
+        while attempts < MAX_RETRIES {
+            attempts += 1;
+            debug!("PUT request attempt {}/{}", attempts, MAX_RETRIES);
+
+            match self.execute_put(url, body).await {
+                Ok(()) => return Ok(()),
+                Err(e) => {
+                    if Self::is_retryable(&e) && attempts < MAX_RETRIES {
+                        let delay = Self::calculate_retry_delay(attempts);
+                        warn!(
+                            "Request failed (attempt {}), retrying in {}ms: {}",
+                            attempts, delay, e
+                        );
+                        tokio::time::sleep(Duration::from_millis(delay)).await;
+                        last_error = Some(e);
+                    } else {
+                        return Err(e);
+                    }
+                }
+            }
+        }
+
+        Err(last_error.unwrap_or(ApiError::ServerError("Max retries exceeded".to_string())))
+    }
+
+    /// Execute a single PUT request.
+    async fn execute_put<B: serde::Serialize>(&self, url: &str, body: &B) -> Result<()> {
+        let response = self
+            .client
+            .put(url)
+            .header(header::AUTHORIZATION, self.auth.header_value())
+            .header(header::ACCEPT, "application/json")
+            .header(header::CONTENT_TYPE, "application/json")
+            .json(body)
+            .send()
+            .await?;
+
+        self.handle_empty_response(response).await
+    }
+
+    /// Perform a POST request that returns no body (204 No Content).
+    #[instrument(skip(self, body), fields(url = %url))]
+    async fn post_no_content<B: serde::Serialize + std::fmt::Debug>(
+        &self,
+        url: &str,
+        body: &B,
+    ) -> Result<()> {
+        let mut attempts = 0;
+        let mut last_error: Option<ApiError> = None;
+
+        while attempts < MAX_RETRIES {
+            attempts += 1;
+            debug!("POST (no content) request attempt {}/{}", attempts, MAX_RETRIES);
+
+            match self.execute_post_no_content(url, body).await {
+                Ok(()) => return Ok(()),
+                Err(e) => {
+                    if Self::is_retryable(&e) && attempts < MAX_RETRIES {
+                        let delay = Self::calculate_retry_delay(attempts);
+                        warn!(
+                            "Request failed (attempt {}), retrying in {}ms: {}",
+                            attempts, delay, e
+                        );
+                        tokio::time::sleep(Duration::from_millis(delay)).await;
+                        last_error = Some(e);
+                    } else {
+                        return Err(e);
+                    }
+                }
+            }
+        }
+
+        Err(last_error.unwrap_or(ApiError::ServerError("Max retries exceeded".to_string())))
+    }
+
+    /// Execute a single POST request that returns no body.
+    async fn execute_post_no_content<B: serde::Serialize>(&self, url: &str, body: &B) -> Result<()> {
+        let response = self
+            .client
+            .post(url)
+            .header(header::AUTHORIZATION, self.auth.header_value())
+            .header(header::ACCEPT, "application/json")
+            .header(header::CONTENT_TYPE, "application/json")
+            .json(body)
+            .send()
+            .await?;
+
+        self.handle_empty_response(response).await
+    }
+
+    /// Handle an HTTP response that should have no body (204 No Content).
+    async fn handle_empty_response(&self, response: Response) -> Result<()> {
+        let status = response.status();
+        let url = response.url().to_string();
+
+        if status.is_success() {
+            Ok(())
+        } else {
+            let error_body = response.text().await.unwrap_or_default();
+            debug!("Error response body: {}", error_body);
+            Err(Self::error_from_response(status, &url, &error_body))
+        }
+    }
+
     /// Check if an error is retryable.
     fn is_retryable(error: &ApiError) -> bool {
         matches!(
@@ -581,6 +699,294 @@ impl JiraClient {
         );
 
         Ok(options)
+    }
+
+    // ========================================================================
+    // Issue Update Operations
+    // ========================================================================
+
+    /// Update issue fields.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The issue key (e.g., "PROJ-123")
+    /// * `update` - The update request containing field changes
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The issue doesn't exist
+    /// - Permission is denied
+    /// - A conflict occurs (issue was modified by another user)
+    #[instrument(skip(self, update), fields(issue_key = %key))]
+    pub async fn update_issue(&self, key: &str, update: IssueUpdateRequest) -> Result<()> {
+        let url = format!("{}/rest/api/3/issue/{}", self.base_url, key);
+        info!("Updating issue {}", key);
+
+        self.put(&url, &update).await.map_err(|e| {
+            error!("Failed to update issue {}: {}", key, e);
+            match e {
+                ApiError::NotFound(_) => ApiError::NotFound(format!("Issue '{}' not found", key)),
+                ApiError::Forbidden => ApiError::PermissionDenied,
+                other => ApiError::UpdateFailed(other.to_string()),
+            }
+        })?;
+
+        info!("Successfully updated issue {}", key);
+        Ok(())
+    }
+
+    /// Get available transitions for an issue.
+    ///
+    /// Returns the list of workflow transitions that can be performed on the issue
+    /// based on its current status and the user's permissions.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The issue key (e.g., "PROJ-123")
+    #[instrument(skip(self), fields(issue_key = %key))]
+    pub async fn get_transitions(&self, key: &str) -> Result<Vec<Transition>> {
+        debug!("Fetching transitions for issue {}", key);
+        let url = format!("{}/rest/api/3/issue/{}/transitions", self.base_url, key);
+        let response: TransitionsResponse = self.get(&url).await?;
+        debug!("Found {} available transitions", response.transitions.len());
+        Ok(response.transitions)
+    }
+
+    /// Perform a status transition on an issue.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The issue key (e.g., "PROJ-123")
+    /// * `transition_id` - The ID of the transition to perform
+    /// * `fields` - Optional fields to set during the transition
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The transition is not valid for the issue's current status
+    /// - Required fields are missing
+    /// - Permission is denied
+    #[instrument(skip(self, fields), fields(issue_key = %key, transition_id = %transition_id))]
+    pub async fn transition_issue(
+        &self,
+        key: &str,
+        transition_id: &str,
+        fields: Option<FieldUpdates>,
+    ) -> Result<()> {
+        let url = format!("{}/rest/api/3/issue/{}/transitions", self.base_url, key);
+        info!("Transitioning issue {} via transition {}", key, transition_id);
+
+        let request = TransitionRequest {
+            transition: TransitionRef::new(transition_id),
+            fields,
+        };
+
+        self.post_no_content(&url, &request).await.map_err(|e| {
+            error!("Failed to transition issue {}: {}", key, e);
+            match e {
+                ApiError::NotFound(_) => ApiError::NotFound(format!("Issue '{}' not found", key)),
+                ApiError::Forbidden => ApiError::PermissionDenied,
+                other => ApiError::TransitionFailed(other.to_string()),
+            }
+        })?;
+
+        info!("Successfully transitioned issue {}", key);
+        Ok(())
+    }
+
+    /// Get all available priorities.
+    ///
+    /// Returns the list of priorities configured for the JIRA instance.
+    #[instrument(skip(self))]
+    pub async fn get_priorities(&self) -> Result<Vec<Priority>> {
+        debug!("Fetching priorities");
+        let url = format!("{}/rest/api/3/priority", self.base_url);
+        let priorities: Vec<Priority> = self.get(&url).await?;
+        debug!("Found {} priorities", priorities.len());
+        Ok(priorities)
+    }
+
+    // ========================================================================
+    // Convenience Update Methods
+    // ========================================================================
+
+    /// Update the issue summary.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The issue key (e.g., "PROJ-123")
+    /// * `summary` - The new summary text
+    #[instrument(skip(self), fields(issue_key = %key))]
+    pub async fn update_summary(&self, key: &str, summary: &str) -> Result<()> {
+        let update = IssueUpdateRequest {
+            fields: Some(FieldUpdates {
+                summary: Some(summary.to_string()),
+                ..Default::default()
+            }),
+            update: None,
+        };
+        self.update_issue(key, update).await
+    }
+
+    /// Update the issue assignee.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The issue key (e.g., "PROJ-123")
+    /// * `account_id` - The account ID of the new assignee, or None to unassign
+    #[instrument(skip(self), fields(issue_key = %key))]
+    pub async fn update_assignee(&self, key: &str, account_id: Option<&str>) -> Result<()> {
+        let update = IssueUpdateRequest {
+            fields: Some(FieldUpdates {
+                assignee: account_id.map(|id| UserRef::new(id)),
+                ..Default::default()
+            }),
+            update: None,
+        };
+        self.update_issue(key, update).await
+    }
+
+    /// Update the issue priority.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The issue key (e.g., "PROJ-123")
+    /// * `priority_id` - The ID of the new priority
+    #[instrument(skip(self), fields(issue_key = %key, priority_id = %priority_id))]
+    pub async fn update_priority(&self, key: &str, priority_id: &str) -> Result<()> {
+        let update = IssueUpdateRequest {
+            fields: Some(FieldUpdates {
+                priority: Some(super::types::PriorityRef::new(priority_id)),
+                ..Default::default()
+            }),
+            update: None,
+        };
+        self.update_issue(key, update).await
+    }
+
+    /// Add labels to an issue.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The issue key (e.g., "PROJ-123")
+    /// * `labels` - The labels to add
+    #[instrument(skip(self, labels), fields(issue_key = %key))]
+    pub async fn add_labels(&self, key: &str, labels: Vec<String>) -> Result<()> {
+        let operations: Vec<LabelOperation> =
+            labels.into_iter().map(LabelOperation::Add).collect();
+
+        let update = IssueUpdateRequest {
+            fields: None,
+            update: Some(UpdateOperations {
+                labels: Some(operations),
+                ..Default::default()
+            }),
+        };
+        self.update_issue(key, update).await
+    }
+
+    /// Remove labels from an issue.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The issue key (e.g., "PROJ-123")
+    /// * `labels` - The labels to remove
+    #[instrument(skip(self, labels), fields(issue_key = %key))]
+    pub async fn remove_labels(&self, key: &str, labels: Vec<String>) -> Result<()> {
+        let operations: Vec<LabelOperation> =
+            labels.into_iter().map(LabelOperation::Remove).collect();
+
+        let update = IssueUpdateRequest {
+            fields: None,
+            update: Some(UpdateOperations {
+                labels: Some(operations),
+                ..Default::default()
+            }),
+        };
+        self.update_issue(key, update).await
+    }
+
+    /// Add components to an issue.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The issue key (e.g., "PROJ-123")
+    /// * `components` - The component names to add
+    #[instrument(skip(self, components), fields(issue_key = %key))]
+    pub async fn add_components(&self, key: &str, components: Vec<String>) -> Result<()> {
+        let operations: Vec<super::types::ComponentOperation> = components
+            .into_iter()
+            .map(|name| super::types::ComponentOperation::Add { name })
+            .collect();
+
+        let update = IssueUpdateRequest {
+            fields: None,
+            update: Some(UpdateOperations {
+                components: Some(operations),
+                ..Default::default()
+            }),
+        };
+        self.update_issue(key, update).await
+    }
+
+    /// Remove components from an issue.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The issue key (e.g., "PROJ-123")
+    /// * `components` - The component names to remove
+    #[instrument(skip(self, components), fields(issue_key = %key))]
+    pub async fn remove_components(&self, key: &str, components: Vec<String>) -> Result<()> {
+        let operations: Vec<super::types::ComponentOperation> = components
+            .into_iter()
+            .map(|name| super::types::ComponentOperation::Remove { name })
+            .collect();
+
+        let update = IssueUpdateRequest {
+            fields: None,
+            update: Some(UpdateOperations {
+                components: Some(operations),
+                ..Default::default()
+            }),
+        };
+        self.update_issue(key, update).await
+    }
+
+    /// Update story points for an issue.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The issue key (e.g., "PROJ-123")
+    /// * `points` - The story points value
+    #[instrument(skip(self), fields(issue_key = %key, points = %points))]
+    pub async fn update_story_points(&self, key: &str, points: f32) -> Result<()> {
+        let update = IssueUpdateRequest {
+            fields: Some(FieldUpdates {
+                story_points: Some(points),
+                ..Default::default()
+            }),
+            update: None,
+        };
+        self.update_issue(key, update).await
+    }
+
+    /// Update sprint assignment for an issue.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The issue key (e.g., "PROJ-123")
+    /// * `sprint_id` - The sprint ID to assign, or None to remove from sprint
+    #[instrument(skip(self), fields(issue_key = %key))]
+    pub async fn update_sprint(&self, key: &str, sprint_id: Option<i64>) -> Result<()> {
+        let update = IssueUpdateRequest {
+            fields: Some(FieldUpdates {
+                sprint: sprint_id,
+                ..Default::default()
+            }),
+            update: None,
+        };
+        self.update_issue(key, update).await
     }
 }
 

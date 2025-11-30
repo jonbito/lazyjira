@@ -106,6 +106,15 @@ impl AppError {
                 ApiError::ConnectionFailed(_) => {
                     "Could not connect to JIRA. Please check your URL and network.".to_string()
                 }
+                ApiError::UpdateFailed(msg) => format!("Failed to update issue: {}", msg),
+                ApiError::TransitionFailed(msg) => format!("Failed to change issue status: {}", msg),
+                ApiError::Conflict => {
+                    "This issue was modified by someone else. Please refresh and try again."
+                        .to_string()
+                }
+                ApiError::PermissionDenied => {
+                    "You don't have permission to modify this issue.".to_string()
+                }
             },
             AppError::Io(_) => "A file operation failed. Please check file permissions.".to_string(),
             AppError::Terminal(msg) => format!("Terminal error: {}", msg),
@@ -137,6 +146,9 @@ impl AppError {
                 | AppError::Api(ApiError::ServerError(_))
                 | AppError::Api(ApiError::Network(_))
                 | AppError::Api(ApiError::NotFound(_))
+                | AppError::Api(ApiError::UpdateFailed(_))
+                | AppError::Api(ApiError::TransitionFailed(_))
+                | AppError::Api(ApiError::Conflict)
         )
     }
 

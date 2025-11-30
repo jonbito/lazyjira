@@ -9,7 +9,7 @@ mod views;
 
 pub use components::{
     ConfirmDialog, ErrorDialog, InlineLoader, Input, LoadingIndicator, Modal, Notification,
-    NotificationManager, NotificationType, SpinnerStyle, Table,
+    NotificationManager, NotificationType, ProfilePicker, ProfilePickerAction, SpinnerStyle, Table,
 };
 pub use theme::{issue_type_prefix, priority_style, status_style, truncate, Theme};
 pub use views::{DetailAction, DetailView, FilterView, ListAction, ListView, ProfileView};

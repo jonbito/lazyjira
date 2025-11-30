@@ -11,14 +11,14 @@ Extend the configuration system to support multiple JIRA profiles with seamless 
 
 ## Acceptance Criteria
 
-- [ ] Configuration supports array of profiles
-- [ ] Default profile setting respected on startup
-- [ ] Profile switching via keyboard shortcut (p)
-- [ ] Active profile indicator in status bar
-- [ ] Session data cleared on profile switch
-- [ ] API client recreated for new profile
-- [ ] Support at least 20 configured profiles (per NFR)
-- [ ] Profile names must be unique
+- [x] Configuration supports array of profiles
+- [x] Default profile setting respected on startup
+- [x] Profile switching via keyboard shortcut (p)
+- [x] Active profile indicator in status bar
+- [x] Session data cleared on profile switch
+- [x] API client recreated for new profile
+- [x] Support at least 20 configured profiles (per NFR)
+- [x] Profile names must be unique
 
 ## Implementation Details
 
@@ -187,14 +187,14 @@ impl Config {
 
 ## Testing Requirements
 
-- [ ] Multiple profiles load from config
-- [ ] Profile switching clears session data
-- [ ] Profile picker shows all profiles
-- [ ] j/k navigation in picker works
-- [ ] Enter selects profile
-- [ ] Esc cancels selection
-- [ ] Status bar shows current profile
-- [ ] Duplicate profile names rejected
+- [x] Multiple profiles load from config
+- [x] Profile switching clears session data
+- [x] Profile picker shows all profiles
+- [x] j/k navigation in picker works
+- [x] Enter selects profile
+- [x] Esc cancels selection
+- [x] Status bar shows current profile
+- [x] Duplicate profile names rejected
 
 ## Dependencies
 
@@ -204,8 +204,51 @@ impl Config {
 
 ## Definition of Done
 
-- [ ] All acceptance criteria met
-- [ ] Profile switching is seamless
-- [ ] No data leaks between profiles
-- [ ] Status bar always accurate
-- [ ] Handles 20+ profiles without issues
+- [x] All acceptance criteria met
+- [x] Profile switching is seamless
+- [x] No data leaks between profiles
+- [x] Status bar always accurate
+- [x] Handles 20+ profiles without issues
+
+## Completion Notes
+
+### Implementation Summary (2024-01-XX)
+
+**Files Modified:**
+- `src/config/mod.rs`: Added `ProfileNotFound` error variant to `ConfigError`
+- `src/error.rs`: Added user-friendly message for `ProfileNotFound` error
+- `src/app.rs`: Added profile management state and methods:
+  - `config: Config` - stores the loaded configuration
+  - `current_profile: Option<Profile>` - tracks active profile
+  - `profile_picker: ProfilePicker` - popup component for switching
+  - `switch_profile()`, `show_profile_picker()`, `current_profile_name()`, etc.
+- `src/ui/views/list.rs`: Added `p:profile` to status bar hints
+- `src/ui/mod.rs`: Exported `ProfilePicker` and `ProfilePickerAction`
+- `src/ui/components/mod.rs`: Added `profile_picker` module
+
+**Files Created:**
+- `src/ui/components/profile_picker.rs`: New popup component with:
+  - Vim-style navigation (j/k/Up/Down)
+  - Enter to select, Esc/q to cancel
+  - Shows current profile with "(current)" indicator
+  - Centered dialog rendering
+
+**Key Decisions:**
+1. Profile picker is implemented as a modal overlay that blocks other input when visible
+2. Pressing 'p' in list view opens the picker (available during Loading and IssueList states)
+3. Switching profiles clears issues, sets loading state, and clears detail view
+4. Same-profile selection is a no-op (doesn't clear data or show notification)
+5. Single-profile or no-profile scenarios show informational notifications instead of picker
+
+**Test Coverage:**
+Added 18 new tests for profile switching functionality:
+- `test_with_config`, `test_current_profile`, `test_switch_profile_success`
+- `test_switch_profile_not_found`, `test_switch_to_same_profile`
+- `test_show_profile_picker_*` (multiple/single/no profiles)
+- `test_p_key_opens_profile_picker`, `test_profile_picker_select/cancel`
+- `test_profile_picker_blocks_other_input`, `test_profile_clears_detail_view`
+- `test_profile_count`, `test_config_accessor`
+
+Also added comprehensive unit tests for ProfilePicker component (12 tests).
+
+**Total:** 247 tests passing

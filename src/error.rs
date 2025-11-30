@@ -75,6 +75,9 @@ impl AppError {
                     "Could not save configuration. Internal error.".to_string()
                 }
                 ConfigError::ValidationError(msg) => format!("Configuration error: {}", msg),
+                ConfigError::ProfileNotFound(name) => {
+                    format!("Profile '{}' not found.", name)
+                }
             },
             AppError::Api(e) => match e {
                 ApiError::Unauthorized => {

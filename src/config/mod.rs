@@ -71,6 +71,10 @@ pub enum ConfigError {
     /// Configuration validation failed.
     #[error("configuration validation failed: {0}")]
     ValidationError(String),
+
+    /// Profile not found.
+    #[error("profile '{0}' not found")]
+    ProfileNotFound(String),
 }
 
 /// Result type for configuration operations.

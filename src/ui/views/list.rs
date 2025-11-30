@@ -378,7 +378,7 @@ impl ListView {
             Span::styled(selected_text, Style::default().fg(Color::DarkGray)),
             Span::raw(" | "),
             Span::styled(
-                "j/k:navigate  Enter:open  r:refresh  f:filter  ?:help",
+                "j/k:navigate  Enter:open  r:refresh  f:filter  p:profile  ?:help",
                 Style::default().fg(Color::DarkGray),
             ),
         ]);

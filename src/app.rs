@@ -14,11 +14,12 @@ use ratatui::{
 };
 
 use crate::api::types::Issue;
+use crate::config::{Config, ConfigError, Profile};
 use crate::error::AppError;
 use crate::events::Event;
 use crate::ui::{
     DetailAction, DetailView, ErrorDialog, ListAction, ListView, LoadingIndicator,
-    Notification, NotificationManager,
+    Notification, NotificationManager, ProfilePicker, ProfilePickerAction,
 };
 
 /// The current view/screen state of the application.
@@ -61,16 +62,36 @@ pub struct App {
     error_dialog: ErrorDialog,
     /// Global loading indicator.
     loading: LoadingIndicator,
+    /// Application configuration.
+    config: Config,
+    /// The current active profile.
+    current_profile: Option<Profile>,
+    /// Profile picker popup.
+    profile_picker: ProfilePicker,
 }
 
 impl App {
     /// Create a new application instance.
     pub fn new() -> Self {
         debug!("Creating new application instance");
+
+        // Load configuration
+        let config = Config::load().unwrap_or_else(|e| {
+            warn!("Failed to load config, using default: {}", e);
+            Config::default()
+        });
+
+        // Get the default profile
+        let current_profile = config.get_default_profile().cloned();
+        let profile_name = current_profile.as_ref().map(|p| p.name.clone());
+
         let mut list_view = ListView::new();
         list_view.set_loading(true);
+        list_view.set_profile_name(profile_name);
+
         let mut loading = LoadingIndicator::with_message("Loading issues...");
         loading.start();
+
         Self {
             state: AppState::Loading,
             should_quit: false,
@@ -80,6 +101,40 @@ impl App {
             notifications: NotificationManager::new(),
             error_dialog: ErrorDialog::new(),
             loading,
+            config,
+            current_profile,
+            profile_picker: ProfilePicker::new(),
+        }
+    }
+
+    /// Create a new application instance with the given configuration.
+    ///
+    /// This is useful for testing and for custom initialization.
+    pub fn with_config(config: Config) -> Self {
+        debug!("Creating application with custom config");
+
+        let current_profile = config.get_default_profile().cloned();
+        let profile_name = current_profile.as_ref().map(|p| p.name.clone());
+
+        let mut list_view = ListView::new();
+        list_view.set_loading(true);
+        list_view.set_profile_name(profile_name);
+
+        let mut loading = LoadingIndicator::with_message("Loading issues...");
+        loading.start();
+
+        Self {
+            state: AppState::Loading,
+            should_quit: false,
+            list_view,
+            detail_view: DetailView::new(),
+            selected_issue_key: None,
+            notifications: NotificationManager::new(),
+            error_dialog: ErrorDialog::new(),
+            loading,
+            config,
+            current_profile,
+            profile_picker: ProfilePicker::new(),
         }
     }
 
@@ -205,6 +260,99 @@ impl App {
         self.loading.is_active()
     }
 
+    // ========================================================================
+    // Profile management methods
+    // ========================================================================
+
+    /// Get a reference to the current configuration.
+    pub fn config(&self) -> &Config {
+        &self.config
+    }
+
+    /// Get the current active profile.
+    pub fn current_profile(&self) -> Option<&Profile> {
+        self.current_profile.as_ref()
+    }
+
+    /// Get the current profile name.
+    pub fn current_profile_name(&self) -> Option<&str> {
+        self.current_profile.as_ref().map(|p| p.name.as_str())
+    }
+
+    /// Check if the profile picker is visible.
+    pub fn is_profile_picker_visible(&self) -> bool {
+        self.profile_picker.is_visible()
+    }
+
+    /// Show the profile picker popup.
+    pub fn show_profile_picker(&mut self) {
+        let profile_names: Vec<String> = self.config.profiles.iter().map(|p| p.name.clone()).collect();
+
+        if profile_names.is_empty() {
+            self.notify_warning("No profiles configured");
+            return;
+        }
+
+        if profile_names.len() == 1 {
+            self.notify_info("Only one profile configured");
+            return;
+        }
+
+        // Clone the current profile name to avoid borrow conflict
+        let current = self
+            .current_profile
+            .as_ref()
+            .map(|p| p.name.as_str())
+            .unwrap_or("");
+        self.profile_picker.show(profile_names, current);
+    }
+
+    /// Switch to a profile by name.
+    ///
+    /// This clears session data (issue list, client) and sets the new profile.
+    /// Returns an error if the profile is not found.
+    pub fn switch_profile(&mut self, profile_name: &str) -> Result<(), ConfigError> {
+        let profile = self
+            .config
+            .profiles
+            .iter()
+            .find(|p| p.name == profile_name)
+            .ok_or_else(|| ConfigError::ProfileNotFound(profile_name.to_string()))?
+            .clone();
+
+        // Check if we're switching to the same profile
+        if self.current_profile.as_ref().map(|p| &p.name) == Some(&profile.name) {
+            debug!("Already on profile {}, not switching", profile_name);
+            return Ok(());
+        }
+
+        info!(profile = %profile_name, "Switching profile");
+
+        // Clear session data
+        self.list_view.set_issues(Vec::new());
+        self.list_view.set_loading(true);
+        self.detail_view.clear();
+        self.selected_issue_key = None;
+
+        // Set new profile
+        self.current_profile = Some(profile);
+        self.list_view
+            .set_profile_name(Some(profile_name.to_string()));
+
+        // Notify user
+        self.notify_success(format!("Switched to profile: {}", profile_name));
+
+        // Note: The API client will be recreated on the next API call
+        // This is handled externally by whatever is managing the client
+
+        Ok(())
+    }
+
+    /// Get the number of configured profiles.
+    pub fn profile_count(&self) -> usize {
+        self.config.profiles.len()
+    }
+
     /// Returns whether the application should quit.
     pub fn should_quit(&self) -> bool {
         self.should_quit
@@ -256,6 +404,24 @@ impl App {
             return;
         }
 
+        // Handle profile picker second (blocks other input when visible)
+        if self.profile_picker.is_visible() {
+            if let Some(action) = self.profile_picker.handle_input(key_event) {
+                match action {
+                    ProfilePickerAction::Select(profile_name) => {
+                        debug!(profile = %profile_name, "Profile selected");
+                        if let Err(e) = self.switch_profile(&profile_name) {
+                            self.notify_error(format!("Failed to switch profile: {}", e));
+                        }
+                    }
+                    ProfilePickerAction::Cancel => {
+                        debug!("Profile selection cancelled");
+                    }
+                }
+            }
+            return;
+        }
+
         // Global key bindings (always available)
         match (key_event.code, key_event.modifiers) {
             // Quit on Ctrl+C (always works)
@@ -269,6 +435,14 @@ impl App {
                 if self.state != AppState::Help {
                     self.state = AppState::Help;
                 }
+                return;
+            }
+            // Profile switcher on 'p' (available in most views)
+            (KeyCode::Char('p'), KeyModifiers::NONE)
+                if self.state == AppState::IssueList || self.state == AppState::Loading =>
+            {
+                debug!("Opening profile picker");
+                self.show_profile_picker();
                 return;
             }
             _ => {}
@@ -402,6 +576,9 @@ impl App {
         // Render notifications (on top of everything except dialogs)
         self.notifications.render(frame, area);
 
+        // Render profile picker (on top of everything except error dialogs)
+        self.profile_picker.render(frame, area);
+
         // Render error dialog (on top of everything)
         self.error_dialog.render(frame, area);
     }
@@ -525,6 +702,7 @@ impl App {
             Line::styled("Global:", Style::default().fg(Color::Yellow)),
             Line::raw("  Ctrl+C  - Quit application"),
             Line::raw("  ?       - Show this help"),
+            Line::raw("  p       - Switch profile"),
             Line::raw(""),
             Line::styled("Issue List:", Style::default().fg(Color::Yellow)),
             Line::raw("  j / ↓   - Move down"),
@@ -987,5 +1165,270 @@ mod tests {
         let mut app = App::new();
         app.loading_mut().set_message("Custom message");
         assert_eq!(app.loading().message(), "Custom message");
+    }
+
+    // ========================================================================
+    // Profile switching tests
+    // ========================================================================
+
+    fn create_test_config_with_profiles() -> Config {
+        Config {
+            settings: crate::config::Settings {
+                default_profile: Some("work".to_string()),
+                ..Default::default()
+            },
+            profiles: vec![
+                Profile::new(
+                    "work".to_string(),
+                    "https://work.atlassian.net".to_string(),
+                    "work@example.com".to_string(),
+                ),
+                Profile::new(
+                    "personal".to_string(),
+                    "https://personal.atlassian.net".to_string(),
+                    "personal@example.com".to_string(),
+                ),
+                Profile::new(
+                    "client".to_string(),
+                    "https://client.atlassian.net".to_string(),
+                    "client@example.com".to_string(),
+                ),
+            ],
+        }
+    }
+
+    #[test]
+    fn test_with_config() {
+        let config = create_test_config_with_profiles();
+        let app = App::with_config(config);
+
+        assert_eq!(app.profile_count(), 3);
+        assert_eq!(app.current_profile_name(), Some("work"));
+    }
+
+    #[test]
+    fn test_current_profile() {
+        let config = create_test_config_with_profiles();
+        let app = App::with_config(config);
+
+        let profile = app.current_profile().expect("should have current profile");
+        assert_eq!(profile.name, "work");
+        assert_eq!(profile.url, "https://work.atlassian.net");
+    }
+
+    #[test]
+    fn test_switch_profile_success() {
+        let config = create_test_config_with_profiles();
+        let mut app = App::with_config(config);
+
+        // Add some issues to verify clearing
+        app.list_view
+            .set_issues(vec![create_test_issue("TEST-1", "Test issue")]);
+        assert_eq!(app.list_view.issue_count(), 1);
+
+        // Switch profile
+        let result = app.switch_profile("personal");
+        assert!(result.is_ok());
+
+        // Verify profile changed
+        assert_eq!(app.current_profile_name(), Some("personal"));
+
+        // Verify session data cleared
+        assert_eq!(app.list_view.issue_count(), 0);
+        assert!(app.list_view.is_loading());
+
+        // Verify notification was created
+        assert!(app.notifications().len() > 0);
+    }
+
+    #[test]
+    fn test_switch_profile_not_found() {
+        let config = create_test_config_with_profiles();
+        let mut app = App::with_config(config);
+
+        let result = app.switch_profile("nonexistent");
+        assert!(result.is_err());
+
+        // Profile should not change
+        assert_eq!(app.current_profile_name(), Some("work"));
+    }
+
+    #[test]
+    fn test_switch_to_same_profile() {
+        let config = create_test_config_with_profiles();
+        let mut app = App::with_config(config);
+
+        // Add some issues
+        app.list_view
+            .set_issues(vec![create_test_issue("TEST-1", "Test issue")]);
+        let initial_notification_count = app.notifications().len();
+
+        // Switch to same profile should be a no-op
+        let result = app.switch_profile("work");
+        assert!(result.is_ok());
+
+        // Issues should NOT be cleared
+        assert_eq!(app.list_view.issue_count(), 1);
+
+        // No new notification
+        assert_eq!(app.notifications().len(), initial_notification_count);
+    }
+
+    #[test]
+    fn test_show_profile_picker_multiple_profiles() {
+        let config = create_test_config_with_profiles();
+        let mut app = App::with_config(config);
+
+        assert!(!app.is_profile_picker_visible());
+
+        app.show_profile_picker();
+
+        assert!(app.is_profile_picker_visible());
+    }
+
+    #[test]
+    fn test_show_profile_picker_single_profile() {
+        let config = Config {
+            settings: crate::config::Settings::default(),
+            profiles: vec![Profile::new(
+                "only".to_string(),
+                "https://only.atlassian.net".to_string(),
+                "only@example.com".to_string(),
+            )],
+        };
+        let mut app = App::with_config(config);
+
+        app.show_profile_picker();
+
+        // Picker should not show for single profile
+        assert!(!app.is_profile_picker_visible());
+
+        // Should show notification instead
+        assert!(app.notifications().len() > 0);
+    }
+
+    #[test]
+    fn test_show_profile_picker_no_profiles() {
+        let config = Config::default();
+        let mut app = App::with_config(config);
+
+        app.show_profile_picker();
+
+        // Picker should not show for no profiles
+        assert!(!app.is_profile_picker_visible());
+
+        // Should show warning notification
+        assert!(app.notifications().len() > 0);
+    }
+
+    #[test]
+    fn test_p_key_opens_profile_picker() {
+        let config = create_test_config_with_profiles();
+        let mut app = App::with_config(config);
+        app.update(Event::Tick); // Transition to IssueList
+
+        let key_event = KeyEvent::new(KeyCode::Char('p'), KeyModifiers::NONE);
+        app.update(Event::Key(key_event));
+
+        assert!(app.is_profile_picker_visible());
+    }
+
+    #[test]
+    fn test_profile_picker_select() {
+        let config = create_test_config_with_profiles();
+        let mut app = App::with_config(config);
+        app.update(Event::Tick); // Transition to IssueList
+
+        // Open profile picker
+        app.show_profile_picker();
+        assert!(app.is_profile_picker_visible());
+
+        // Navigate down (from work to personal)
+        let key = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
+        app.update(Event::Key(key));
+
+        // Select
+        let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        app.update(Event::Key(key));
+
+        // Picker should be hidden
+        assert!(!app.is_profile_picker_visible());
+
+        // Profile should have switched
+        assert_eq!(app.current_profile_name(), Some("personal"));
+    }
+
+    #[test]
+    fn test_profile_picker_cancel() {
+        let config = create_test_config_with_profiles();
+        let mut app = App::with_config(config);
+        app.update(Event::Tick); // Transition to IssueList
+
+        // Open profile picker
+        app.show_profile_picker();
+        assert!(app.is_profile_picker_visible());
+
+        // Cancel with Esc
+        let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+        app.update(Event::Key(key));
+
+        // Picker should be hidden
+        assert!(!app.is_profile_picker_visible());
+
+        // Profile should NOT have changed
+        assert_eq!(app.current_profile_name(), Some("work"));
+    }
+
+    #[test]
+    fn test_profile_picker_blocks_other_input() {
+        let config = create_test_config_with_profiles();
+        let mut app = App::with_config(config);
+        app.update(Event::Tick); // Transition to IssueList
+
+        // Open profile picker
+        app.show_profile_picker();
+
+        // Try to quit - should be blocked
+        let key = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE);
+        app.update(Event::Key(key));
+
+        // Should not quit (q cancels picker instead)
+        // Picker is hidden due to q being cancel
+        assert!(!app.is_profile_picker_visible());
+        // But we should not have quit
+        assert_eq!(app.current_profile_name(), Some("work"));
+    }
+
+    #[test]
+    fn test_profile_clears_detail_view() {
+        let config = create_test_config_with_profiles();
+        let mut app = App::with_config(config);
+
+        // Set a detail issue
+        app.set_detail_issue(create_test_issue("TEST-123", "Detail issue"));
+        assert!(app.selected_issue_key().is_some());
+
+        // Switch profile
+        app.switch_profile("personal").unwrap();
+
+        // Detail should be cleared
+        assert!(app.selected_issue_key().is_none());
+    }
+
+    #[test]
+    fn test_profile_count() {
+        let config = create_test_config_with_profiles();
+        let app = App::with_config(config);
+        assert_eq!(app.profile_count(), 3);
+    }
+
+    #[test]
+    fn test_config_accessor() {
+        let config = create_test_config_with_profiles();
+        let app = App::with_config(config);
+
+        let config = app.config();
+        assert_eq!(config.profiles.len(), 3);
+        assert_eq!(config.settings.default_profile, Some("work".to_string()));
     }
 }

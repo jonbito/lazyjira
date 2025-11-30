@@ -20,9 +20,9 @@ use crate::error::AppError;
 use crate::events::Event;
 use crate::ui::{
     DeleteProfileDialog, DetailAction, DetailView, ErrorDialog, FilterPanelAction,
-    FilterPanelView, FormField, ListAction, ListView, LoadingIndicator, Notification,
-    NotificationManager, ProfileFormAction, ProfileFormData, ProfileFormView, ProfileListAction,
-    ProfileListView, ProfilePicker, ProfilePickerAction, ProfileSummary,
+    FilterPanelView, FormField, JqlAction, JqlInput, ListAction, ListView, LoadingIndicator,
+    Notification, NotificationManager, ProfileFormAction, ProfileFormData, ProfileFormView,
+    ProfileListAction, ProfileListView, ProfilePicker, ProfilePickerAction, ProfileSummary,
 };
 
 /// The current view/screen state of the application.
@@ -41,6 +41,8 @@ pub enum AppState {
     ProfileManagement,
     /// Filter panel is open.
     FilterPanel,
+    /// JQL query input is open.
+    JqlInput,
     /// Help screen is displayed.
     Help,
     /// Application is in the process of exiting.
@@ -85,6 +87,10 @@ pub struct App {
     filter_state: FilterState,
     /// Available filter options (cached).
     filter_options: Option<FilterOptions>,
+    /// JQL query input.
+    jql_input: JqlInput,
+    /// Current JQL query (if using direct JQL instead of filters).
+    current_jql: Option<String>,
 }
 
 impl App {
@@ -109,6 +115,9 @@ impl App {
         let mut loading = LoadingIndicator::with_message("Loading issues...");
         loading.start();
 
+        // Initialize JQL input with history from config
+        let jql_input = JqlInput::with_history(config.jql_history().to_vec());
+
         Self {
             state: AppState::Loading,
             should_quit: false,
@@ -127,6 +136,8 @@ impl App {
             filter_panel: FilterPanelView::new(),
             filter_state: FilterState::new(),
             filter_options: None,
+            jql_input,
+            current_jql: None,
         }
     }
 
@@ -146,6 +157,9 @@ impl App {
         let mut loading = LoadingIndicator::with_message("Loading issues...");
         loading.start();
 
+        // Initialize JQL input with history from config
+        let jql_input = JqlInput::with_history(config.jql_history().to_vec());
+
         Self {
             state: AppState::Loading,
             should_quit: false,
@@ -164,6 +178,8 @@ impl App {
             filter_panel: FilterPanelView::new(),
             filter_state: FilterState::new(),
             filter_options: None,
+            jql_input,
+            current_jql: None,
         }
     }
 
@@ -650,6 +666,83 @@ impl App {
         self.filter_state.to_jql()
     }
 
+    // ========================================================================
+    // JQL input methods
+    // ========================================================================
+
+    /// Get a reference to the JQL input.
+    pub fn jql_input(&self) -> &JqlInput {
+        &self.jql_input
+    }
+
+    /// Get a mutable reference to the JQL input.
+    pub fn jql_input_mut(&mut self) -> &mut JqlInput {
+        &mut self.jql_input
+    }
+
+    /// Get the current JQL query if set.
+    pub fn current_jql(&self) -> Option<&str> {
+        self.current_jql.as_deref()
+    }
+
+    /// Open the JQL input.
+    pub fn open_jql_input(&mut self) {
+        debug!("Opening JQL input");
+        self.jql_input.show();
+        self.state = AppState::JqlInput;
+    }
+
+    /// Execute a JQL query.
+    ///
+    /// This sets the current JQL, clears filter state, and triggers a refresh.
+    /// Also saves the query to history in config.
+    pub fn execute_jql(&mut self, jql: String) {
+        debug!(jql = %jql, "Executing JQL query");
+        // Clear filter state when using direct JQL
+        self.filter_state.clear();
+        self.current_jql = Some(jql.clone());
+        // Update filter summary to show JQL is active
+        self.list_view.set_filter_summary(Some(format!("JQL: {}", jql)));
+
+        // Save to config history
+        self.config.add_jql_to_history(jql);
+        // Persist config (ignore errors)
+        if let Err(e) = self.config.save() {
+            debug!("Failed to save JQL history to config: {}", e);
+        }
+
+        // Trigger refresh
+        self.list_view.set_loading(true);
+        self.state = AppState::IssueList;
+    }
+
+    /// Set an error on the JQL input.
+    pub fn set_jql_error(&mut self, error: impl Into<String>) {
+        self.jql_input.set_error(error);
+    }
+
+    /// Get the effective JQL query.
+    ///
+    /// Returns the current direct JQL query if set, otherwise generates JQL
+    /// from the filter state.
+    pub fn effective_jql(&self) -> String {
+        if let Some(jql) = &self.current_jql {
+            jql.clone()
+        } else {
+            self.filter_state.to_jql()
+        }
+    }
+
+    /// Set the JQL history.
+    pub fn set_jql_history(&mut self, history: Vec<String>) {
+        self.jql_input.set_history(history);
+    }
+
+    /// Get the JQL history.
+    pub fn jql_history(&self) -> Vec<String> {
+        self.jql_input.history()
+    }
+
     /// Returns whether the application should quit.
     pub fn should_quit(&self) -> bool {
         self.should_quit
@@ -771,6 +864,23 @@ impl App {
             return;
         }
 
+        // Handle JQL input (blocks other input when visible)
+        if self.jql_input.is_visible() {
+            if let Some(action) = self.jql_input.handle_input(key_event) {
+                match action {
+                    JqlAction::Execute(jql) => {
+                        debug!(jql = %jql, "JQL query submitted");
+                        self.execute_jql(jql);
+                    }
+                    JqlAction::Cancel => {
+                        debug!("JQL input cancelled");
+                        self.state = AppState::IssueList;
+                    }
+                }
+            }
+            return;
+        }
+
         // Global key bindings (always available)
         match (key_event.code, key_event.modifiers) {
             // Quit on Ctrl+C (always works)
@@ -840,6 +950,9 @@ impl App {
                         }
                         ListAction::OpenFilter => {
                             self.open_filter_panel();
+                        }
+                        ListAction::OpenJqlInput => {
+                            self.open_jql_input();
                         }
                     }
                 }
@@ -936,6 +1049,10 @@ impl App {
                     }
                 }
             }
+            AppState::JqlInput => {
+                // JQL input is handled earlier in this function
+                // when jql_input.is_visible() is checked
+            }
             AppState::Exiting => {
                 // No input handling while exiting
             }
@@ -984,6 +1101,9 @@ impl App {
 
         // Render notifications (on top of everything except dialogs)
         self.notifications.render(frame, area);
+
+        // Render JQL input (on top of list view)
+        self.jql_input.render(frame, area);
 
         // Render profile picker (on top of everything except error dialogs)
         self.profile_picker.render(frame, area);
@@ -1141,7 +1261,13 @@ impl App {
             Line::raw("  Enter   - Open issue details"),
             Line::raw("  r       - Refresh issues"),
             Line::raw("  f       - Open filter panel"),
+            Line::raw("  : / /   - Open JQL query input"),
             Line::raw("  q       - Quit application"),
+            Line::raw(""),
+            Line::styled("JQL Input:", Style::default().fg(Color::Yellow)),
+            Line::raw("  Enter   - Execute query"),
+            Line::raw("  ↑ / ↓   - Browse history"),
+            Line::raw("  Esc     - Cancel"),
             Line::raw(""),
             Line::styled("Issue Detail:", Style::default().fg(Color::Yellow)),
             Line::raw("  j / ↓   - Scroll down"),

@@ -8,9 +8,9 @@ mod theme;
 mod views;
 
 pub use components::{
-    ConfirmDialog, ErrorDialog, InlineLoader, LoadingIndicator, Modal, MultiSelect, Notification,
-    NotificationManager, NotificationType, ProfilePicker, ProfilePickerAction, SelectItem,
-    SpinnerStyle, Table, TextInput,
+    ConfirmDialog, ErrorDialog, InlineLoader, JqlAction, JqlInput, LoadingIndicator, Modal,
+    MultiSelect, Notification, NotificationManager, NotificationType, ProfilePicker,
+    ProfilePickerAction, SelectItem, SpinnerStyle, Table, TextInput,
 };
 pub use theme::{issue_type_prefix, priority_style, status_style, truncate, Theme};
 pub use views::{

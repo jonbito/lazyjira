@@ -25,6 +25,8 @@ pub enum ListAction {
     Refresh,
     /// Open the filter panel.
     OpenFilter,
+    /// Open the JQL query input.
+    OpenJqlInput,
 }
 
 /// The issue list view state.
@@ -165,6 +167,12 @@ impl ListView {
             }
             (KeyCode::Char('f'), KeyModifiers::NONE) => {
                 return Some(ListAction::OpenFilter);
+            }
+            // JQL input
+            (KeyCode::Char(':'), KeyModifiers::NONE)
+            | (KeyCode::Char(':'), KeyModifiers::SHIFT)
+            | (KeyCode::Char('/'), KeyModifiers::NONE) => {
+                return Some(ListAction::OpenJqlInput);
             }
             _ => {}
         }
@@ -402,7 +410,7 @@ impl ListView {
 
         spans.push(Span::raw(" | "));
         spans.push(Span::styled(
-            "j/k:navigate  Enter:open  r:refresh  f:filter  p:profile  ?:help",
+            "j/k:navigate  Enter:open  r:refresh  f:filter  :/:jql  p:profile  ?:help",
             Style::default().fg(Color::DarkGray),
         ));
 
@@ -705,5 +713,25 @@ mod tests {
         view.page_down();
         view.page_up();
         assert_eq!(view.selected, 0);
+    }
+
+    #[test]
+    fn test_handle_input_jql_colon() {
+        let mut view = ListView::new();
+
+        // ':' key opens JQL input
+        let key = KeyEvent::new(KeyCode::Char(':'), KeyModifiers::NONE);
+        let action = view.handle_input(key);
+        assert_eq!(action, Some(ListAction::OpenJqlInput));
+    }
+
+    #[test]
+    fn test_handle_input_jql_slash() {
+        let mut view = ListView::new();
+
+        // '/' key opens JQL input
+        let key = KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE);
+        let action = view.handle_input(key);
+        assert_eq!(action, Some(ListAction::OpenJqlInput));
     }
 }

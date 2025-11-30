@@ -17,6 +17,9 @@ fn default_cache_ttl() -> u32 {
     30
 }
 
+/// Maximum number of JQL queries to keep in history.
+const MAX_JQL_HISTORY: usize = 10;
+
 /// Application-wide settings.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Settings {
@@ -43,6 +46,12 @@ pub struct Settings {
     /// Defaults to 30 minutes.
     #[serde(default = "default_cache_ttl")]
     pub cache_ttl_minutes: u32,
+
+    /// JQL query history (most recent first).
+    ///
+    /// Limited to 10 entries.
+    #[serde(default)]
+    pub jql_history: Vec<String>,
 }
 
 impl Default for Settings {
@@ -52,7 +61,26 @@ impl Default for Settings {
             theme: default_theme(),
             vim_mode: default_vim_mode(),
             cache_ttl_minutes: default_cache_ttl(),
+            jql_history: Vec::new(),
         }
+    }
+}
+
+impl Settings {
+    /// Add a JQL query to the history.
+    ///
+    /// The query is added to the front of the history. If the query already
+    /// exists in the history, it is moved to the front. The history is
+    /// limited to 10 entries.
+    pub fn add_jql_to_history(&mut self, query: String) {
+        // Remove duplicate if exists
+        self.jql_history.retain(|q| q != &query);
+
+        // Add to front
+        self.jql_history.insert(0, query);
+
+        // Trim to max size
+        self.jql_history.truncate(MAX_JQL_HISTORY);
     }
 }
 
@@ -67,6 +95,7 @@ mod tests {
         assert_eq!(settings.theme, "dark");
         assert!(settings.vim_mode);
         assert_eq!(settings.cache_ttl_minutes, 30);
+        assert!(settings.jql_history.is_empty());
     }
 
     #[test]
@@ -76,6 +105,7 @@ mod tests {
             theme: "light".to_string(),
             vim_mode: false,
             cache_ttl_minutes: 60,
+            jql_history: vec!["project = TEST".to_string()],
         };
 
         let toml_str = toml::to_string(&settings).unwrap();
@@ -96,6 +126,7 @@ theme = "monokai"
         assert_eq!(settings.theme, "monokai"); // specified
         assert!(settings.vim_mode); // default
         assert_eq!(settings.cache_ttl_minutes, 30); // default
+        assert!(settings.jql_history.is_empty()); // default
     }
 
     #[test]
@@ -107,5 +138,44 @@ theme = "monokai"
         assert_eq!(settings.theme, "dark");
         assert!(settings.vim_mode);
         assert_eq!(settings.cache_ttl_minutes, 30);
+        assert!(settings.jql_history.is_empty());
+    }
+
+    #[test]
+    fn test_add_jql_to_history() {
+        let mut settings = Settings::default();
+
+        settings.add_jql_to_history("query1".to_string());
+        assert_eq!(settings.jql_history, vec!["query1"]);
+
+        settings.add_jql_to_history("query2".to_string());
+        assert_eq!(settings.jql_history, vec!["query2", "query1"]);
+    }
+
+    #[test]
+    fn test_add_jql_to_history_deduplication() {
+        let mut settings = Settings::default();
+
+        settings.add_jql_to_history("query1".to_string());
+        settings.add_jql_to_history("query2".to_string());
+        settings.add_jql_to_history("query1".to_string());
+
+        // query1 should be moved to front
+        assert_eq!(settings.jql_history, vec!["query1", "query2"]);
+    }
+
+    #[test]
+    fn test_add_jql_to_history_max_size() {
+        let mut settings = Settings::default();
+
+        // Add more than MAX_JQL_HISTORY items
+        for i in 0..15 {
+            settings.add_jql_to_history(format!("query{}", i));
+        }
+
+        // Should be limited to MAX_JQL_HISTORY (10)
+        assert_eq!(settings.jql_history.len(), 10);
+        // Most recent should be first
+        assert_eq!(settings.jql_history[0], "query14");
     }
 }

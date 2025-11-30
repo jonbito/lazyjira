@@ -270,6 +270,24 @@ impl Config {
 
         self.profiles.len() < initial_len
     }
+
+    // ========================================================================
+    // JQL history methods
+    // ========================================================================
+
+    /// Get the JQL query history.
+    pub fn jql_history(&self) -> &[String] {
+        &self.settings.jql_history
+    }
+
+    /// Add a JQL query to the history.
+    ///
+    /// The query is added to the front of the history. If the query already
+    /// exists in the history, it is moved to the front. The history is
+    /// limited to 10 entries.
+    pub fn add_jql_to_history(&mut self, query: String) {
+        self.settings.add_jql_to_history(query);
+    }
 }
 
 #[cfg(test)]
@@ -294,6 +312,7 @@ mod tests {
                 theme: "light".to_string(),
                 vim_mode: false,
                 cache_ttl_minutes: 60,
+                jql_history: vec!["project = TEST".to_string()],
             },
             profiles: vec![
                 Profile::new(
@@ -317,6 +336,7 @@ mod tests {
         assert_eq!(parsed.profiles.len(), 2);
         assert_eq!(parsed.profiles[0].name, "work");
         assert_eq!(parsed.profiles[1].name, "personal");
+        assert_eq!(parsed.settings.jql_history, config.settings.jql_history);
     }
 
     #[test]
@@ -525,5 +545,33 @@ email = "user@company.com"
         let toml_content = "";
         let config: Config = toml::from_str(toml_content).unwrap();
         assert!(config.profiles.is_empty());
+    }
+
+    #[test]
+    fn test_jql_history_methods() {
+        let mut config = Config::default();
+
+        assert!(config.jql_history().is_empty());
+
+        config.add_jql_to_history("query1".to_string());
+        config.add_jql_to_history("query2".to_string());
+
+        assert_eq!(config.jql_history(), &["query2", "query1"]);
+    }
+
+    #[test]
+    fn test_parse_config_with_jql_history() {
+        let toml_content = r#"
+[settings]
+jql_history = ["project = TEST", "status = Open"]
+
+[[profiles]]
+name = "work"
+url = "https://company.atlassian.net"
+email = "user@company.com"
+"#;
+
+        let config: Config = toml::from_str(toml_content).unwrap();
+        assert_eq!(config.jql_history(), &["project = TEST", "status = Open"]);
     }
 }

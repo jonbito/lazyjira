@@ -11,8 +11,9 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 
+use crate::api::types::Issue;
 use crate::events::Event;
-use crate::ui::{ListAction, ListView};
+use crate::ui::{DetailAction, DetailView, ListAction, ListView};
 
 /// The current view/screen state of the application.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -44,6 +45,8 @@ pub struct App {
     should_quit: bool,
     /// The issue list view.
     list_view: ListView,
+    /// The issue detail view.
+    detail_view: DetailView,
     /// The currently selected issue key (for detail view).
     selected_issue_key: Option<String>,
 }
@@ -57,6 +60,7 @@ impl App {
             state: AppState::Loading,
             should_quit: false,
             list_view,
+            detail_view: DetailView::new(),
             selected_issue_key: None,
         }
     }
@@ -74,6 +78,25 @@ impl App {
     /// Get the currently selected issue key.
     pub fn selected_issue_key(&self) -> Option<&String> {
         self.selected_issue_key.as_ref()
+    }
+
+    /// Get a mutable reference to the detail view.
+    pub fn detail_view_mut(&mut self) -> &mut DetailView {
+        &mut self.detail_view
+    }
+
+    /// Get a reference to the detail view.
+    pub fn detail_view(&self) -> &DetailView {
+        &self.detail_view
+    }
+
+    /// Set the selected issue for the detail view.
+    ///
+    /// This method is called when an issue is selected from the list view
+    /// to populate the detail view with the full issue data.
+    pub fn set_detail_issue(&mut self, issue: Issue) {
+        self.selected_issue_key = Some(issue.key.clone());
+        self.detail_view.set_issue(issue);
     }
 
     /// Returns whether the application should quit.
@@ -113,43 +136,18 @@ impl App {
     fn handle_key_event(&mut self, key_event: crossterm::event::KeyEvent) {
         use crossterm::event::{KeyCode, KeyModifiers};
 
-        // Global key bindings
+        // Global key bindings (always available)
         match (key_event.code, key_event.modifiers) {
-            // Quit on 'q' or Ctrl+C (but not in views that use 'q' for other things)
-            (KeyCode::Char('q'), KeyModifiers::NONE) => {
-                self.should_quit = true;
-                self.state = AppState::Exiting;
-                return;
-            }
+            // Quit on Ctrl+C (always works)
             (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
                 self.should_quit = true;
                 self.state = AppState::Exiting;
                 return;
             }
-            // Help on '?'
-            (KeyCode::Char('?'), KeyModifiers::NONE) => {
+            // Help on '?' (unless in detail view where we handle it there)
+            (KeyCode::Char('?'), KeyModifiers::NONE) if self.state != AppState::IssueDetail => {
                 if self.state != AppState::Help {
                     self.state = AppState::Help;
-                }
-                return;
-            }
-            // Escape to go back or close help
-            (KeyCode::Esc, KeyModifiers::NONE) => {
-                match self.state {
-                    AppState::Help => {
-                        // Go back to previous state (default to IssueList for now)
-                        self.state = AppState::IssueList;
-                    }
-                    AppState::IssueDetail => {
-                        self.state = AppState::IssueList;
-                    }
-                    AppState::FilterPanel => {
-                        self.state = AppState::IssueList;
-                    }
-                    AppState::ProfileSelect => {
-                        self.state = AppState::IssueList;
-                    }
-                    _ => {}
                 }
                 return;
             }
@@ -158,11 +156,29 @@ impl App {
 
         // State-specific key handling
         match self.state {
-            AppState::IssueList => {
+            AppState::IssueList | AppState::Loading => {
+                // Handle 'q' to quit only in list view
+                if key_event.code == KeyCode::Char('q') && key_event.modifiers == KeyModifiers::NONE
+                {
+                    self.should_quit = true;
+                    self.state = AppState::Exiting;
+                    return;
+                }
+
                 if let Some(action) = self.list_view.handle_input(key_event) {
                     match action {
                         ListAction::OpenIssue(key) => {
-                            self.selected_issue_key = Some(key);
+                            // Find the issue in the list and set it in detail view
+                            if let Some(issue) = self
+                                .list_view
+                                .selected_issue()
+                                .filter(|i| i.key == key)
+                                .cloned()
+                            {
+                                self.set_detail_issue(issue);
+                            } else {
+                                self.selected_issue_key = Some(key);
+                            }
                             self.state = AppState::IssueDetail;
                         }
                         ListAction::Refresh => {
@@ -175,8 +191,44 @@ impl App {
                     }
                 }
             }
-            _ => {
-                // Other states don't have view-specific key handling yet
+            AppState::IssueDetail => {
+                // Handle detail view input
+                if let Some(action) = self.detail_view.handle_input(key_event) {
+                    match action {
+                        DetailAction::GoBack => {
+                            self.state = AppState::IssueList;
+                            self.detail_view.clear();
+                        }
+                        DetailAction::EditIssue => {
+                            // TODO: Implement editing in Phase 3
+                        }
+                        DetailAction::AddComment => {
+                            // TODO: Implement commenting in Phase 3
+                        }
+                    }
+                }
+            }
+            AppState::Help => {
+                // Escape or 'q' to close help
+                if key_event.code == KeyCode::Esc
+                    || (key_event.code == KeyCode::Char('q')
+                        && key_event.modifiers == KeyModifiers::NONE)
+                {
+                    self.state = AppState::IssueList;
+                }
+            }
+            AppState::FilterPanel => {
+                if key_event.code == KeyCode::Esc {
+                    self.state = AppState::IssueList;
+                }
+            }
+            AppState::ProfileSelect => {
+                if key_event.code == KeyCode::Esc {
+                    self.state = AppState::IssueList;
+                }
+            }
+            AppState::Exiting => {
+                // No input handling while exiting
             }
         }
     }
@@ -236,10 +288,13 @@ impl App {
                 // Use the ListView for both loading and issue list states
                 self.list_view.render(frame, area);
             }
+            AppState::IssueDetail => {
+                // Use the DetailView for issue detail state
+                self.detail_view.render(frame, area);
+            }
             _ => {
                 // For other states, use the placeholder rendering
                 let content = match self.state {
-                    AppState::IssueDetail => self.render_issue_detail_view(),
                     AppState::ProfileSelect => self.render_profile_select_view(),
                     AppState::FilterPanel => self.render_filter_panel_view(),
                     AppState::Help => self.render_help_view(),
@@ -265,10 +320,13 @@ impl App {
                 // Use ListView's status bar
                 self.list_view.render_status_bar(frame, area);
             }
+            AppState::IssueDetail => {
+                // Use DetailView's status bar
+                self.detail_view.render_status_bar(frame, area);
+            }
             _ => {
                 // Default status bar for other states
                 let state_str = match self.state {
-                    AppState::IssueDetail => "Issue Detail",
                     AppState::ProfileSelect => "Profile Select",
                     AppState::FilterPanel => "Filter Panel",
                     AppState::Help => "Help",
@@ -292,26 +350,6 @@ impl App {
                 frame.render_widget(paragraph, area);
             }
         }
-    }
-
-    /// Render issue detail view content (placeholder).
-    fn render_issue_detail_view(&self) -> Vec<Line<'static>> {
-        let key_text = self
-            .selected_issue_key
-            .as_deref()
-            .unwrap_or("Unknown");
-        vec![
-            Line::raw(""),
-            Line::styled(
-                format!("Issue: {}", key_text),
-                Style::default().fg(Color::Green),
-            ),
-            Line::raw(""),
-            Line::styled(
-                "Issue detail view coming soon.",
-                Style::default().fg(Color::DarkGray),
-            ),
-        ]
     }
 
     /// Render profile select view content (placeholder).
@@ -347,26 +385,34 @@ impl App {
             Line::styled("Help", Style::default().fg(Color::Cyan)),
             Line::raw(""),
             Line::styled("Global:", Style::default().fg(Color::Yellow)),
-            Line::raw("  q       - Quit application"),
             Line::raw("  Ctrl+C  - Quit application"),
             Line::raw("  ?       - Show this help"),
-            Line::raw("  Esc     - Go back / Close"),
             Line::raw(""),
-            Line::styled("Issue List Navigation:", Style::default().fg(Color::Yellow)),
+            Line::styled("Issue List:", Style::default().fg(Color::Yellow)),
             Line::raw("  j / ↓   - Move down"),
             Line::raw("  k / ↑   - Move up"),
             Line::raw("  gg      - Go to first issue"),
             Line::raw("  G       - Go to last issue"),
             Line::raw("  Ctrl+d  - Page down"),
             Line::raw("  Ctrl+u  - Page up"),
-            Line::raw(""),
-            Line::styled("Issue List Actions:", Style::default().fg(Color::Yellow)),
             Line::raw("  Enter   - Open issue details"),
             Line::raw("  r       - Refresh issues"),
             Line::raw("  f       - Open filter panel"),
+            Line::raw("  q       - Quit application"),
+            Line::raw(""),
+            Line::styled("Issue Detail:", Style::default().fg(Color::Yellow)),
+            Line::raw("  j / ↓   - Scroll down"),
+            Line::raw("  k / ↑   - Scroll up"),
+            Line::raw("  g       - Go to top"),
+            Line::raw("  G       - Go to bottom"),
+            Line::raw("  Ctrl+d  - Page down"),
+            Line::raw("  Ctrl+u  - Page up"),
+            Line::raw("  q / Esc - Go back to list"),
+            Line::raw("  e       - Edit issue (coming soon)"),
+            Line::raw("  c       - Add comment (coming soon)"),
             Line::raw(""),
             Line::styled(
-                "Press Esc to close this help screen",
+                "Press Esc or q to close this help screen",
                 Style::default().fg(Color::DarkGray),
             ),
         ]
@@ -551,6 +597,9 @@ mod tests {
 
         assert_eq!(app.state(), AppState::IssueDetail);
         assert_eq!(app.selected_issue_key(), Some(&"TEST-123".to_string()));
+        // Verify the issue was set in the detail view
+        assert!(app.detail_view().issue().is_some());
+        assert_eq!(app.detail_view().issue().unwrap().key, "TEST-123");
     }
 
     #[test]
@@ -570,6 +619,66 @@ mod tests {
         let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
         app.update(Event::Key(key));
         assert_eq!(app.state(), AppState::IssueList);
+        // Detail view should be cleared
+        assert!(app.detail_view().issue().is_none());
+    }
+
+    #[test]
+    fn test_q_from_detail_goes_back() {
+        let mut app = App::new();
+        app.update(Event::Tick); // Transition to IssueList
+
+        app.list_view
+            .set_issues(vec![create_test_issue("TEST-1", "Test")]);
+
+        // Open issue detail
+        let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        app.update(Event::Key(key));
+        assert_eq!(app.state(), AppState::IssueDetail);
+
+        // Press 'q' to go back (not quit, since we're in detail view)
+        let key = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE);
+        app.update(Event::Key(key));
+        assert_eq!(app.state(), AppState::IssueList);
+        assert!(!app.should_quit()); // Should not quit, just go back
+    }
+
+    #[test]
+    fn test_detail_view_scroll() {
+        let mut app = App::new();
+        app.update(Event::Tick); // Transition to IssueList
+
+        app.list_view
+            .set_issues(vec![create_test_issue("TEST-1", "Test")]);
+
+        // Open issue detail
+        let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        app.update(Event::Key(key));
+
+        // Set max_scroll so we can scroll
+        app.detail_view_mut().set_max_scroll(10);
+
+        // Scroll down with 'j'
+        let key = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
+        app.update(Event::Key(key));
+        assert_eq!(app.detail_view().scroll(), 1);
+
+        // Scroll up with 'k'
+        let key = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE);
+        app.update(Event::Key(key));
+        assert_eq!(app.detail_view().scroll(), 0);
+    }
+
+    #[test]
+    fn test_detail_view_accessors() {
+        let mut app = App::new();
+        let issue = create_test_issue("TEST-1", "Test issue");
+
+        app.set_detail_issue(issue);
+
+        assert!(app.detail_view().issue().is_some());
+        assert_eq!(app.detail_view().issue().unwrap().key, "TEST-1");
+        assert_eq!(app.selected_issue_key(), Some(&"TEST-1".to_string()));
     }
 
     #[test]

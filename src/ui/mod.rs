@@ -9,4 +9,4 @@ mod views;
 
 pub use components::{Input, Modal, Table};
 pub use theme::{issue_type_prefix, priority_style, status_style, truncate, Theme};
-pub use views::{DetailView, FilterView, ListAction, ListView, ProfileView};
+pub use views::{DetailAction, DetailView, FilterView, ListAction, ListView, ProfileView};

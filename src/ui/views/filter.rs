@@ -104,8 +104,19 @@ impl FilterPanelView {
         self.focused_section = 0;
 
         // Restore selections from filter state
-        self.status_select
-            .set_selected(state.statuses.iter().cloned().collect());
+        // Status labels need to be converted back to IDs
+        let status_ids: HashSet<String> = state
+            .statuses
+            .iter()
+            .filter_map(|label| {
+                self.options
+                    .statuses
+                    .iter()
+                    .find(|o| o.label == *label)
+                    .map(|o| o.id.clone())
+            })
+            .collect();
+        self.status_select.set_selected(status_ids);
         self.assignee_select
             .set_selected(state.assignees.iter().cloned().collect());
         self.assigned_to_me = state.assignee_is_me;
@@ -563,6 +574,6 @@ mod tests {
         view.show_with_state(&state);
         assert!(view.is_visible());
         // The state should be restored - status "Open" corresponds to ID "1"
-        assert!(view.status_select.is_selected("1") || view.status_select.selected().contains("Open"));
+        assert!(view.status_select.is_selected("1"));
     }
 }

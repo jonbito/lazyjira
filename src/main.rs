@@ -8,6 +8,7 @@ mod cache;
 mod config;
 mod error;
 mod events;
+mod logging;
 mod ui;
 
 use std::io::{self, stdout};
@@ -27,6 +28,12 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Initialize logging first (before any other operations)
+    if let Err(e) = logging::init() {
+        eprintln!("Warning: Failed to initialize logging: {}", e);
+        // Continue without logging rather than failing completely
+    }
+
     // Set up panic hook to restore terminal on crash
     setup_panic_hook();
 
@@ -38,6 +45,9 @@ async fn main() -> Result<()> {
 
     // Restore terminal state
     restore_terminal(&mut terminal)?;
+
+    // Log shutdown
+    logging::shutdown();
 
     // Propagate any error from the application
     result

@@ -11,14 +11,14 @@ Set up structured logging using the tracing crate with appropriate log levels, f
 
 ## Acceptance Criteria
 
-- [ ] Tracing subscriber configured with appropriate defaults
-- [ ] Log output to file (not terminal, to avoid TUI corruption)
-- [ ] Log levels configurable via environment variable or config
-- [ ] API request/response logging (without sensitive data)
-- [ ] Span-based context for async operations
-- [ ] Log rotation or size limits
-- [ ] Debug mode with verbose output
-- [ ] No sensitive data (tokens, passwords) in logs
+- [x] Tracing subscriber configured with appropriate defaults
+- [x] Log output to file (not terminal, to avoid TUI corruption)
+- [x] Log levels configurable via environment variable or config
+- [x] API request/response logging (without sensitive data)
+- [x] Span-based context for async operations
+- [x] Log rotation or size limits
+- [x] Debug mode with verbose output
+- [x] No sensitive data (tokens, passwords) in logs
 
 ## Implementation Details
 
@@ -188,8 +188,59 @@ pub async fn fetch_and_display_issues(app: &mut App) -> Result<()> {
 
 ## Definition of Done
 
-- [ ] All acceptance criteria met
-- [ ] No sensitive data in any log output
-- [ ] Logs are useful for debugging issues
-- [ ] Log file location documented
-- [ ] Log level configuration documented
+- [x] All acceptance criteria met
+- [x] No sensitive data in any log output
+- [x] Logs are useful for debugging issues
+- [x] Log file location documented
+- [x] Log level configuration documented
+
+---
+
+## Completion Summary
+
+**Completed:** 2025-11-29
+
+### Implementation Details
+
+#### Files Created
+- `src/logging.rs` - Tracing configuration module with:
+  - Daily log rotation using `tracing-appender`
+  - `RUST_LOG` environment variable support for log level configuration
+  - Platform-specific log directory detection
+  - Startup and shutdown logging
+
+#### Files Modified
+- `Cargo.toml` - Added dependencies:
+  - `tracing-subscriber` with `env-filter` feature
+  - `tracing-appender` for file-based logging
+  - `anyhow` for error handling in logging module
+- `src/main.rs` - Initialize logging before application startup and log shutdown
+- `src/api/auth.rs` - Added tracing instrumentation with sensitive data protection:
+  - Custom `Debug` implementation for `Auth` struct that redacts auth header
+  - `#[instrument(skip(token))]` on all token-handling functions
+- `src/app.rs` - Added tracing for key application operations:
+  - State transitions
+  - User actions (issue navigation, refresh, filter)
+  - Error handling
+
+### Log Directory
+Logs are stored in the platform-specific local data directory:
+- **Linux:** `~/.local/share/lazyjira/logs/`
+- **macOS:** `~/Library/Application Support/lazyjira/logs/`
+- **Windows:** `C:\Users\<User>\AppData\Local\lazyjira\logs\`
+
+### Log Level Configuration
+Configure via `RUST_LOG` environment variable:
+- `RUST_LOG=debug` - Verbose output for debugging
+- `RUST_LOG=lazyjira=debug` - Debug only for lazyjira
+- `RUST_LOG=lazyjira=trace` - Very verbose, frame-by-frame details
+- Default: `lazyjira=info,warn`
+
+### Security Measures
+1. Auth header is redacted in `Debug` output for `Auth` struct
+2. Token parameters are skipped in all `#[instrument]` macros
+3. No sensitive data appears in any log output
+4. Log files are written to user's local data directory (not world-readable)
+
+### Test Results
+All 220 tests pass, including new tests for log directory detection.

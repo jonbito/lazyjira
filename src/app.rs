@@ -3,6 +3,8 @@
 //! This module implements The Elm Architecture (TEA) pattern for predictable
 //! state management in the TUI application.
 
+use tracing::{debug, info, trace, warn};
+
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -64,6 +66,7 @@ pub struct App {
 impl App {
     /// Create a new application instance.
     pub fn new() -> Self {
+        debug!("Creating new application instance");
         let mut list_view = ListView::new();
         list_view.set_loading(true);
         let mut loading = LoadingIndicator::with_message("Loading issues...");
@@ -154,8 +157,10 @@ impl App {
     /// Recoverable errors are shown as toast notifications.
     pub fn handle_error(&mut self, error: &AppError) {
         if error.is_critical() {
+            warn!(error = %error, "Critical error occurred");
             self.error_dialog.show(error);
         } else {
+            debug!(error = %error, "Recoverable error occurred");
             self.notifications.push(Notification::error(error.user_message()));
         }
     }
@@ -217,13 +222,16 @@ impl App {
     pub fn update(&mut self, event: Event) {
         match event {
             Event::Quit => {
+                info!("Quit event received");
                 self.should_quit = true;
                 self.state = AppState::Exiting;
             }
             Event::Key(key_event) => {
+                trace!(key = ?key_event.code, modifiers = ?key_event.modifiers, "Key event");
                 self.handle_key_event(key_event);
             }
-            Event::Resize(_, _) => {
+            Event::Resize(width, height) => {
+                trace!(width, height, "Terminal resize event");
                 // Terminal resize is handled automatically by ratatui
             }
             Event::Tick => {
@@ -280,6 +288,7 @@ impl App {
                 if let Some(action) = self.list_view.handle_input(key_event) {
                     match action {
                         ListAction::OpenIssue(key) => {
+                            debug!(issue_key = %key, "Opening issue detail");
                             // Find the issue in the list and set it in detail view
                             if let Some(issue) = self
                                 .list_view
@@ -294,10 +303,12 @@ impl App {
                             self.state = AppState::IssueDetail;
                         }
                         ListAction::Refresh => {
+                            info!("Refreshing issue list");
                             self.list_view.set_loading(true);
                             // TODO: Trigger async refresh
                         }
                         ListAction::OpenFilter => {
+                            debug!("Opening filter panel");
                             self.state = AppState::FilterPanel;
                         }
                     }
@@ -308,13 +319,16 @@ impl App {
                 if let Some(action) = self.detail_view.handle_input(key_event) {
                     match action {
                         DetailAction::GoBack => {
+                            debug!("Going back to issue list");
                             self.state = AppState::IssueList;
                             self.detail_view.clear();
                         }
                         DetailAction::EditIssue => {
+                            debug!("Edit issue requested (not yet implemented)");
                             // TODO: Implement editing in Phase 3
                         }
                         DetailAction::AddComment => {
+                            debug!("Add comment requested (not yet implemented)");
                             // TODO: Implement commenting in Phase 3
                         }
                     }
@@ -353,6 +367,7 @@ impl App {
 
         // Transition from Loading to IssueList after initial setup
         if self.state == AppState::Loading {
+            debug!("Transitioning from Loading to IssueList");
             self.state = AppState::IssueList;
             self.loading.stop();
         }

@@ -11,14 +11,14 @@ Define Rust data structures for JIRA issues and related entities. Implement serd
 
 ## Acceptance Criteria
 
-- [ ] Issue struct with all required fields (Key, Summary, Status, Assignee, Priority)
-- [ ] Support for optional fields (Description, Labels, Components, Sprint, etc.)
-- [ ] User struct for assignee/reporter
-- [ ] Status, Priority, IssueType enums/structs
-- [ ] SearchResult struct for paginated responses
-- [ ] Comment struct for issue comments
-- [ ] Proper handling of null/missing fields
-- [ ] Display implementations for TUI rendering
+- [x] Issue struct with all required fields (Key, Summary, Status, Assignee, Priority)
+- [x] Support for optional fields (Description, Labels, Components, Sprint, etc.)
+- [x] User struct for assignee/reporter
+- [x] Status, Priority, IssueType enums/structs
+- [x] SearchResult struct for paginated responses
+- [x] Comment struct for issue comments
+- [x] Proper handling of null/missing fields
+- [x] Display implementations for TUI rendering
 
 ## Implementation Details
 
@@ -192,12 +192,12 @@ impl Issue {
 
 ## Testing Requirements
 
-- [ ] Parse real JIRA API response samples
-- [ ] Handle issues with missing optional fields
-- [ ] Handle null assignee/reporter gracefully
-- [ ] Parse search results with pagination info
-- [ ] Convert Atlassian Doc to plain text
-- [ ] Display implementations produce expected output
+- [x] Parse real JIRA API response samples
+- [x] Handle issues with missing optional fields
+- [x] Handle null assignee/reporter gracefully
+- [x] Parse search results with pagination info
+- [x] Convert Atlassian Doc to plain text
+- [x] Display implementations produce expected output
 
 ## Dependencies
 
@@ -207,8 +207,34 @@ impl Issue {
 
 ## Definition of Done
 
-- [ ] All acceptance criteria met
-- [ ] Types handle all common JIRA field combinations
-- [ ] Unit tests with sample API responses
-- [ ] Documentation for all public types
-- [ ] Edge cases handled (null, empty arrays, etc.)
+- [x] All acceptance criteria met
+- [x] Types handle all common JIRA field combinations
+- [x] Unit tests with sample API responses
+- [x] Documentation for all public types
+- [x] Edge cases handled (null, empty arrays, etc.)
+
+## Completion Summary
+
+**Completed:** 2024-11-29
+
+### Files Modified
+
+- `src/api/types.rs` - Added Comment, CommentsResponse, and AtlassianDoc structs; added Display implementations for Issue, Status, Priority, IssueType, User; added convenience methods (assignee_name, priority_name, description_text, project_key); added 24 comprehensive tests
+- `src/api/mod.rs` - Updated re-exports to include all new types
+
+### Key Implementation Decisions
+
+1. **AtlassianDoc.to_plain_text()**: Implemented recursive text extraction supporting paragraphs, headings, bullet lists, ordered lists, code blocks, blockquotes, mentions, emojis, and hard breaks
+2. **Description handling**: IssueFields.description remains as `Option<serde_json::Value>` to handle both ADF and legacy string formats; Issue.description_text() method handles conversion
+3. **Display traits**: Added fmt::Display for Issue, Status, Priority, IssueType, and User for TUI rendering
+4. **Convenience methods**: Issue has assignee_name(), priority_name(), description_text(), and project_key() for safe access with sensible defaults
+
+### Test Coverage
+
+- 24 unit tests covering:
+  - Parsing minimal and full JIRA API responses
+  - Handling null/missing optional fields
+  - AtlassianDoc to plain text conversion (paragraphs, lists, headings, code blocks, mentions, hard breaks)
+  - Display trait implementations
+  - SearchResult and CommentsResponse pagination
+  - Issue convenience methods

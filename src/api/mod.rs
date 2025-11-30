@@ -46,4 +46,7 @@ pub mod types;
 pub use auth::Auth;
 pub use client::JiraClient;
 pub use error::{ApiError, Result};
-pub use types::{CurrentUser, Issue, IssueFields, SearchResult};
+pub use types::{
+    AtlassianDoc, Comment, CommentsResponse, Component, CurrentUser, Issue, IssueFields,
+    IssueType, Priority, Project, SearchResult, Status, StatusCategory, User,
+};

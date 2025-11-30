@@ -939,6 +939,8 @@ mod tests {
             max_results: 50,
             total: 100,
             issues: (0..50).map(|_| create_test_issue()).collect(),
+            next_page_token: None,
+            is_last: false,
         };
         assert!(result.has_more());
 
@@ -948,6 +950,8 @@ mod tests {
             max_results: 50,
             total: 100,
             issues: (0..50).map(|_| create_test_issue()).collect(),
+            next_page_token: None,
+            is_last: false,
         };
         assert!(!result.has_more());
 
@@ -957,6 +961,8 @@ mod tests {
             max_results: 50,
             total: 100,
             issues: (0..10).map(|_| create_test_issue()).collect(),
+            next_page_token: None,
+            is_last: false,
         };
         assert!(!result.has_more());
     }
@@ -1002,6 +1008,8 @@ mod tests {
             max_results: 50,
             total: 100,
             issues: vec![],
+            next_page_token: None,
+            is_last: false,
         };
         assert_eq!(result.next_start(), 0);
     }

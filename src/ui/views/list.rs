@@ -6,7 +6,7 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
-    layout::{Alignment, Constraint, Rect},
+    layout::{Alignment, Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Cell, Paragraph, Row, Table, TableState},
@@ -14,6 +14,7 @@ use ratatui::{
 };
 
 use crate::api::types::Issue;
+use crate::ui::components::{highlight_text, render_search_bar, QuickSearch};
 use crate::ui::theme::{issue_type_prefix, priority_style, status_style, truncate};
 
 // ============================================================================
@@ -289,6 +290,8 @@ pub struct ListView {
     header_focused: bool,
     /// Currently focused column index (when header is focused).
     focused_column: usize,
+    /// Quick search state.
+    search: QuickSearch,
 }
 
 impl ListView {
@@ -309,6 +312,7 @@ impl ListView {
             pagination: PaginationState::new(),
             header_focused: false,
             focused_column: 0,
+            search: QuickSearch::new(),
         }
     }
 
@@ -448,6 +452,11 @@ impl ListView {
     ///
     /// Returns an optional action to be handled by the application.
     pub fn handle_input(&mut self, key: KeyEvent) -> Option<ListAction> {
+        // Handle search mode first
+        if self.search.is_active() {
+            return self.handle_search_input(key);
+        }
+
         // Handle header mode for sorting
         if self.header_focused {
             return self.handle_header_input(key);
@@ -464,6 +473,23 @@ impl ListView {
         }
 
         match (key.code, key.modifiers) {
+            // Quick search activation
+            (KeyCode::Char('/'), KeyModifiers::NONE) => {
+                self.search.activate();
+            }
+            // Next/previous match when search has results
+            (KeyCode::Char('n'), KeyModifiers::NONE) if !self.search.is_empty() => {
+                if let Some(idx) = self.search.next_match() {
+                    self.selected = idx;
+                    self.table_state.select(Some(self.selected));
+                }
+            }
+            (KeyCode::Char('N'), KeyModifiers::SHIFT) if !self.search.is_empty() => {
+                if let Some(idx) = self.search.prev_match() {
+                    self.selected = idx;
+                    self.table_state.select(Some(self.selected));
+                }
+            }
             // Navigation
             (KeyCode::Char('j'), KeyModifiers::NONE) | (KeyCode::Down, _) => {
                 self.move_down();
@@ -512,13 +538,53 @@ impl ListView {
             }
             // JQL input
             (KeyCode::Char(':'), KeyModifiers::NONE)
-            | (KeyCode::Char(':'), KeyModifiers::SHIFT)
-            | (KeyCode::Char('/'), KeyModifiers::NONE) => {
+            | (KeyCode::Char(':'), KeyModifiers::SHIFT) => {
                 return Some(ListAction::OpenJqlInput);
+            }
+            // Clear search with Escape when not in search mode but search has results
+            (KeyCode::Esc, _) if !self.search.is_empty() => {
+                self.search.deactivate();
             }
             _ => {}
         }
         None
+    }
+
+    /// Handle keyboard input when search mode is active.
+    fn handle_search_input(&mut self, key: KeyEvent) -> Option<ListAction> {
+        match key.code {
+            KeyCode::Char(c) => {
+                self.search.push_char(c);
+                self.search.update_matches(&self.issues);
+                // Jump to first match
+                if let Some(idx) = self.search.current_match_index() {
+                    self.selected = idx;
+                    self.table_state.select(Some(self.selected));
+                }
+                None
+            }
+            KeyCode::Backspace => {
+                self.search.pop_char();
+                self.search.update_matches(&self.issues);
+                // Update selection if we still have matches
+                if let Some(idx) = self.search.current_match_index() {
+                    self.selected = idx;
+                    self.table_state.select(Some(self.selected));
+                }
+                None
+            }
+            KeyCode::Enter => {
+                // Keep search results but close input mode
+                self.search.set_active(false);
+                None
+            }
+            KeyCode::Esc => {
+                // Clear search and show all issues
+                self.search.deactivate();
+                None
+            }
+            _ => None,
+        }
     }
 
     /// Handle keyboard input when header is focused for sorting.
@@ -609,12 +675,30 @@ impl ListView {
 
     /// Render the list view.
     pub fn render(&mut self, frame: &mut Frame, area: Rect) {
-        if self.loading {
-            self.render_loading(frame, area);
-        } else if self.issues.is_empty() {
-            self.render_empty(frame, area);
+        // If search is active or has a query, reserve a line for the search bar
+        let show_search_bar = self.search.is_active() || !self.search.is_empty();
+        let (table_area, search_area) = if show_search_bar && area.height > 2 {
+            let chunks = Layout::vertical([
+                Constraint::Min(1),
+                Constraint::Length(1),
+            ])
+            .split(area);
+            (chunks[0], Some(chunks[1]))
         } else {
-            self.render_table(frame, area);
+            (area, None)
+        };
+
+        if self.loading {
+            self.render_loading(frame, table_area);
+        } else if self.issues.is_empty() {
+            self.render_empty(frame, table_area);
+        } else {
+            self.render_table(frame, table_area);
+        }
+
+        // Render search bar if visible
+        if let Some(search_rect) = search_area {
+            render_search_bar(frame, search_rect, &self.search);
         }
     }
 
@@ -725,11 +809,16 @@ impl ListView {
 
         let header = Row::new(header_cells).height(1).bottom_margin(1);
 
+        // Get search query for highlighting
+        let search_query = self.search.query();
+        let has_search = !search_query.is_empty();
+
         // Create rows
         let rows: Vec<Row> = self
             .issues
             .iter()
-            .map(|issue| {
+            .enumerate()
+            .map(|(idx, issue)| {
                 // Key with type prefix
                 let type_prefix = issue_type_prefix(&issue.fields.issuetype.name);
                 let key_text = format!("{} {}", type_prefix, issue.key);
@@ -738,18 +827,49 @@ impl ListView {
                 let summary = truncate(&issue.fields.summary, summary_width);
 
                 // Status with color
-                let status_style = status_style(&issue.fields.status);
+                let status_style_value = status_style(&issue.fields.status);
 
                 // Priority with color
-                let priority_style = priority_style(issue.fields.priority.as_ref());
+                let priority_style_value = priority_style(issue.fields.priority.as_ref());
 
-                Row::new(vec![
-                    Cell::from(key_text),
-                    Cell::from(summary),
-                    Cell::from(issue.fields.status.name.clone()).style(status_style),
+                // Check if this row matches the search
+                let is_match = has_search && self.search.is_match(idx);
+                let is_current = has_search && self.search.is_current_match(idx);
+
+                // Apply highlighting if searching
+                let key_cell = if has_search && is_match {
+                    Cell::from(highlight_text(&key_text, search_query))
+                } else {
+                    Cell::from(key_text)
+                };
+
+                let summary_cell = if has_search && is_match {
+                    Cell::from(highlight_text(&summary, search_query))
+                } else {
+                    Cell::from(summary)
+                };
+
+                let status_cell = if has_search && is_match {
+                    Cell::from(highlight_text(&issue.fields.status.name, search_query))
+                        .style(status_style_value)
+                } else {
+                    Cell::from(issue.fields.status.name.clone()).style(status_style_value)
+                };
+
+                let mut row = Row::new(vec![
+                    key_cell,
+                    summary_cell,
+                    status_cell,
                     Cell::from(issue.assignee_name().to_string()),
-                    Cell::from(issue.priority_name().to_string()).style(priority_style),
-                ])
+                    Cell::from(issue.priority_name().to_string()).style(priority_style_value),
+                ]);
+
+                // Add visual indicator for current match
+                if is_current {
+                    row = row.style(Style::default().add_modifier(Modifier::BOLD));
+                }
+
+                row
             })
             .collect();
 
@@ -824,13 +944,26 @@ impl ListView {
             ));
         }
 
+        // Add search info if searching
+        if !self.search.is_empty() {
+            spans.push(Span::raw(" "));
+            spans.push(Span::styled(
+                format!("[Search: {} - {}]", self.search.query(), self.search.match_info()),
+                Style::default().fg(Color::Magenta),
+            ));
+        }
+
         spans.push(Span::raw(" | "));
 
-        // Show different help text when in header mode
-        let help_text = if self.header_focused {
+        // Show different help text based on mode
+        let help_text = if self.search.is_active() {
+            "Type to search  Enter:keep filter  Esc:clear"
+        } else if self.header_focused {
             "h/l:select column  Enter:sort  Esc:cancel"
+        } else if !self.search.is_empty() {
+            "n/N:next/prev match  /:new search  Esc:clear"
         } else {
-            "j/k:nav  s:sort  r:refresh  f:filter  :jql  ?:help"
+            "j/k:nav  /:search  s:sort  f:filter  :jql  ?:help"
         };
         spans.push(Span::styled(help_text, Style::default().fg(Color::DarkGray)));
 
@@ -1150,13 +1283,14 @@ mod tests {
     }
 
     #[test]
-    fn test_handle_input_jql_slash() {
+    fn test_handle_input_slash_activates_search() {
         let mut view = ListView::new();
 
-        // '/' key opens JQL input
+        // '/' key now activates quick search (not JQL input)
         let key = KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE);
         let action = view.handle_input(key);
-        assert_eq!(action, Some(ListAction::OpenJqlInput));
+        assert!(action.is_none()); // No action returned, just activates search mode
+        assert!(view.search.is_active());
     }
 
     // ========================================================================
@@ -1478,5 +1612,201 @@ mod tests {
         assert_eq!(view.selected, 0);
         assert_eq!(view.pagination.current_offset, 0);
         assert_eq!(view.pagination.total, 0);
+    }
+
+    // ========================================================================
+    // Quick Search Tests
+    // ========================================================================
+
+    #[test]
+    fn test_slash_activates_search() {
+        let mut view = ListView::new();
+        view.set_issues(vec![create_test_issue("TEST-1", "First")]);
+
+        // '/' activates search mode
+        let key = KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE);
+        let action = view.handle_input(key);
+        assert!(action.is_none());
+        assert!(view.search.is_active());
+    }
+
+    #[test]
+    fn test_search_input_filters_issues() {
+        let mut view = ListView::new();
+        view.set_issues(vec![
+            create_test_issue("TEST-1", "First issue"),
+            create_test_issue("TEST-2", "Second issue"),
+            create_test_issue("PROJ-1", "Third issue"),
+        ]);
+
+        // Activate search
+        view.search.activate();
+
+        // Type 'TEST'
+        let key = KeyEvent::new(KeyCode::Char('T'), KeyModifiers::NONE);
+        view.handle_input(key);
+        let key = KeyEvent::new(KeyCode::Char('E'), KeyModifiers::NONE);
+        view.handle_input(key);
+        let key = KeyEvent::new(KeyCode::Char('S'), KeyModifiers::NONE);
+        view.handle_input(key);
+        let key = KeyEvent::new(KeyCode::Char('T'), KeyModifiers::NONE);
+        view.handle_input(key);
+
+        assert_eq!(view.search.query(), "TEST");
+        assert_eq!(view.search.match_count(), 2);
+    }
+
+    #[test]
+    fn test_search_enter_keeps_filter() {
+        let mut view = ListView::new();
+        view.set_issues(vec![
+            create_test_issue("TEST-1", "First issue"),
+            create_test_issue("PROJ-1", "Second issue"),
+        ]);
+
+        // Activate search and type
+        view.search.activate();
+        view.search.push_char('T');
+        view.search.push_char('E');
+        view.search.push_char('S');
+        view.search.push_char('T');
+        view.search.update_matches(&view.issues.clone());
+
+        // Enter closes input but keeps filter
+        let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        view.handle_input(key);
+
+        assert!(!view.search.is_active());
+        assert_eq!(view.search.query(), "TEST");
+        assert_eq!(view.search.match_count(), 1);
+    }
+
+    #[test]
+    fn test_search_escape_clears() {
+        let mut view = ListView::new();
+        view.set_issues(vec![
+            create_test_issue("TEST-1", "First issue"),
+        ]);
+
+        // Activate search and type
+        view.search.activate();
+        view.search.push_char('T');
+        view.search.push_char('E');
+        view.search.push_char('S');
+        view.search.push_char('T');
+        view.search.update_matches(&view.issues.clone());
+
+        // Escape clears search
+        let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+        view.handle_input(key);
+
+        assert!(!view.search.is_active());
+        assert!(view.search.is_empty());
+    }
+
+    #[test]
+    fn test_search_n_next_match() {
+        let mut view = ListView::new();
+        view.set_issues(vec![
+            create_test_issue("TEST-1", "First"),
+            create_test_issue("TEST-2", "Second"),
+            create_test_issue("TEST-3", "Third"),
+        ]);
+        // Mark as no more pages
+        view.pagination.has_more = false;
+
+        // Setup search with matches
+        view.search.push_char('T');
+        view.search.push_char('E');
+        view.search.push_char('S');
+        view.search.push_char('T');
+        view.search.update_matches(&view.issues);
+
+        // Current should be at first match (index 0)
+        assert_eq!(view.selected, 0);
+
+        // 'n' moves to next match
+        let key = KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE);
+        view.handle_input(key);
+        assert_eq!(view.selected, 1);
+
+        // 'n' moves to next match
+        view.handle_input(key);
+        assert_eq!(view.selected, 2);
+
+        // 'n' wraps to first match
+        view.handle_input(key);
+        assert_eq!(view.selected, 0);
+    }
+
+    #[test]
+    fn test_search_shift_n_prev_match() {
+        let mut view = ListView::new();
+        view.set_issues(vec![
+            create_test_issue("TEST-1", "First"),
+            create_test_issue("TEST-2", "Second"),
+            create_test_issue("TEST-3", "Third"),
+        ]);
+
+        // Setup search with matches
+        view.search.push_char('T');
+        view.search.push_char('E');
+        view.search.push_char('S');
+        view.search.push_char('T');
+        view.search.update_matches(&view.issues);
+
+        // 'N' (shift+n) moves to previous match (wraps to last)
+        let key = KeyEvent::new(KeyCode::Char('N'), KeyModifiers::SHIFT);
+        view.handle_input(key);
+        assert_eq!(view.selected, 2);
+
+        // 'N' moves to previous match
+        view.handle_input(key);
+        assert_eq!(view.selected, 1);
+    }
+
+    #[test]
+    fn test_search_backspace() {
+        let mut view = ListView::new();
+        view.set_issues(vec![
+            create_test_issue("TEST-1", "First"),
+        ]);
+
+        // Activate search and type
+        view.search.activate();
+        view.search.push_char('T');
+        view.search.push_char('E');
+        view.search.push_char('S');
+        view.search.push_char('T');
+
+        // Backspace removes last character
+        let key = KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE);
+        view.handle_input(key);
+        assert_eq!(view.search.query(), "TES");
+    }
+
+    #[test]
+    fn test_escape_clears_inactive_search() {
+        let mut view = ListView::new();
+        view.set_issues(vec![
+            create_test_issue("TEST-1", "First"),
+        ]);
+
+        // Setup search with matches, then close input
+        view.search.push_char('T');
+        view.search.push_char('E');
+        view.search.push_char('S');
+        view.search.push_char('T');
+        view.search.update_matches(&view.issues);
+        view.search.set_active(false);
+
+        assert!(!view.search.is_active());
+        assert!(!view.search.is_empty());
+
+        // Escape in normal mode clears the search
+        let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+        view.handle_input(key);
+
+        assert!(view.search.is_empty());
     }
 }

@@ -147,7 +147,7 @@ impl JiraClient {
     /// # Arguments
     ///
     /// * `jql` - The JQL query string
-    /// * `start_at` - The index of the first issue to return (0-based)
+    /// * `start_at` - The index of the first issue to return (0-based) - NOTE: deprecated, use next_page_token
     /// * `max_results` - Maximum number of issues to return (max 100)
     ///
     /// # Returns
@@ -157,20 +157,45 @@ impl JiraClient {
     pub async fn search_issues(
         &self,
         jql: &str,
-        start_at: u32,
+        _start_at: u32,
         max_results: u32,
     ) -> Result<SearchResult> {
-        debug!("Searching issues: startAt={}, maxResults={}", start_at, max_results);
+        self.search_issues_with_token(jql, max_results, None).await
+    }
 
-        let url = format!(
-            "{}/rest/api/3/search?jql={}&startAt={}&maxResults={}",
-            self.base_url,
-            urlencoding::encode(jql),
-            start_at,
-            max_results.min(100) // JIRA limits to 100
-        );
+    /// Search for issues using JQL with pagination token.
+    ///
+    /// # Arguments
+    ///
+    /// * `jql` - The JQL query string
+    /// * `max_results` - Maximum number of issues to return (max 100)
+    /// * `next_page_token` - Optional token for pagination
+    ///
+    /// # Returns
+    ///
+    /// A `SearchResult` containing the matching issues and pagination info.
+    #[instrument(skip(self), fields(jql = %jql))]
+    pub async fn search_issues_with_token(
+        &self,
+        jql: &str,
+        max_results: u32,
+        next_page_token: Option<&str>,
+    ) -> Result<SearchResult> {
+        debug!("Searching issues: maxResults={}, has_token={}", max_results, next_page_token.is_some());
 
-        let result: SearchResult = self.get(&url).await?;
+        let url = format!("{}/rest/api/3/search/jql", self.base_url);
+
+        let mut body = serde_json::json!({
+            "jql": jql,
+            "maxResults": max_results.min(100),
+            "fields": ["*all"]
+        });
+
+        if let Some(token) = next_page_token {
+            body["nextPageToken"] = serde_json::Value::String(token.to_string());
+        }
+
+        let result: SearchResult = self.post(&url, &body).await?;
         debug!("Found {} issues (total: {})", result.issues.len(), result.total);
         Ok(result)
     }
@@ -246,6 +271,88 @@ impl JiraClient {
             .await?;
 
         self.handle_response(response).await
+    }
+
+    /// Perform a POST request with authentication and error handling.
+    ///
+    /// Includes retry logic for transient failures (rate limiting, server errors).
+    #[instrument(skip(self, body), fields(url = %url))]
+    async fn post<T: serde::de::DeserializeOwned>(
+        &self,
+        url: &str,
+        body: &serde_json::Value,
+    ) -> Result<T> {
+        let mut attempts = 0;
+        let mut last_error: Option<ApiError> = None;
+
+        while attempts < MAX_RETRIES {
+            attempts += 1;
+            debug!("POST request attempt {}/{}", attempts, MAX_RETRIES);
+
+            match self.execute_post::<T>(url, body).await {
+                Ok(response) => return Ok(response),
+                Err(e) => {
+                    if Self::is_retryable(&e) && attempts < MAX_RETRIES {
+                        let delay = Self::calculate_retry_delay(attempts);
+                        warn!(
+                            "Request failed (attempt {}), retrying in {}ms: {}",
+                            attempts, delay, e
+                        );
+                        tokio::time::sleep(Duration::from_millis(delay)).await;
+                        last_error = Some(e);
+                    } else {
+                        return Err(e);
+                    }
+                }
+            }
+        }
+
+        Err(last_error.unwrap_or(ApiError::ServerError("Max retries exceeded".to_string())))
+    }
+
+    /// Execute a single POST request.
+    async fn execute_post<T: serde::de::DeserializeOwned>(
+        &self,
+        url: &str,
+        body: &serde_json::Value,
+    ) -> Result<T> {
+        let response = self
+            .client
+            .post(url)
+            .header(header::AUTHORIZATION, self.auth.header_value())
+            .header(header::ACCEPT, "application/json")
+            .header(header::CONTENT_TYPE, "application/json")
+            .json(body)
+            .send()
+            .await?;
+
+        self.handle_response_with_debug(response).await
+    }
+
+    /// Handle response with debug logging for the raw body.
+    async fn handle_response_with_debug<T: serde::de::DeserializeOwned>(
+        &self,
+        response: Response,
+    ) -> Result<T> {
+        let status = response.status();
+        let url = response.url().to_string();
+
+        if status.is_success() {
+            let body_text = response.text().await.map_err(|e| {
+                ApiError::InvalidResponse(format!("Failed to read response body: {}", e))
+            })?;
+
+            debug!("Response body (first 500 chars): {}", &body_text.chars().take(500).collect::<String>());
+
+            serde_json::from_str::<T>(&body_text).map_err(|e| {
+                error!("Failed to parse JSON. Error: {}. Body preview: {}", e, &body_text.chars().take(1000).collect::<String>());
+                ApiError::InvalidResponse(format!("Failed to parse response: {}", e))
+            })
+        } else {
+            let error_body = response.text().await.unwrap_or_default();
+            debug!("Error response body: {}", error_body);
+            Err(Self::error_from_response(status, &url, &error_body))
+        }
     }
 
     /// Handle the HTTP response, checking for errors and parsing JSON.

@@ -99,16 +99,120 @@ fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Re
 /// 3. Update state based on events
 /// 4. Repeat until quit
 async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
+    use api::JiraClient;
+    use tracing::{debug, error, info, warn};
+
     let mut app = App::new();
     let event_handler = EventHandler::new();
 
+    // Create a JiraClient if a profile is configured
+    let mut client: Option<JiraClient> = None;
+
+    if let Some(profile) = app.current_profile().cloned() {
+        match JiraClient::new(&profile).await {
+            Ok(c) => {
+                info!("Connected to JIRA as profile: {}", profile.name);
+                client = Some(c);
+            }
+            Err(e) => {
+                warn!("Failed to create JIRA client: {}", e);
+                app.notify_error(format!("Failed to connect to JIRA: {}", e));
+            }
+        }
+    } else {
+        app.notify_warning("No profile configured. Press 'P' to add a profile.");
+    }
+
+    // Initial issue fetch
+    let mut needs_fetch = client.is_some();
+    let mut needs_filter_options = client.is_some();
+
     loop {
+        // Fetch issues if needed
+        if needs_fetch {
+            if let Some(ref c) = client {
+                needs_fetch = false;
+                let jql = app.effective_jql();
+                // New JIRA API requires bounded queries - default to showing user's issues
+                let default_jql = "assignee = currentUser() OR reporter = currentUser() ORDER BY updated DESC";
+                let jql_query = if jql.is_empty() { default_jql } else { &jql };
+
+                debug!("Fetching issues with JQL: {}", jql_query);
+
+                match c.search_issues(jql_query, 0, 50).await {
+                    Ok(result) => {
+                        info!("Loaded {} issues (total: {})", result.issues.len(), result.total);
+                        let issues_count = result.issues.len() as u32;
+                        app.list_view_mut().set_issues(result.issues);
+                        app.list_view_mut().set_loading(false);
+                        app.list_view_mut().pagination_mut().update_from_response(0, issues_count, result.total);
+                    }
+                    Err(e) => {
+                        error!("Failed to fetch issues: {}", e);
+                        app.notify_error(format!("Failed to fetch issues: {}", e));
+                        app.list_view_mut().set_loading(false);
+                    }
+                }
+            }
+        }
+
+        // Fetch filter options if needed (once at startup)
+        if needs_filter_options {
+            if let Some(ref c) = client {
+                needs_filter_options = false;
+                match c.get_filter_options().await {
+                    Ok(options) => {
+                        debug!("Loaded filter options");
+                        app.set_filter_options(options);
+                    }
+                    Err(e) => {
+                        debug!("Failed to load filter options: {}", e);
+                    }
+                }
+            }
+        }
+
         // Render the current view (View in TEA)
         terminal.draw(|frame| app.view(frame))?;
 
         // Wait for and handle events (Update in TEA)
         let event = event_handler.next()?;
+
+        // Check list view state before update to detect actions
+        let was_loading = app.list_view().is_loading();
+        let old_profile = app.current_profile().map(|p| p.name.clone());
+
         app.update(event);
+
+        // Check if we need to refresh issues
+        let is_loading_now = app.list_view().is_loading();
+        let new_profile = app.current_profile().map(|p| p.name.clone());
+
+        // Detect profile switch - need to recreate client
+        if old_profile != new_profile {
+            if let Some(profile) = app.current_profile().cloned() {
+                match JiraClient::new(&profile).await {
+                    Ok(c) => {
+                        info!("Switched to profile: {}", profile.name);
+                        client = Some(c);
+                        needs_fetch = true;
+                        needs_filter_options = true;
+                    }
+                    Err(e) => {
+                        error!("Failed to connect to new profile: {}", e);
+                        app.notify_error(format!("Failed to connect: {}", e));
+                        client = None;
+                        app.list_view_mut().set_loading(false);
+                    }
+                }
+            } else {
+                client = None;
+            }
+        }
+        // Detect refresh request (loading changed from false to true)
+        else if !was_loading && is_loading_now && client.is_some() {
+            needs_fetch = true;
+        }
 
         // Check if we should quit
         if app.should_quit() {

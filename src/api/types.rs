@@ -52,30 +52,49 @@ pub struct AvatarUrls {
 
 /// Search result from JQL query.
 ///
-/// Returned by `GET /rest/api/3/search`.
+/// Returned by `POST /rest/api/3/search/jql`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchResult {
-    /// The index of the first result.
+    /// The index of the first result (legacy, may not be present in new API).
+    #[serde(default)]
     pub start_at: u32,
-    /// Maximum results requested.
+    /// Maximum results requested (legacy, may not be present in new API).
+    #[serde(default)]
     pub max_results: u32,
     /// Total number of matching issues.
+    #[serde(default)]
     pub total: u32,
     /// The list of issues.
     #[serde(default)]
     pub issues: Vec<Issue>,
+    /// Token for fetching the next page of results (new API).
+    #[serde(default)]
+    pub next_page_token: Option<String>,
+    /// Whether this is the last page of results (new API).
+    #[serde(default)]
+    pub is_last: bool,
 }
 
 impl SearchResult {
     /// Check if there are more pages of results.
     pub fn has_more(&self) -> bool {
-        self.start_at + (self.issues.len() as u32) < self.total
+        // New API uses nextPageToken/isLast, old API uses total
+        if self.next_page_token.is_some() {
+            !self.is_last
+        } else {
+            self.start_at + (self.issues.len() as u32) < self.total
+        }
     }
 
     /// Get the starting index for the next page.
     pub fn next_start(&self) -> u32 {
         self.start_at + self.issues.len() as u32
+    }
+
+    /// Get the next page token if available.
+    pub fn next_token(&self) -> Option<&str> {
+        self.next_page_token.as_deref()
     }
 }
 
@@ -87,11 +106,13 @@ pub struct Issue {
     /// The issue ID.
     pub id: String,
     /// The issue key (e.g., "PROJ-123").
+    #[serde(default)]
     pub key: String,
     /// URL to view the issue in JIRA.
-    #[serde(rename = "self")]
+    #[serde(rename = "self", default)]
     pub self_url: String,
     /// The issue fields.
+    #[serde(default)]
     pub fields: IssueFields,
 }
 
@@ -176,16 +197,19 @@ impl fmt::Display for Issue {
 }
 
 /// Issue fields.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct IssueFields {
     /// The issue summary/title.
+    #[serde(default)]
     pub summary: String,
     /// The issue description (may be in Atlassian Document Format).
     #[serde(default)]
     pub description: Option<serde_json::Value>,
     /// The issue status.
+    #[serde(default)]
     pub status: Status,
     /// The issue type (Bug, Story, Task, etc.).
+    #[serde(default)]
     pub issuetype: IssueType,
     /// The issue priority.
     #[serde(default)]
@@ -220,12 +244,14 @@ pub struct IssueFields {
 }
 
 /// Issue status.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct Status {
     /// The status ID.
+    #[serde(default)]
     pub id: String,
     /// The status name (e.g., "To Do", "In Progress", "Done").
+    #[serde(default)]
     pub name: String,
     /// The status category.
     #[serde(default)]
@@ -254,12 +280,14 @@ pub struct StatusCategory {
 }
 
 /// Issue type (Bug, Story, Task, Epic, etc.).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct IssueType {
     /// The issue type ID.
+    #[serde(default)]
     pub id: String,
     /// The issue type name.
+    #[serde(default)]
     pub name: String,
     /// Whether this is a subtask type.
     #[serde(default)]

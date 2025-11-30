@@ -7,7 +7,7 @@ mod notification;
 mod profile_picker;
 mod table;
 
-pub use input::Input;
+pub use input::TextInput;
 pub use loading::{InlineLoader, LoadingIndicator, SpinnerStyle};
 pub use modal::{ConfirmDialog, ErrorDialog, Modal};
 pub use notification::{Notification, NotificationManager, NotificationType};

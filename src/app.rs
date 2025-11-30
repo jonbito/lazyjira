@@ -13,13 +13,16 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 
+use crate::api::auth;
 use crate::api::types::Issue;
 use crate::config::{Config, ConfigError, Profile};
 use crate::error::AppError;
 use crate::events::Event;
 use crate::ui::{
-    DetailAction, DetailView, ErrorDialog, ListAction, ListView, LoadingIndicator,
-    Notification, NotificationManager, ProfilePicker, ProfilePickerAction,
+    DeleteProfileDialog, DetailAction, DetailView, ErrorDialog, FormField, ListAction, ListView,
+    LoadingIndicator, Notification, NotificationManager, ProfileFormAction, ProfileFormData,
+    ProfileFormView, ProfileListAction, ProfileListView, ProfilePicker, ProfilePickerAction,
+    ProfileSummary,
 };
 
 /// The current view/screen state of the application.
@@ -32,8 +35,10 @@ pub enum AppState {
     IssueList,
     /// Displaying details of a single issue.
     IssueDetail,
-    /// Profile selection/management screen.
+    /// Profile selection/management screen (quick picker).
     ProfileSelect,
+    /// Profile management view (full CRUD list).
+    ProfileManagement,
     /// Filter panel is open.
     FilterPanel,
     /// Help screen is displayed.
@@ -66,8 +71,14 @@ pub struct App {
     config: Config,
     /// The current active profile.
     current_profile: Option<Profile>,
-    /// Profile picker popup.
+    /// Profile picker popup (quick switch).
     profile_picker: ProfilePicker,
+    /// Profile list view (full management).
+    profile_list_view: ProfileListView,
+    /// Profile form view (add/edit).
+    profile_form_view: ProfileFormView,
+    /// Delete profile confirmation dialog.
+    delete_profile_dialog: DeleteProfileDialog,
 }
 
 impl App {
@@ -104,6 +115,9 @@ impl App {
             config,
             current_profile,
             profile_picker: ProfilePicker::new(),
+            profile_list_view: ProfileListView::new(),
+            profile_form_view: ProfileFormView::new_add(),
+            delete_profile_dialog: DeleteProfileDialog::new(),
         }
     }
 
@@ -135,6 +149,9 @@ impl App {
             config,
             current_profile,
             profile_picker: ProfilePicker::new(),
+            profile_list_view: ProfileListView::new(),
+            profile_form_view: ProfileFormView::new_add(),
+            delete_profile_dialog: DeleteProfileDialog::new(),
         }
     }
 
@@ -353,6 +370,208 @@ impl App {
         self.config.profiles.len()
     }
 
+    /// Open the profile management view.
+    pub fn open_profile_management(&mut self) {
+        debug!("Opening profile management view");
+        self.refresh_profile_list();
+        self.state = AppState::ProfileManagement;
+    }
+
+    /// Refresh the profile list with current data.
+    fn refresh_profile_list(&mut self) {
+        let default_profile = self.config.settings.default_profile.as_deref();
+        let summaries: Vec<ProfileSummary> = self
+            .config
+            .profiles
+            .iter()
+            .map(|p| {
+                let is_default = default_profile == Some(p.name.as_str());
+                let has_token = auth::has_token(&p.name);
+                ProfileSummary::from_profile(p, is_default, has_token)
+            })
+            .collect();
+        self.profile_list_view.set_profiles(summaries);
+    }
+
+    /// Get a profile by index.
+    fn get_profile_by_index(&self, index: usize) -> Option<&Profile> {
+        self.config.profiles.get(index)
+    }
+
+    /// Add a new profile to the configuration.
+    pub fn add_profile(&mut self, data: ProfileFormData) -> Result<(), ConfigError> {
+        debug!(name = %data.name, "Adding new profile");
+
+        let profile = Profile::new(data.name.clone(), data.url.clone(), data.email.clone());
+
+        // Add to config
+        self.config.add_profile(profile)?;
+
+        // Store token in keyring
+        if let Err(e) = auth::store_token(&data.name, &data.token) {
+            warn!("Failed to store token: {}", e);
+            // Remove the profile we just added since token storage failed
+            let _ = self.config.remove_profile(&data.name);
+            return Err(ConfigError::ValidationError(format!(
+                "Failed to store token: {}",
+                e
+            )));
+        }
+
+        // Save config
+        self.config.save()?;
+
+        // Refresh list
+        self.refresh_profile_list();
+
+        // If this is the first profile, set it as current
+        if self.current_profile.is_none() {
+            if let Some(profile) = self.config.profiles.first().cloned() {
+                self.current_profile = Some(profile);
+            }
+        }
+
+        self.notify_success(format!("Profile '{}' added", data.name));
+        Ok(())
+    }
+
+    /// Update an existing profile.
+    pub fn update_profile(&mut self, data: ProfileFormData) -> Result<(), ConfigError> {
+        let original_name = data
+            .original_name
+            .as_ref()
+            .ok_or_else(|| ConfigError::ValidationError("No original name provided".to_string()))?;
+
+        debug!(original = %original_name, new = %data.name, "Updating profile");
+
+        // Find the profile index
+        let index = self
+            .config
+            .profiles
+            .iter()
+            .position(|p| p.name == *original_name)
+            .ok_or_else(|| ConfigError::ProfileNotFound(original_name.clone()))?;
+
+        // Check for duplicate name (if name changed)
+        if data.name != *original_name
+            && self.config.profiles.iter().any(|p| p.name == data.name)
+        {
+            return Err(ConfigError::ValidationError(format!(
+                "Profile '{}' already exists",
+                data.name
+            )));
+        }
+
+        // Update the profile
+        let profile = Profile::new(data.name.clone(), data.url, data.email);
+        self.config.profiles[index] = profile.clone();
+
+        // Update token (delete old if name changed, then store new)
+        if data.name != *original_name {
+            let _ = auth::delete_token(original_name);
+        }
+        if let Err(e) = auth::store_token(&data.name, &data.token) {
+            warn!("Failed to store token: {}", e);
+            return Err(ConfigError::ValidationError(format!(
+                "Failed to store token: {}",
+                e
+            )));
+        }
+
+        // Update default profile reference if needed
+        if self.config.settings.default_profile.as_deref() == Some(original_name) {
+            self.config.settings.default_profile = Some(data.name.clone());
+        }
+
+        // Save config
+        self.config.save()?;
+
+        // Update current profile if it was the one being edited
+        if self
+            .current_profile
+            .as_ref()
+            .map(|p| p.name.as_str())
+            == Some(original_name)
+        {
+            self.current_profile = Some(profile);
+            self.list_view.set_profile_name(Some(data.name.clone()));
+        }
+
+        // Refresh list
+        self.refresh_profile_list();
+
+        self.notify_success(format!("Profile '{}' updated", data.name));
+        Ok(())
+    }
+
+    /// Delete a profile by index.
+    pub fn delete_profile(&mut self, index: usize) -> Result<(), ConfigError> {
+        let profile = self
+            .config
+            .profiles
+            .get(index)
+            .ok_or_else(|| ConfigError::ProfileNotFound(format!("index {}", index)))?
+            .clone();
+
+        debug!(name = %profile.name, "Deleting profile");
+
+        // Delete token from keyring
+        let _ = auth::delete_token(&profile.name);
+
+        // Remove from config
+        if !self.config.remove_profile(&profile.name) {
+            return Err(ConfigError::ProfileNotFound(profile.name.clone()));
+        }
+
+        // Save config
+        self.config.save()?;
+
+        // If we deleted the current profile, switch to another
+        if self
+            .current_profile
+            .as_ref()
+            .map(|p| p.name.as_str())
+            == Some(&profile.name)
+        {
+            self.current_profile = self.config.profiles.first().cloned();
+            self.list_view.set_profile_name(
+                self.current_profile.as_ref().map(|p| p.name.clone()),
+            );
+            // Clear session data
+            self.list_view.set_issues(Vec::new());
+            self.list_view.set_loading(true);
+            self.detail_view.clear();
+            self.selected_issue_key = None;
+        }
+
+        // Refresh list
+        self.refresh_profile_list();
+
+        self.notify_success(format!("Profile '{}' deleted", profile.name));
+        Ok(())
+    }
+
+    /// Set a profile as the default.
+    pub fn set_default_profile(&mut self, index: usize) -> Result<(), ConfigError> {
+        let profile_name = self
+            .config
+            .profiles
+            .get(index)
+            .map(|p| p.name.clone())
+            .ok_or_else(|| ConfigError::ProfileNotFound(format!("index {}", index)))?;
+
+        debug!(name = %profile_name, "Setting default profile");
+
+        self.config.settings.default_profile = Some(profile_name.clone());
+        self.config.save()?;
+
+        // Refresh list to update default indicator
+        self.refresh_profile_list();
+
+        self.notify_success(format!("'{}' set as default profile", profile_name));
+        Ok(())
+    }
+
     /// Returns whether the application should quit.
     pub fn should_quit(&self) -> bool {
         self.should_quit
@@ -404,7 +623,59 @@ impl App {
             return;
         }
 
-        // Handle profile picker second (blocks other input when visible)
+        // Handle delete profile dialog (blocks other input)
+        if self.delete_profile_dialog.is_visible() {
+            if let Some(confirmed) = self.delete_profile_dialog.handle_input(key_event) {
+                if confirmed {
+                    if let Some(name) = self.profile_list_view.selected_profile_name() {
+                        let index = self.profile_list_view.selected();
+                        debug!(name = %name, "Delete profile confirmed");
+                        if let Err(e) = self.delete_profile(index) {
+                            self.notify_error(format!("Failed to delete profile: {}", e));
+                        }
+                    }
+                } else {
+                    debug!("Delete profile cancelled");
+                }
+            }
+            return;
+        }
+
+        // Handle profile form (blocks other input when visible)
+        if self.profile_form_view.is_visible() {
+            if let Some(action) = self.profile_form_view.handle_input(key_event) {
+                match action {
+                    ProfileFormAction::Cancel => {
+                        debug!("Profile form cancelled");
+                    }
+                    ProfileFormAction::Submit(data) => {
+                        debug!("Profile form submitted");
+                        // Handle add/edit
+                        let result = if data.original_name.is_some() {
+                            self.update_profile(data)
+                        } else {
+                            self.add_profile(data)
+                        };
+
+                        match result {
+                            Ok(()) => {
+                                self.profile_form_view.hide();
+                            }
+                            Err(e) => {
+                                self.profile_form_view.set_error(
+                                    FormField::Name,
+                                    format!("Failed to save: {}", e),
+                                );
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            return;
+        }
+
+        // Handle profile picker (blocks other input when visible)
         if self.profile_picker.is_visible() {
             if let Some(action) = self.profile_picker.handle_input(key_event) {
                 match action {
@@ -437,12 +708,20 @@ impl App {
                 }
                 return;
             }
-            // Profile switcher on 'p' (available in most views)
+            // Profile switcher on 'p' (quick switch, available in most views)
             (KeyCode::Char('p'), KeyModifiers::NONE)
                 if self.state == AppState::IssueList || self.state == AppState::Loading =>
             {
                 debug!("Opening profile picker");
                 self.show_profile_picker();
+                return;
+            }
+            // Profile management on 'P' (Shift+p, full management view)
+            (KeyCode::Char('P'), KeyModifiers::SHIFT)
+                if self.state == AppState::IssueList || self.state == AppState::Loading =>
+            {
+                debug!("Opening profile management");
+                self.open_profile_management();
                 return;
             }
             _ => {}
@@ -527,6 +806,51 @@ impl App {
                     self.state = AppState::IssueList;
                 }
             }
+            AppState::ProfileManagement => {
+                // Handle profile list view input
+                if let Some(action) = self.profile_list_view.handle_input(key_event) {
+                    match action {
+                        ProfileListAction::AddProfile => {
+                            debug!("Opening add profile form");
+                            self.profile_form_view.show_add();
+                        }
+                        ProfileListAction::EditProfile(index) => {
+                            if let Some(profile) = self.get_profile_by_index(index).cloned() {
+                                debug!(name = %profile.name, "Opening edit profile form");
+                                // Get token for editing (may be empty if not set)
+                                let token = auth::get_token(&profile.name).unwrap_or_default();
+                                self.profile_form_view.show_edit(&profile, &token);
+                            }
+                        }
+                        ProfileListAction::DeleteProfile(index) => {
+                            if let Some(profile) = self.get_profile_by_index(index).cloned() {
+                                debug!(name = %profile.name, "Showing delete confirmation");
+                                self.delete_profile_dialog.show(&profile.name);
+                            }
+                        }
+                        ProfileListAction::SetDefault(index) => {
+                            if let Err(e) = self.set_default_profile(index) {
+                                self.notify_error(format!("Failed to set default: {}", e));
+                            }
+                        }
+                        ProfileListAction::SwitchToProfile(index) => {
+                            if let Some(profile) = self.get_profile_by_index(index) {
+                                let name = profile.name.clone();
+                                if let Err(e) = self.switch_profile(&name) {
+                                    self.notify_error(format!("Failed to switch profile: {}", e));
+                                } else {
+                                    // Go back to issue list after switching
+                                    self.state = AppState::IssueList;
+                                }
+                            }
+                        }
+                        ProfileListAction::GoBack => {
+                            debug!("Going back from profile management");
+                            self.state = AppState::IssueList;
+                        }
+                    }
+                }
+            }
             AppState::Exiting => {
                 // No input handling while exiting
             }
@@ -579,6 +903,12 @@ impl App {
         // Render profile picker (on top of everything except error dialogs)
         self.profile_picker.render(frame, area);
 
+        // Render profile form (on top of profile list)
+        self.profile_form_view.render(frame, area);
+
+        // Render delete profile dialog (on top of profile form)
+        self.delete_profile_dialog.render(frame, area);
+
         // Render error dialog (on top of everything)
         self.error_dialog.render(frame, area);
     }
@@ -606,6 +936,10 @@ impl App {
             AppState::IssueDetail => {
                 // Use the DetailView for issue detail state
                 self.detail_view.render(frame, area);
+            }
+            AppState::ProfileManagement => {
+                // Use the ProfileListView for profile management
+                self.profile_list_view.render(frame, area);
             }
             _ => {
                 // For other states, use the placeholder rendering
@@ -638,6 +972,22 @@ impl App {
             AppState::IssueDetail => {
                 // Use DetailView's status bar
                 self.detail_view.render_status_bar(frame, area);
+            }
+            AppState::ProfileManagement => {
+                // Profile management status bar
+                let footer = Line::from(vec![
+                    Span::styled(
+                        " Profiles ",
+                        Style::default().fg(Color::Black).bg(Color::Cyan),
+                    ),
+                    Span::raw(" "),
+                    Span::styled(
+                        format!("{} profiles configured", self.config.profiles.len()),
+                        Style::default().fg(Color::DarkGray),
+                    ),
+                ]);
+                let paragraph = Paragraph::new(footer);
+                frame.render_widget(paragraph, area);
             }
             _ => {
                 // Default status bar for other states
@@ -702,7 +1052,8 @@ impl App {
             Line::styled("Global:", Style::default().fg(Color::Yellow)),
             Line::raw("  Ctrl+C  - Quit application"),
             Line::raw("  ?       - Show this help"),
-            Line::raw("  p       - Switch profile"),
+            Line::raw("  p       - Switch profile (quick)"),
+            Line::raw("  P       - Manage profiles (CRUD)"),
             Line::raw(""),
             Line::styled("Issue List:", Style::default().fg(Color::Yellow)),
             Line::raw("  j / ↓   - Move down"),
@@ -726,6 +1077,14 @@ impl App {
             Line::raw("  q / Esc - Go back to list"),
             Line::raw("  e       - Edit issue (coming soon)"),
             Line::raw("  c       - Add comment (coming soon)"),
+            Line::raw(""),
+            Line::styled("Profile Management:", Style::default().fg(Color::Yellow)),
+            Line::raw("  a       - Add new profile"),
+            Line::raw("  e       - Edit selected profile"),
+            Line::raw("  d       - Delete selected profile"),
+            Line::raw("  s       - Set as default profile"),
+            Line::raw("  Space   - Switch to profile"),
+            Line::raw("  q / Esc - Go back"),
             Line::raw(""),
             Line::styled(
                 "Press Esc or q to close this help screen",

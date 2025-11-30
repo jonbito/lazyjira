@@ -954,6 +954,25 @@ impl App {
                         ListAction::OpenJqlInput => {
                             self.open_jql_input();
                         }
+                        ListAction::SortChanged => {
+                            info!(
+                                column = %self.list_view.sort().column.display_name(),
+                                direction = %self.list_view.sort().direction.to_jql(),
+                                "Sort changed"
+                            );
+                            // Reset and reload with new sort
+                            self.list_view.reset_for_new_query();
+                            self.list_view.set_loading(true);
+                            // TODO: Trigger async refresh with new sort
+                        }
+                        ListAction::LoadMore => {
+                            debug!(
+                                offset = self.list_view.pagination().current_offset,
+                                "Loading more issues"
+                            );
+                            self.list_view.pagination_mut().start_loading();
+                            // TODO: Trigger async load more
+                        }
                     }
                 }
             }

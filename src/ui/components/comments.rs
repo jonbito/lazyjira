@@ -264,8 +264,8 @@ impl CommentsPanel {
     /// Handle input in composing mode.
     fn handle_composing_input(&mut self, key: KeyEvent) -> Option<CommentAction> {
         match (key.code, key.modifiers) {
-            // Submit comment with Ctrl+Enter
-            (KeyCode::Enter, KeyModifiers::CONTROL) => {
+            // Submit comment with Ctrl+S (consistent with edit mode, works on macOS)
+            (KeyCode::Char('s'), KeyModifiers::CONTROL) => {
                 let content = self.editor.content().trim().to_string();
                 if !content.is_empty() {
                     self.submitting = true;
@@ -465,12 +465,12 @@ impl CommentsPanel {
                 );
             frame.render_widget(submitting_text, chunks[0]);
         } else {
-            self.editor.render(frame, chunks[0], true, Some(" New Comment (Ctrl+Enter to submit) "));
+            self.editor.render(frame, chunks[0], true, Some(" New Comment (Ctrl+S to submit) "));
         }
 
         // Render help text
         let help_text = Line::from(vec![
-            Span::styled("Ctrl+Enter", Style::default().fg(Color::Green)),
+            Span::styled("Ctrl+S", Style::default().fg(Color::Green)),
             Span::raw(": submit  "),
             Span::styled("Esc", Style::default().fg(Color::Red)),
             Span::raw(": cancel"),

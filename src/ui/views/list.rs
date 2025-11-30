@@ -329,6 +329,16 @@ impl ListView {
         self.loading = false;
     }
 
+    /// Update a single issue in the list.
+    ///
+    /// If an issue with the same key exists, it will be replaced.
+    /// If not found, nothing happens.
+    pub fn update_issue(&mut self, updated_issue: &Issue) {
+        if let Some(pos) = self.issues.iter().position(|i| i.key == updated_issue.key) {
+            self.issues[pos] = updated_issue.clone();
+        }
+    }
+
     /// Set the loading state.
     pub fn set_loading(&mut self, loading: bool) {
         self.loading = loading;

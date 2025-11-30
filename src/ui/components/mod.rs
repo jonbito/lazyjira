@@ -9,6 +9,7 @@ mod notification;
 mod profile_picker;
 mod search_bar;
 mod table;
+mod text_editor;
 
 pub use input::TextInput;
 pub use jql_input::{JqlAction, JqlInput};
@@ -19,3 +20,4 @@ pub use notification::{Notification, NotificationManager, NotificationType};
 pub use profile_picker::{ProfilePicker, ProfilePickerAction};
 pub use search_bar::{highlight_text, render_search_bar, QuickSearch};
 pub use table::Table;
+pub use text_editor::TextEditor;

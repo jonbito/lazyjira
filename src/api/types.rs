@@ -431,7 +431,7 @@ impl CommentsResponse {
 /// JIRA uses ADF for rich text fields like descriptions and comments.
 /// This struct represents the document structure and provides methods
 /// to extract plain text for display.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AtlassianDoc {
     /// The document type (always "doc" for root documents).
     #[serde(rename = "type")]
@@ -572,6 +572,36 @@ impl Default for AtlassianDoc {
             doc_type: "doc".to_string(),
             version: Some(1),
             content: vec![],
+        }
+    }
+}
+
+impl AtlassianDoc {
+    /// Create an Atlassian Document from plain text.
+    ///
+    /// Each line becomes a paragraph. Empty lines are preserved.
+    pub fn from_plain_text(text: &str) -> Self {
+        let content = text
+            .lines()
+            .map(|line| {
+                serde_json::json!({
+                    "type": "paragraph",
+                    "content": if line.is_empty() {
+                        vec![]
+                    } else {
+                        vec![serde_json::json!({
+                            "type": "text",
+                            "text": line
+                        })]
+                    }
+                })
+            })
+            .collect();
+
+        Self {
+            doc_type: "doc".to_string(),
+            version: Some(1),
+            content,
         }
     }
 }
@@ -935,7 +965,7 @@ pub struct BoardsResponse {
 ///
 /// Uses the JIRA REST API v3 issue update format.
 /// Both `fields` and `update` can be used together.
-#[derive(Debug, Clone, Serialize, Default)]
+#[derive(Debug, Clone, Serialize, Default, PartialEq)]
 pub struct IssueUpdateRequest {
     /// Direct field updates (simple set operations).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -948,7 +978,7 @@ pub struct IssueUpdateRequest {
 /// Direct field updates for an issue.
 ///
 /// Each field that is `Some` will be updated to the provided value.
-#[derive(Debug, Clone, Serialize, Default)]
+#[derive(Debug, Clone, Serialize, Default, PartialEq)]
 pub struct FieldUpdates {
     /// Update the issue summary.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -971,7 +1001,7 @@ pub struct FieldUpdates {
 }
 
 /// Reference to a user by account ID.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct UserRef {
     /// The user's account ID.
     #[serde(rename = "accountId")]
@@ -993,7 +1023,7 @@ impl UserRef {
 }
 
 /// Reference to a priority by ID.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct PriorityRef {
     /// The priority ID.
     pub id: String,
@@ -1009,7 +1039,7 @@ impl PriorityRef {
 /// Complex update operations for list fields.
 ///
 /// Used for operations like add/remove on labels and components.
-#[derive(Debug, Clone, Serialize, Default)]
+#[derive(Debug, Clone, Serialize, Default, PartialEq)]
 pub struct UpdateOperations {
     /// Label add/remove operations.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1020,7 +1050,7 @@ pub struct UpdateOperations {
 }
 
 /// Operation to add or remove a label.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum LabelOperation {
     /// Add a label.
@@ -1030,7 +1060,7 @@ pub enum LabelOperation {
 }
 
 /// Operation to add or remove a component.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum ComponentOperation {
     /// Add a component by name.

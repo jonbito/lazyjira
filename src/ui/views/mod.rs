@@ -5,7 +5,7 @@ mod filter;
 mod list;
 mod profile;
 
-pub use detail::{DetailAction, DetailView};
+pub use detail::{DetailAction, DetailView, EditField, EditState};
 pub use filter::{FilterPanelAction, FilterPanelView};
 pub use list::{ListAction, ListView};
 pub use profile::{

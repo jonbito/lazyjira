@@ -14,12 +14,12 @@ use ratatui::{
 };
 
 use crate::api::auth;
-use crate::api::types::{FilterOptions, FilterState, Issue};
+use crate::api::types::{FilterOptions, FilterState, Issue, IssueUpdateRequest};
 use crate::config::{Config, ConfigError, Profile};
 use crate::error::AppError;
 use crate::events::Event;
 use crate::ui::{
-    DeleteProfileDialog, DetailAction, DetailView, ErrorDialog, FilterPanelAction,
+    ConfirmDialog, DeleteProfileDialog, DetailAction, DetailView, ErrorDialog, FilterPanelAction,
     FilterPanelView, FormField, JqlAction, JqlInput, ListAction, ListView, LoadingIndicator,
     Notification, NotificationManager, ProfileFormAction, ProfileFormData, ProfileFormView,
     ProfileListAction, ProfileListView, ProfilePicker, ProfilePickerAction, ProfileSummary,
@@ -91,6 +91,10 @@ pub struct App {
     jql_input: JqlInput,
     /// Current JQL query (if using direct JQL instead of filters).
     current_jql: Option<String>,
+    /// Pending issue update (issue key, update request).
+    pending_issue_update: Option<(String, IssueUpdateRequest)>,
+    /// Discard changes confirmation dialog.
+    discard_confirm_dialog: ConfirmDialog,
 }
 
 impl App {
@@ -138,6 +142,8 @@ impl App {
             filter_options: None,
             jql_input,
             current_jql: None,
+            pending_issue_update: None,
+            discard_confirm_dialog: ConfirmDialog::new(),
         }
     }
 
@@ -180,6 +186,8 @@ impl App {
             filter_options: None,
             jql_input,
             current_jql: None,
+            pending_issue_update: None,
+            discard_confirm_dialog: ConfirmDialog::new(),
         }
     }
 
@@ -757,6 +765,56 @@ impl App {
         self.jql_input.history()
     }
 
+    // ========================================================================
+    // Issue edit methods
+    // ========================================================================
+
+    /// Get the pending issue update, if any.
+    pub fn take_pending_issue_update(&mut self) -> Option<(String, IssueUpdateRequest)> {
+        self.pending_issue_update.take()
+    }
+
+    /// Check if there is a pending issue update.
+    pub fn has_pending_issue_update(&self) -> bool {
+        self.pending_issue_update.is_some()
+    }
+
+    /// Handle successful issue update.
+    ///
+    /// Updates the local issue data and exits edit mode.
+    pub fn handle_issue_update_success(&mut self, updated_issue: Issue) {
+        info!(key = %updated_issue.key, "Issue updated successfully");
+
+        // Update the detail view with the updated issue
+        self.detail_view.set_issue(updated_issue.clone());
+
+        // Update the issue in the list view if present
+        self.list_view.update_issue(&updated_issue);
+
+        // Show success notification
+        self.notify_success(format!("Issue {} updated", updated_issue.key));
+    }
+
+    /// Handle failed issue update.
+    pub fn handle_issue_update_failure(&mut self, error: &str) {
+        warn!(error = %error, "Issue update failed");
+        self.detail_view.set_saving(false);
+        self.notify_error(format!("Failed to update issue: {}", error));
+    }
+
+    /// Show the discard changes confirmation dialog.
+    fn show_discard_confirm_dialog(&mut self) {
+        self.discard_confirm_dialog.show(
+            "Discard Changes?",
+            "You have unsaved changes. Are you sure you want to discard them?",
+        );
+    }
+
+    /// Check if the discard confirm dialog is visible.
+    pub fn is_discard_confirm_visible(&self) -> bool {
+        self.discard_confirm_dialog.is_visible()
+    }
+
     /// Returns whether the application should quit.
     pub fn should_quit(&self) -> bool {
         self.should_quit
@@ -821,6 +879,19 @@ impl App {
                     }
                 } else {
                     debug!("Delete profile cancelled");
+                }
+            }
+            return;
+        }
+
+        // Handle discard changes confirmation dialog (blocks other input)
+        if self.discard_confirm_dialog.is_visible() {
+            if let Some(confirmed) = self.discard_confirm_dialog.handle_input(key_event) {
+                if confirmed {
+                    debug!("Discard changes confirmed");
+                    self.detail_view.exit_edit_mode();
+                } else {
+                    debug!("Discard changes cancelled");
                 }
             }
             return;
@@ -1000,12 +1071,23 @@ impl App {
                             self.detail_view.clear();
                         }
                         DetailAction::EditIssue => {
-                            debug!("Edit issue requested (not yet implemented)");
-                            // TODO: Implement editing in Phase 3
+                            debug!("Entering edit mode");
+                            self.detail_view.enter_edit_mode();
                         }
                         DetailAction::AddComment => {
                             debug!("Add comment requested (not yet implemented)");
                             // TODO: Implement commenting in Phase 3
+                        }
+                        DetailAction::SaveEdit(issue_key, update_request) => {
+                            debug!(key = %issue_key, "Save edit requested");
+                            self.detail_view.set_saving(true);
+                            // The async save operation will be handled by the runner
+                            // For now, store the pending update info
+                            self.pending_issue_update = Some((issue_key, update_request));
+                        }
+                        DetailAction::ConfirmDiscard => {
+                            debug!("Confirm discard changes dialog requested");
+                            self.show_discard_confirm_dialog();
                         }
                     }
                 }
@@ -1146,6 +1228,9 @@ impl App {
 
         // Render delete profile dialog (on top of profile form)
         self.delete_profile_dialog.render(frame, area);
+
+        // Render discard changes dialog (on top of profile form)
+        self.discard_confirm_dialog.render(frame, area);
 
         // Render error dialog (on top of everything)
         self.error_dialog.render(frame, area);

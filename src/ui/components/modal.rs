@@ -248,6 +248,41 @@ impl ConfirmDialog {
         false
     }
 
+    /// Handle keyboard input.
+    ///
+    /// Returns Some(true) if confirmed, Some(false) if cancelled, None if no action.
+    pub fn handle_input(&mut self, key: crossterm::event::KeyEvent) -> Option<bool> {
+        use crossterm::event::KeyCode;
+
+        match key.code {
+            // Enter confirms the current selection
+            KeyCode::Enter => {
+                self.hide();
+                Some(self.selected_confirm)
+            }
+            // Escape cancels
+            KeyCode::Esc | KeyCode::Char('q') => {
+                self.hide();
+                Some(false)
+            }
+            // Tab or arrow keys toggle selection
+            KeyCode::Tab | KeyCode::Left | KeyCode::Right | KeyCode::Char('h') | KeyCode::Char('l') => {
+                self.toggle_selection();
+                None
+            }
+            // Y/N shortcuts
+            KeyCode::Char('y') | KeyCode::Char('Y') => {
+                self.hide();
+                Some(true)
+            }
+            KeyCode::Char('n') | KeyCode::Char('N') => {
+                self.hide();
+                Some(false)
+            }
+            _ => None,
+        }
+    }
+
     /// Render the confirmation dialog.
     pub fn render(&self, frame: &mut Frame, area: Rect) {
         if !self.visible {

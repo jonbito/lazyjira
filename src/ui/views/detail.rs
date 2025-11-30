@@ -2,6 +2,7 @@
 //!
 //! Displays a single JIRA issue with all its fields in a readable format.
 //! Supports scrolling for long descriptions and keyboard navigation.
+//! Supports edit mode for summary and description fields.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
@@ -12,18 +13,47 @@ use ratatui::{
     Frame,
 };
 
-use crate::api::types::Issue;
+use crate::api::types::{AtlassianDoc, FieldUpdates, Issue, IssueUpdateRequest};
+use crate::ui::components::{TextEditor, TextInput};
 use crate::ui::theme::{issue_type_prefix, priority_style, status_style};
 
 /// Action that can be triggered from the detail view.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum DetailAction {
     /// Go back to the issue list.
     GoBack,
-    /// Edit the issue (future feature).
+    /// Enter edit mode for the issue.
     EditIssue,
     /// Add a comment (future feature).
     AddComment,
+    /// Save the current edit (issue key, update request).
+    SaveEdit(String, IssueUpdateRequest),
+    /// Show confirmation dialog before discarding changes.
+    ConfirmDiscard,
+}
+
+/// Which field is currently being edited.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditField {
+    /// Editing the summary field.
+    Summary,
+    /// Editing the description field.
+    Description,
+}
+
+/// Edit mode state.
+#[derive(Debug, Clone)]
+pub struct EditState {
+    /// Which field is currently being edited.
+    pub field: EditField,
+    /// The summary input field.
+    pub summary_input: TextInput,
+    /// The description editor.
+    pub description_editor: TextEditor,
+    /// Original summary for change detection.
+    pub original_summary: String,
+    /// Original description for change detection.
+    pub original_description: String,
 }
 
 /// The issue detail view.
@@ -38,6 +68,10 @@ pub struct DetailView {
     content_height: u16,
     /// Visible area height (calculated during render).
     visible_height: u16,
+    /// Edit mode state (None if not in edit mode).
+    edit_state: Option<EditState>,
+    /// Whether we are currently saving.
+    is_saving: bool,
 }
 
 impl DetailView {
@@ -49,6 +83,8 @@ impl DetailView {
             max_scroll: 0,
             content_height: 0,
             visible_height: 0,
+            edit_state: None,
+            is_saving: false,
         }
     }
 
@@ -57,6 +93,8 @@ impl DetailView {
         self.issue = Some(issue);
         self.scroll = 0;
         self.max_scroll = 0;
+        self.edit_state = None;
+        self.is_saving = false;
     }
 
     /// Clear the current issue.
@@ -64,6 +102,8 @@ impl DetailView {
         self.issue = None;
         self.scroll = 0;
         self.max_scroll = 0;
+        self.edit_state = None;
+        self.is_saving = false;
     }
 
     /// Get a reference to the current issue.
@@ -87,10 +127,113 @@ impl DetailView {
         self.max_scroll = max_scroll;
     }
 
+    /// Check if the view is in edit mode.
+    pub fn is_editing(&self) -> bool {
+        self.edit_state.is_some()
+    }
+
+    /// Check if there are unsaved changes.
+    pub fn has_unsaved_changes(&self) -> bool {
+        if let Some(edit_state) = &self.edit_state {
+            edit_state.summary_input.value() != edit_state.original_summary
+                || edit_state.description_editor.has_changes()
+        } else {
+            false
+        }
+    }
+
+    /// Check if we are currently saving.
+    pub fn is_saving(&self) -> bool {
+        self.is_saving
+    }
+
+    /// Set the saving state.
+    pub fn set_saving(&mut self, saving: bool) {
+        self.is_saving = saving;
+    }
+
+    /// Enter edit mode for the current issue.
+    pub fn enter_edit_mode(&mut self) {
+        if let Some(issue) = &self.issue {
+            let summary = issue.fields.summary.clone();
+            let description = issue.description_text();
+
+            let mut summary_input = TextInput::with_value(&summary);
+            summary_input.set_placeholder("Enter summary...");
+
+            let description_editor = TextEditor::new(&description);
+
+            self.edit_state = Some(EditState {
+                field: EditField::Summary,
+                summary_input,
+                description_editor,
+                original_summary: summary,
+                original_description: description,
+            });
+        }
+    }
+
+    /// Exit edit mode without saving.
+    pub fn exit_edit_mode(&mut self) {
+        self.edit_state = None;
+        self.is_saving = false;
+    }
+
+    /// Get the current edit field.
+    pub fn current_edit_field(&self) -> Option<EditField> {
+        self.edit_state.as_ref().map(|s| s.field)
+    }
+
+    /// Switch focus to the next field in edit mode.
+    fn switch_edit_field(&mut self) {
+        if let Some(edit_state) = &mut self.edit_state {
+            edit_state.field = match edit_state.field {
+                EditField::Summary => EditField::Description,
+                EditField::Description => EditField::Summary,
+            };
+        }
+    }
+
+    /// Create an update request from the current edit state.
+    fn create_update_request(&self) -> Option<IssueUpdateRequest> {
+        let edit_state = self.edit_state.as_ref()?;
+
+        let mut fields = FieldUpdates::default();
+        let mut has_changes = false;
+
+        // Check if summary changed
+        if edit_state.summary_input.value() != edit_state.original_summary {
+            fields.summary = Some(edit_state.summary_input.value().to_string());
+            has_changes = true;
+        }
+
+        // Check if description changed
+        if edit_state.description_editor.has_changes() {
+            let new_description = edit_state.description_editor.content();
+            fields.description = Some(AtlassianDoc::from_plain_text(&new_description));
+            has_changes = true;
+        }
+
+        if has_changes {
+            Some(IssueUpdateRequest {
+                fields: Some(fields),
+                update: None,
+            })
+        } else {
+            None
+        }
+    }
+
     /// Handle keyboard input.
     ///
     /// Returns an optional action to be handled by the application.
     pub fn handle_input(&mut self, key: KeyEvent) -> Option<DetailAction> {
+        // If in edit mode, handle edit-specific input
+        if self.edit_state.is_some() {
+            return self.handle_edit_input(key);
+        }
+
+        // Normal (view) mode input handling
         match (key.code, key.modifiers) {
             // Navigation - go back
             (KeyCode::Char('q'), KeyModifiers::NONE) | (KeyCode::Esc, KeyModifiers::NONE) => {
@@ -126,11 +269,59 @@ impl DetailView {
                 self.scroll = self.max_scroll;
                 None
             }
-            // Future: Edit issue
+            // Edit issue
             (KeyCode::Char('e'), KeyModifiers::NONE) => Some(DetailAction::EditIssue),
-            // Future: Add comment
+            // Add comment
             (KeyCode::Char('c'), KeyModifiers::NONE) => Some(DetailAction::AddComment),
             _ => None,
+        }
+    }
+
+    /// Handle keyboard input in edit mode.
+    fn handle_edit_input(&mut self, key: KeyEvent) -> Option<DetailAction> {
+        match (key.code, key.modifiers) {
+            // Escape - cancel edit (may show confirmation if changes exist)
+            (KeyCode::Esc, KeyModifiers::NONE) => {
+                if self.has_unsaved_changes() {
+                    Some(DetailAction::ConfirmDiscard)
+                } else {
+                    self.exit_edit_mode();
+                    None
+                }
+            }
+            // Ctrl+S - save changes
+            (KeyCode::Char('s'), KeyModifiers::CONTROL) => {
+                if let Some(issue) = &self.issue {
+                    if let Some(update_request) = self.create_update_request() {
+                        Some(DetailAction::SaveEdit(issue.key.clone(), update_request))
+                    } else {
+                        // No changes, just exit edit mode
+                        self.exit_edit_mode();
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+            // Tab - switch between fields
+            (KeyCode::Tab, KeyModifiers::NONE) | (KeyCode::BackTab, KeyModifiers::SHIFT) => {
+                self.switch_edit_field();
+                None
+            }
+            // All other input goes to the focused field
+            _ => {
+                if let Some(edit_state) = &mut self.edit_state {
+                    match edit_state.field {
+                        EditField::Summary => {
+                            edit_state.summary_input.handle_input(key);
+                        }
+                        EditField::Description => {
+                            edit_state.description_editor.handle_input(key);
+                        }
+                    }
+                }
+                None
+            }
         }
     }
 
@@ -162,6 +353,12 @@ impl DetailView {
 
     /// Render the detail view.
     pub fn render(&mut self, frame: &mut Frame, area: Rect) {
+        // Render edit mode if active
+        if self.edit_state.is_some() {
+            self.render_edit_mode(frame, area);
+            return;
+        }
+
         let Some(issue) = &self.issue else {
             self.render_no_issue(frame, area);
             return;
@@ -224,6 +421,105 @@ impl DetailView {
 
         // Render description (scrollable)
         self.render_description(frame, chunks[3], &description);
+    }
+
+    /// Render the edit mode interface.
+    fn render_edit_mode(&mut self, frame: &mut Frame, area: Rect) {
+        // Get issue info for header
+        let (issue_key, issue_type_name) = if let Some(issue) = &self.issue {
+            (issue.key.clone(), issue.fields.issuetype.name.clone())
+        } else {
+            return;
+        };
+
+        // Extract edit_state to avoid borrowing issues
+        let edit_state = match self.edit_state.take() {
+            Some(state) => state,
+            None => return,
+        };
+
+        let current_field = edit_state.field;
+        let has_changes = edit_state.summary_input.value() != edit_state.original_summary
+            || edit_state.description_editor.content() != edit_state.original_description;
+
+        // Calculate layout
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(3), // Header with edit indicator
+                Constraint::Length(3), // Summary input
+                Constraint::Min(5),    // Description editor
+                Constraint::Length(2), // Edit mode hints
+            ])
+            .split(area);
+
+        // Render header with edit indicator
+        let type_prefix = issue_type_prefix(&issue_type_name);
+        let edit_indicator = if has_changes { " [*]" } else { "" };
+        let saving_indicator = if self.is_saving { " [Saving...]" } else { "" };
+        let header_text = format!(
+            "{} {} - {} (EDITING){}{}",
+            type_prefix, issue_type_name, issue_key, edit_indicator, saving_indicator
+        );
+
+        let header = Paragraph::new(Line::from(vec![
+            Span::styled(
+                header_text,
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]))
+        .block(
+            Block::default()
+                .borders(Borders::BOTTOM)
+                .border_style(Style::default().fg(Color::Yellow)),
+        );
+        frame.render_widget(header, chunks[0]);
+
+        // Put edit_state back to render the fields
+        let mut edit_state = edit_state;
+
+        // Render summary input
+        let summary_title = if current_field == EditField::Summary {
+            " Summary (editing) "
+        } else {
+            " Summary "
+        };
+        edit_state.summary_input.render_with_label(
+            frame,
+            chunks[1],
+            summary_title,
+            current_field == EditField::Summary,
+        );
+
+        // Render description editor
+        let description_title = if current_field == EditField::Description {
+            " Description (editing) "
+        } else {
+            " Description "
+        };
+        edit_state.description_editor.render(
+            frame,
+            chunks[2],
+            current_field == EditField::Description,
+            Some(description_title),
+        );
+
+        // Put edit_state back
+        self.edit_state = Some(edit_state);
+
+        // Render edit mode hints
+        let hints = Line::from(vec![
+            Span::styled("Tab", Style::default().fg(Color::Yellow)),
+            Span::raw(": switch field  "),
+            Span::styled("Ctrl+S", Style::default().fg(Color::Green)),
+            Span::raw(": save  "),
+            Span::styled("Esc", Style::default().fg(Color::Red)),
+            Span::raw(": cancel"),
+        ]);
+        let hints_paragraph = Paragraph::new(hints);
+        frame.render_widget(hints_paragraph, chunks[3]);
     }
 
     /// Render when no issue is set.
@@ -420,6 +716,39 @@ impl DetailView {
             .map(|i| i.key.as_str())
             .unwrap_or("No issue");
 
+        // Edit mode status bar
+        if self.edit_state.is_some() {
+            let unsaved_indicator = if self.has_unsaved_changes() {
+                " [*] "
+            } else {
+                " "
+            };
+
+            let saving_indicator = if self.is_saving {
+                "Saving..."
+            } else {
+                ""
+            };
+
+            let status_line = Line::from(vec![
+                Span::styled(
+                    format!(" {} ", issue_key),
+                    Style::default().fg(Color::Black).bg(Color::Yellow),
+                ),
+                Span::styled(
+                    " EDITING ",
+                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(unsaved_indicator, Style::default().fg(Color::Red)),
+                Span::styled(saving_indicator, Style::default().fg(Color::Cyan)),
+            ]);
+
+            let paragraph = Paragraph::new(status_line);
+            frame.render_widget(paragraph, area);
+            return;
+        }
+
+        // Normal mode status bar
         let scroll_info = if self.max_scroll > 0 {
             format!(
                 " [scroll: {}/{}]",

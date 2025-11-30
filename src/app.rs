@@ -12,8 +12,12 @@ use ratatui::{
 };
 
 use crate::api::types::Issue;
+use crate::error::AppError;
 use crate::events::Event;
-use crate::ui::{DetailAction, DetailView, ListAction, ListView};
+use crate::ui::{
+    DetailAction, DetailView, ErrorDialog, ListAction, ListView, LoadingIndicator,
+    Notification, NotificationManager,
+};
 
 /// The current view/screen state of the application.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -49,6 +53,12 @@ pub struct App {
     detail_view: DetailView,
     /// The currently selected issue key (for detail view).
     selected_issue_key: Option<String>,
+    /// Notification manager for toast messages.
+    notifications: NotificationManager,
+    /// Error dialog for critical errors.
+    error_dialog: ErrorDialog,
+    /// Global loading indicator.
+    loading: LoadingIndicator,
 }
 
 impl App {
@@ -56,12 +66,17 @@ impl App {
     pub fn new() -> Self {
         let mut list_view = ListView::new();
         list_view.set_loading(true);
+        let mut loading = LoadingIndicator::with_message("Loading issues...");
+        loading.start();
         Self {
             state: AppState::Loading,
             should_quit: false,
             list_view,
             detail_view: DetailView::new(),
             selected_issue_key: None,
+            notifications: NotificationManager::new(),
+            error_dialog: ErrorDialog::new(),
+            loading,
         }
     }
 
@@ -97,6 +112,92 @@ impl App {
     pub fn set_detail_issue(&mut self, issue: Issue) {
         self.selected_issue_key = Some(issue.key.clone());
         self.detail_view.set_issue(issue);
+    }
+
+    // ========================================================================
+    // Notification and error handling methods
+    // ========================================================================
+
+    /// Get a reference to the notification manager.
+    pub fn notifications(&self) -> &NotificationManager {
+        &self.notifications
+    }
+
+    /// Get a mutable reference to the notification manager.
+    pub fn notifications_mut(&mut self) -> &mut NotificationManager {
+        &mut self.notifications
+    }
+
+    /// Add an info notification.
+    pub fn notify_info(&mut self, message: impl Into<String>) {
+        self.notifications.info(message);
+    }
+
+    /// Add a success notification.
+    pub fn notify_success(&mut self, message: impl Into<String>) {
+        self.notifications.success(message);
+    }
+
+    /// Add a warning notification.
+    pub fn notify_warning(&mut self, message: impl Into<String>) {
+        self.notifications.warning(message);
+    }
+
+    /// Add an error notification (for non-critical errors).
+    pub fn notify_error(&mut self, message: impl Into<String>) {
+        self.notifications.error(message);
+    }
+
+    /// Handle an application error.
+    ///
+    /// Critical errors are shown in a modal dialog.
+    /// Recoverable errors are shown as toast notifications.
+    pub fn handle_error(&mut self, error: &AppError) {
+        if error.is_critical() {
+            self.error_dialog.show(error);
+        } else {
+            self.notifications.push(Notification::error(error.user_message()));
+        }
+    }
+
+    /// Show an error dialog with a custom message.
+    pub fn show_error_dialog(&mut self, title: impl Into<String>, message: impl Into<String>) {
+        self.error_dialog.show_message(title, message);
+    }
+
+    /// Dismiss the error dialog.
+    pub fn dismiss_error_dialog(&mut self) {
+        self.error_dialog.dismiss();
+    }
+
+    /// Check if an error dialog is visible.
+    pub fn is_error_dialog_visible(&self) -> bool {
+        self.error_dialog.is_visible()
+    }
+
+    /// Get a reference to the loading indicator.
+    pub fn loading(&self) -> &LoadingIndicator {
+        &self.loading
+    }
+
+    /// Get a mutable reference to the loading indicator.
+    pub fn loading_mut(&mut self) -> &mut LoadingIndicator {
+        &mut self.loading
+    }
+
+    /// Start the loading indicator with a message.
+    pub fn start_loading(&mut self, message: impl Into<String>) {
+        self.loading.start_with_message(message);
+    }
+
+    /// Stop the loading indicator.
+    pub fn stop_loading(&mut self) {
+        self.loading.stop();
+    }
+
+    /// Check if the loading indicator is active.
+    pub fn is_loading(&self) -> bool {
+        self.loading.is_active()
     }
 
     /// Returns whether the application should quit.
@@ -135,6 +236,17 @@ impl App {
     /// Handle keyboard input events.
     fn handle_key_event(&mut self, key_event: crossterm::event::KeyEvent) {
         use crossterm::event::{KeyCode, KeyModifiers};
+
+        // Handle error dialog first (blocks all other input)
+        if self.error_dialog.is_visible() {
+            match key_event.code {
+                KeyCode::Esc | KeyCode::Enter => {
+                    self.error_dialog.dismiss();
+                }
+                _ => {}
+            }
+            return;
+        }
 
         // Global key bindings (always available)
         match (key_event.code, key_event.modifiers) {
@@ -235,9 +347,14 @@ impl App {
 
     /// Handle periodic tick events.
     fn handle_tick(&mut self) {
+        // Tick animations and timers
+        self.loading.tick();
+        self.notifications.tick();
+
         // Transition from Loading to IssueList after initial setup
         if self.state == AppState::Loading {
             self.state = AppState::IssueList;
+            self.loading.stop();
         }
     }
 
@@ -266,6 +383,12 @@ impl App {
 
         // Render footer/status bar
         self.render_footer(frame, chunks[2]);
+
+        // Render notifications (on top of everything except dialogs)
+        self.notifications.render(frame, area);
+
+        // Render error dialog (on top of everything)
+        self.error_dialog.render(frame, area);
     }
 
     /// Render the application header.
@@ -718,5 +841,136 @@ mod tests {
 
         // Test immutable accessor
         assert_eq!(app.list_view().issue_count(), 0);
+    }
+
+    // ========================================================================
+    // Notification and error handling tests
+    // ========================================================================
+
+    #[test]
+    fn test_notify_info() {
+        let mut app = App::new();
+        app.notify_info("Test info message");
+        assert_eq!(app.notifications().len(), 1);
+    }
+
+    #[test]
+    fn test_notify_success() {
+        let mut app = App::new();
+        app.notify_success("Operation completed");
+        assert_eq!(app.notifications().len(), 1);
+    }
+
+    #[test]
+    fn test_notify_warning() {
+        let mut app = App::new();
+        app.notify_warning("Warning message");
+        assert_eq!(app.notifications().len(), 1);
+    }
+
+    #[test]
+    fn test_notify_error() {
+        let mut app = App::new();
+        app.notify_error("Error message");
+        assert_eq!(app.notifications().len(), 1);
+    }
+
+    #[test]
+    fn test_error_dialog_show_hide() {
+        let mut app = App::new();
+        assert!(!app.is_error_dialog_visible());
+
+        app.show_error_dialog("Error", "Something went wrong");
+        assert!(app.is_error_dialog_visible());
+
+        app.dismiss_error_dialog();
+        assert!(!app.is_error_dialog_visible());
+    }
+
+    #[test]
+    fn test_error_dialog_blocks_input() {
+        let mut app = App::new();
+        app.update(Event::Tick); // Transition to IssueList
+        assert_eq!(app.state(), AppState::IssueList);
+
+        // Show error dialog
+        app.show_error_dialog("Error", "Test error");
+        assert!(app.is_error_dialog_visible());
+
+        // Try to quit with 'q' - should be blocked by error dialog
+        let key_event = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE);
+        app.update(Event::Key(key_event));
+        assert!(!app.should_quit()); // Should NOT quit
+        assert!(app.is_error_dialog_visible()); // Dialog still visible
+
+        // Dismiss with Esc
+        let key_event = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+        app.update(Event::Key(key_event));
+        assert!(!app.is_error_dialog_visible());
+    }
+
+    #[test]
+    fn test_error_dialog_dismiss_with_enter() {
+        let mut app = App::new();
+        app.show_error_dialog("Error", "Test");
+
+        let key_event = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        app.update(Event::Key(key_event));
+        assert!(!app.is_error_dialog_visible());
+    }
+
+    #[test]
+    fn test_loading_indicator() {
+        let mut app = App::new();
+
+        // App starts with loading active
+        assert!(app.is_loading());
+
+        // Stop loading
+        app.stop_loading();
+        assert!(!app.is_loading());
+
+        // Start loading with message
+        app.start_loading("Fetching data...");
+        assert!(app.is_loading());
+    }
+
+    #[test]
+    fn test_loading_stops_on_tick() {
+        let mut app = App::new();
+        assert!(app.is_loading());
+        assert_eq!(app.state(), AppState::Loading);
+
+        // Tick should transition state and stop loading
+        app.update(Event::Tick);
+        assert_eq!(app.state(), AppState::IssueList);
+        assert!(!app.is_loading());
+    }
+
+    #[test]
+    fn test_notifications_tick() {
+        let mut app = App::new();
+        app.notify_info("Test");
+        assert_eq!(app.notifications().len(), 1);
+
+        // Notifications with short duration will be cleared after tick
+        // (Our default is 3 seconds, so this test just verifies tick runs)
+        app.update(Event::Tick);
+        // Notification should still exist (hasn't expired yet)
+        assert_eq!(app.notifications().len(), 1);
+    }
+
+    #[test]
+    fn test_notifications_mut() {
+        let mut app = App::new();
+        app.notifications_mut().info("Direct access");
+        assert_eq!(app.notifications().len(), 1);
+    }
+
+    #[test]
+    fn test_loading_mut() {
+        let mut app = App::new();
+        app.loading_mut().set_message("Custom message");
+        assert_eq!(app.loading().message(), "Custom message");
     }
 }

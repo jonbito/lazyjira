@@ -350,6 +350,100 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
             }
         }
 
+        // Handle pending fetch assignees request
+        if let Some((_issue_key, project_key)) = app.take_pending_fetch_assignees() {
+            if let Some(ref c) = client {
+                debug!("Fetching assignable users for project: {}", project_key);
+                match c.get_assignable_users(&project_key).await {
+                    Ok(users) => {
+                        debug!("Loaded {} assignable users", users.len());
+                        app.set_assignable_users(users);
+                    }
+                    Err(e) => {
+                        error!("Failed to fetch assignable users: {}", e);
+                        app.handle_fetch_assignees_failure(&e.to_string());
+                    }
+                }
+            } else {
+                app.handle_fetch_assignees_failure("No JIRA connection");
+            }
+        }
+
+        // Handle pending assignee change
+        if let Some((issue_key, account_id)) = app.take_pending_assignee_change() {
+            if let Some(ref c) = client {
+                debug!("Changing assignee on issue {} to {:?}", issue_key, account_id);
+                match c.update_assignee(&issue_key, account_id.as_deref()).await {
+                    Ok(()) => {
+                        // Fetch the updated issue to get the new assignee
+                        match c.get_issue(&issue_key).await {
+                            Ok(updated_issue) => {
+                                info!("Assignee changed for issue {}", issue_key);
+                                app.handle_assignee_change_success(updated_issue);
+                            }
+                            Err(e) => {
+                                warn!("Assignee changed but failed to fetch updated issue: {}", e);
+                                app.notify_success(format!("Issue {} assignee changed", issue_key));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to change assignee: {}", e);
+                        app.handle_assignee_change_failure(&e.to_string());
+                    }
+                }
+            } else {
+                app.handle_assignee_change_failure("No JIRA connection");
+            }
+        }
+
+        // Handle pending fetch priorities request
+        if let Some(_issue_key) = app.take_pending_fetch_priorities() {
+            if let Some(ref c) = client {
+                debug!("Fetching priorities");
+                match c.get_priorities().await {
+                    Ok(priorities) => {
+                        debug!("Loaded {} priorities", priorities.len());
+                        app.set_priorities(priorities);
+                    }
+                    Err(e) => {
+                        error!("Failed to fetch priorities: {}", e);
+                        app.handle_fetch_priorities_failure(&e.to_string());
+                    }
+                }
+            } else {
+                app.handle_fetch_priorities_failure("No JIRA connection");
+            }
+        }
+
+        // Handle pending priority change
+        if let Some((issue_key, priority_id)) = app.take_pending_priority_change() {
+            if let Some(ref c) = client {
+                debug!("Changing priority on issue {} to {}", issue_key, priority_id);
+                match c.update_priority(&issue_key, &priority_id).await {
+                    Ok(()) => {
+                        // Fetch the updated issue to get the new priority
+                        match c.get_issue(&issue_key).await {
+                            Ok(updated_issue) => {
+                                info!("Priority changed for issue {}", issue_key);
+                                app.handle_priority_change_success(updated_issue);
+                            }
+                            Err(e) => {
+                                warn!("Priority changed but failed to fetch updated issue: {}", e);
+                                app.notify_success(format!("Issue {} priority changed", issue_key));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to change priority: {}", e);
+                        app.handle_priority_change_failure(&e.to_string());
+                    }
+                }
+            } else {
+                app.handle_priority_change_failure("No JIRA connection");
+            }
+        }
+
         // Check if we should quit
         if app.should_quit() {
             break;

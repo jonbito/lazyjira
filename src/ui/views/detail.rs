@@ -13,8 +13,8 @@ use ratatui::{
     Frame,
 };
 
-use crate::api::types::{AtlassianDoc, FieldUpdates, Issue, IssueUpdateRequest, Transition};
-use crate::ui::components::{TextEditor, TextInput, TransitionAction, TransitionPicker};
+use crate::api::types::{AtlassianDoc, FieldUpdates, Issue, IssueUpdateRequest, Priority, Transition, User};
+use crate::ui::components::{AssigneeAction, AssigneePicker, PriorityAction, PriorityPicker, TextEditor, TextInput, TransitionAction, TransitionPicker};
 use crate::ui::theme::{issue_type_prefix, priority_style, status_style};
 
 /// Action that can be triggered from the detail view.
@@ -38,6 +38,14 @@ pub enum DetailAction {
     ExecuteTransition(String, String, Option<FieldUpdates>),
     /// Show a message that transition requires fields (not yet supported).
     TransitionRequiresFields(String),
+    /// Request assignable users from the API (issue key, project key).
+    FetchAssignableUsers(String, String),
+    /// Change assignee (issue key, account_id or None for unassign).
+    ChangeAssignee(String, Option<String>),
+    /// Request priorities from the API (issue key).
+    FetchPriorities(String),
+    /// Change priority (issue key, priority_id).
+    ChangePriority(String, String),
 }
 
 /// Which field is currently being edited.
@@ -82,6 +90,10 @@ pub struct DetailView {
     is_saving: bool,
     /// Transition picker for status changes.
     transition_picker: TransitionPicker,
+    /// Assignee picker for changing assignee.
+    assignee_picker: AssigneePicker,
+    /// Priority picker for changing priority.
+    priority_picker: PriorityPicker,
 }
 
 impl DetailView {
@@ -96,6 +108,8 @@ impl DetailView {
             edit_state: None,
             is_saving: false,
             transition_picker: TransitionPicker::new(),
+            assignee_picker: AssigneePicker::new(),
+            priority_picker: PriorityPicker::new(),
         }
     }
 
@@ -107,6 +121,8 @@ impl DetailView {
         self.edit_state = None;
         self.is_saving = false;
         self.transition_picker.hide();
+        self.assignee_picker.hide();
+        self.priority_picker.hide();
     }
 
     /// Clear the current issue.
@@ -117,6 +133,8 @@ impl DetailView {
         self.edit_state = None;
         self.is_saving = false;
         self.transition_picker.hide();
+        self.assignee_picker.hide();
+        self.priority_picker.hide();
     }
 
     /// Get a reference to the current issue.
@@ -205,6 +223,86 @@ impl DetailView {
         self.transition_picker.hide();
     }
 
+    // ========================================================================
+    // Assignee picker methods
+    // ========================================================================
+
+    /// Check if the assignee picker is visible.
+    pub fn is_assignee_picker_visible(&self) -> bool {
+        self.assignee_picker.is_visible()
+    }
+
+    /// Check if assignable users are loading.
+    pub fn is_assignees_loading(&self) -> bool {
+        self.assignee_picker.is_loading()
+    }
+
+    /// Show the assignee picker in loading state.
+    ///
+    /// This should be called when the user presses 'a' to open the picker,
+    /// and then the API call to get assignable users should be made.
+    pub fn show_assignee_picker_loading(&mut self) {
+        if let Some(issue) = &self.issue {
+            let current_assignee = issue.assignee_name().to_string();
+            self.assignee_picker.show_loading(&current_assignee);
+        }
+    }
+
+    /// Set the available users in the assignee picker.
+    ///
+    /// Call this after receiving the users from the API.
+    pub fn set_assignable_users(&mut self, users: Vec<User>) {
+        if let Some(issue) = &self.issue {
+            let current_assignee = issue.assignee_name().to_string();
+            self.assignee_picker.show(users, &current_assignee);
+        }
+    }
+
+    /// Hide the assignee picker.
+    pub fn hide_assignee_picker(&mut self) {
+        self.assignee_picker.hide();
+    }
+
+    // ========================================================================
+    // Priority picker methods
+    // ========================================================================
+
+    /// Check if the priority picker is visible.
+    pub fn is_priority_picker_visible(&self) -> bool {
+        self.priority_picker.is_visible()
+    }
+
+    /// Check if priorities are loading.
+    pub fn is_priorities_loading(&self) -> bool {
+        self.priority_picker.is_loading()
+    }
+
+    /// Show the priority picker in loading state.
+    ///
+    /// This should be called when the user presses 'P' to open the picker,
+    /// and then the API call to get priorities should be made.
+    pub fn show_priority_picker_loading(&mut self) {
+        if let Some(issue) = &self.issue {
+            let current_priority = issue.priority_name().to_string();
+            self.priority_picker.show_loading(&current_priority);
+        }
+    }
+
+    /// Set the available priorities in the picker.
+    ///
+    /// Call this after receiving the priorities from the API.
+    pub fn set_priorities(&mut self, priorities: Vec<Priority>) {
+        if let Some(issue) = &self.issue {
+            let current_priority = issue.priority_name().to_string();
+            self.priority_picker.show(priorities, &current_priority);
+        }
+    }
+
+    /// Hide the priority picker.
+    pub fn hide_priority_picker(&mut self) {
+        self.priority_picker.hide();
+    }
+
     /// Enter edit mode for the current issue.
     pub fn enter_edit_mode(&mut self) {
         if let Some(issue) = &self.issue {
@@ -286,6 +384,16 @@ impl DetailView {
             return self.handle_transition_picker_input(key);
         }
 
+        // Handle assignee picker (blocks other input when visible)
+        if self.assignee_picker.is_visible() {
+            return self.handle_assignee_picker_input(key);
+        }
+
+        // Handle priority picker (blocks other input when visible)
+        if self.priority_picker.is_visible() {
+            return self.handle_priority_picker_input(key);
+        }
+
         // If in edit mode, handle edit-specific input
         if self.edit_state.is_some() {
             return self.handle_edit_input(key);
@@ -342,6 +450,27 @@ impl DetailView {
                     None
                 }
             }
+            // Change assignee (open assignee picker)
+            (KeyCode::Char('a'), KeyModifiers::NONE) => {
+                if let Some(issue) = &self.issue {
+                    let issue_key = issue.key.clone();
+                    let project_key = issue.project_key().unwrap_or("").to_string();
+                    self.show_assignee_picker_loading();
+                    Some(DetailAction::FetchAssignableUsers(issue_key, project_key))
+                } else {
+                    None
+                }
+            }
+            // Change priority (open priority picker)
+            (KeyCode::Char('P'), KeyModifiers::SHIFT) => {
+                if let Some(issue) = &self.issue {
+                    let issue_key = issue.key.clone();
+                    self.show_priority_picker_loading();
+                    Some(DetailAction::FetchPriorities(issue_key))
+                } else {
+                    None
+                }
+            }
             _ => None,
         }
     }
@@ -362,6 +491,52 @@ impl DetailView {
                     Some(DetailAction::TransitionRequiresFields(transition_id))
                 }
                 TransitionAction::Cancel => None,
+            }
+        } else {
+            None
+        }
+    }
+
+    /// Handle keyboard input for the assignee picker.
+    fn handle_assignee_picker_input(&mut self, key: KeyEvent) -> Option<DetailAction> {
+        if let Some(action) = self.assignee_picker.handle_input(key) {
+            match action {
+                AssigneeAction::Select(account_id, _display_name) => {
+                    if let Some(issue) = &self.issue {
+                        let issue_key = issue.key.clone();
+                        Some(DetailAction::ChangeAssignee(issue_key, Some(account_id)))
+                    } else {
+                        None
+                    }
+                }
+                AssigneeAction::Unassign => {
+                    if let Some(issue) = &self.issue {
+                        let issue_key = issue.key.clone();
+                        Some(DetailAction::ChangeAssignee(issue_key, None))
+                    } else {
+                        None
+                    }
+                }
+                AssigneeAction::Cancel => None,
+            }
+        } else {
+            None
+        }
+    }
+
+    /// Handle keyboard input for the priority picker.
+    fn handle_priority_picker_input(&mut self, key: KeyEvent) -> Option<DetailAction> {
+        if let Some(action) = self.priority_picker.handle_input(key) {
+            match action {
+                PriorityAction::Select(priority_id, _name) => {
+                    if let Some(issue) = &self.issue {
+                        let issue_key = issue.key.clone();
+                        Some(DetailAction::ChangePriority(issue_key, priority_id))
+                    } else {
+                        None
+                    }
+                }
+                PriorityAction::Cancel => None,
             }
         } else {
             None
@@ -513,8 +688,10 @@ impl DetailView {
         // Render description (scrollable)
         self.render_description(frame, chunks[3], &description);
 
-        // Render transition picker (overlay)
+        // Render pickers (overlays)
         self.transition_picker.render(frame, area);
+        self.assignee_picker.render(frame, area);
+        self.priority_picker.render(frame, area);
     }
 
     /// Render the edit mode interface.
@@ -861,7 +1038,7 @@ impl DetailView {
             Span::styled(scroll_info, Style::default().fg(Color::DarkGray)),
             Span::raw(" | "),
             Span::styled(
-                "j/k:scroll  q:back  e:edit  s:status  c:comment",
+                "j/k:scroll  q:back  e:edit  s:status  a:assignee  P:priority",
                 Style::default().fg(Color::DarkGray),
             ),
         ]);

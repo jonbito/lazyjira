@@ -417,8 +417,34 @@ impl IssueDetailView {
 
 ## Definition of Done
 
-- [ ] All acceptance criteria met
-- [ ] User search is responsive
-- [ ] Priority colors are accessible
-- [ ] Keyboard navigation smooth
-- [ ] Changes update local state
+- [x] All acceptance criteria met
+- [x] User search is responsive
+- [x] Priority colors are accessible
+- [x] Keyboard navigation smooth
+- [x] Changes update local state
+
+---
+
+## Implementation Notes (Completed 2025-11-30)
+
+### Files Created
+- `src/ui/components/assignee_picker.rs`: AssigneePicker component with inline search/filter
+- `src/ui/components/priority_picker.rs`: PriorityPicker component with color-coded priorities
+
+### Files Modified
+- `src/ui/components/mod.rs`: Added exports for new components
+- `src/ui/views/detail.rs`: Integrated pickers, added key handlers ('a' and 'P'), new DetailAction variants
+- `src/app.rs`: Added pending request fields, handler methods for assignee/priority operations
+- `src/main.rs`: Added async handlers for API calls
+
+### Key Implementation Decisions
+1. **Inline filtering instead of API search**: AssigneePicker loads all assignable users upfront and filters locally for better UX
+2. **Pre-selection**: PriorityPicker pre-selects the current priority when opened
+3. **Unassign option**: Added "Unassigned" as the first option in AssigneePicker
+4. **Color coding**: Priority colors follow JIRA conventions (red=highest, yellow=medium, green=low)
+5. **Existing API methods**: Leveraged existing `update_assignee` and `update_priority` client methods
+
+### Test Coverage
+- 530 tests passing
+- New tests for AssigneePicker: navigation, selection, filtering, cancel, loading states
+- New tests for PriorityPicker: navigation, selection, cancel, pre-selection, color functions

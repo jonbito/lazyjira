@@ -14,7 +14,7 @@ use ratatui::{
 };
 
 use crate::api::auth;
-use crate::api::types::{FieldUpdates, FilterOptions, FilterState, Issue, IssueUpdateRequest, Transition};
+use crate::api::types::{FieldUpdates, FilterOptions, FilterState, Issue, IssueUpdateRequest, Priority, Transition, User};
 use crate::config::{Config, ConfigError, Profile};
 use crate::error::AppError;
 use crate::events::Event;
@@ -99,6 +99,14 @@ pub struct App {
     pending_transition: Option<(String, String, Option<FieldUpdates>)>,
     /// Pending fetch transitions request (issue key).
     pending_fetch_transitions: Option<String>,
+    /// Pending fetch assignable users request (issue key, project key).
+    pending_fetch_assignees: Option<(String, String)>,
+    /// Pending assignee change request (issue key, account_id or None for unassign).
+    pending_assignee_change: Option<(String, Option<String>)>,
+    /// Pending fetch priorities request (issue key).
+    pending_fetch_priorities: Option<String>,
+    /// Pending priority change request (issue key, priority_id).
+    pending_priority_change: Option<(String, String)>,
 }
 
 impl App {
@@ -150,6 +158,10 @@ impl App {
             discard_confirm_dialog: ConfirmDialog::new(),
             pending_transition: None,
             pending_fetch_transitions: None,
+            pending_fetch_assignees: None,
+            pending_assignee_change: None,
+            pending_fetch_priorities: None,
+            pending_priority_change: None,
         }
     }
 
@@ -196,6 +208,10 @@ impl App {
             discard_confirm_dialog: ConfirmDialog::new(),
             pending_transition: None,
             pending_fetch_transitions: None,
+            pending_fetch_assignees: None,
+            pending_assignee_change: None,
+            pending_fetch_priorities: None,
+            pending_priority_change: None,
         }
     }
 
@@ -889,6 +905,140 @@ impl App {
         self.notify_error(format!("Failed to load transitions: {}", error));
     }
 
+    // ========================================================================
+    // Assignee Picker Methods
+    // ========================================================================
+
+    /// Take the pending fetch assignees request, if any.
+    ///
+    /// Returns the (issue_key, project_key).
+    pub fn take_pending_fetch_assignees(&mut self) -> Option<(String, String)> {
+        self.pending_fetch_assignees.take()
+    }
+
+    /// Check if there is a pending fetch assignees request.
+    pub fn has_pending_fetch_assignees(&self) -> bool {
+        self.pending_fetch_assignees.is_some()
+    }
+
+    /// Set the available assignable users in the detail view.
+    pub fn set_assignable_users(&mut self, users: Vec<User>) {
+        self.detail_view.set_assignable_users(users);
+    }
+
+    /// Take the pending assignee change request, if any.
+    ///
+    /// Returns the (issue_key, account_id or None for unassign).
+    pub fn take_pending_assignee_change(&mut self) -> Option<(String, Option<String>)> {
+        self.pending_assignee_change.take()
+    }
+
+    /// Check if there is a pending assignee change request.
+    pub fn has_pending_assignee_change(&self) -> bool {
+        self.pending_assignee_change.is_some()
+    }
+
+    /// Handle successful assignee change.
+    ///
+    /// Updates the local issue data with the refreshed issue.
+    pub fn handle_assignee_change_success(&mut self, updated_issue: Issue) {
+        info!(key = %updated_issue.key, "Assignee changed successfully");
+
+        // Update the detail view with the updated issue
+        self.detail_view.set_issue(updated_issue.clone());
+
+        // Update the issue in the list view if present
+        self.list_view.update_issue(&updated_issue);
+
+        // Show success notification
+        let assignee_name = updated_issue.assignee_name();
+        self.notify_success(format!(
+            "Issue {} assignee changed to {}",
+            updated_issue.key, assignee_name
+        ));
+    }
+
+    /// Handle failed assignee change.
+    pub fn handle_assignee_change_failure(&mut self, error: &str) {
+        warn!(error = %error, "Assignee change failed");
+        self.detail_view.hide_assignee_picker();
+        self.notify_error(format!("Failed to change assignee: {}", error));
+    }
+
+    /// Handle failure to fetch assignable users.
+    pub fn handle_fetch_assignees_failure(&mut self, error: &str) {
+        warn!(error = %error, "Failed to fetch assignable users");
+        self.detail_view.hide_assignee_picker();
+        self.notify_error(format!("Failed to load assignees: {}", error));
+    }
+
+    // ========================================================================
+    // Priority Picker Methods
+    // ========================================================================
+
+    /// Take the pending fetch priorities request, if any.
+    ///
+    /// Returns the issue_key.
+    pub fn take_pending_fetch_priorities(&mut self) -> Option<String> {
+        self.pending_fetch_priorities.take()
+    }
+
+    /// Check if there is a pending fetch priorities request.
+    pub fn has_pending_fetch_priorities(&self) -> bool {
+        self.pending_fetch_priorities.is_some()
+    }
+
+    /// Set the available priorities in the detail view.
+    pub fn set_priorities(&mut self, priorities: Vec<Priority>) {
+        self.detail_view.set_priorities(priorities);
+    }
+
+    /// Take the pending priority change request, if any.
+    ///
+    /// Returns the (issue_key, priority_id).
+    pub fn take_pending_priority_change(&mut self) -> Option<(String, String)> {
+        self.pending_priority_change.take()
+    }
+
+    /// Check if there is a pending priority change request.
+    pub fn has_pending_priority_change(&self) -> bool {
+        self.pending_priority_change.is_some()
+    }
+
+    /// Handle successful priority change.
+    ///
+    /// Updates the local issue data with the refreshed issue.
+    pub fn handle_priority_change_success(&mut self, updated_issue: Issue) {
+        info!(key = %updated_issue.key, "Priority changed successfully");
+
+        // Update the detail view with the updated issue
+        self.detail_view.set_issue(updated_issue.clone());
+
+        // Update the issue in the list view if present
+        self.list_view.update_issue(&updated_issue);
+
+        // Show success notification
+        let priority_name = updated_issue.priority_name();
+        self.notify_success(format!(
+            "Issue {} priority changed to {}",
+            updated_issue.key, priority_name
+        ));
+    }
+
+    /// Handle failed priority change.
+    pub fn handle_priority_change_failure(&mut self, error: &str) {
+        warn!(error = %error, "Priority change failed");
+        self.detail_view.hide_priority_picker();
+        self.notify_error(format!("Failed to change priority: {}", error));
+    }
+
+    /// Handle failure to fetch priorities.
+    pub fn handle_fetch_priorities_failure(&mut self, error: &str) {
+        warn!(error = %error, "Failed to fetch priorities");
+        self.detail_view.hide_priority_picker();
+        self.notify_error(format!("Failed to load priorities: {}", error));
+    }
+
     /// Returns whether the application should quit.
     pub fn should_quit(&self) -> bool {
         self.should_quit
@@ -1182,6 +1332,26 @@ impl App {
                             self.notify_warning(
                                 "This transition requires additional fields which are not yet supported"
                             );
+                        }
+                        DetailAction::FetchAssignableUsers(issue_key, project_key) => {
+                            debug!(key = %issue_key, project = %project_key, "Fetching assignable users");
+                            // Store request for the runner to pick up
+                            self.pending_fetch_assignees = Some((issue_key, project_key));
+                        }
+                        DetailAction::ChangeAssignee(issue_key, account_id) => {
+                            debug!(key = %issue_key, account_id = ?account_id, "Changing assignee");
+                            // Store request for the runner to pick up
+                            self.pending_assignee_change = Some((issue_key, account_id));
+                        }
+                        DetailAction::FetchPriorities(issue_key) => {
+                            debug!(key = %issue_key, "Fetching priorities");
+                            // Store request for the runner to pick up
+                            self.pending_fetch_priorities = Some(issue_key);
+                        }
+                        DetailAction::ChangePriority(issue_key, priority_id) => {
+                            debug!(key = %issue_key, priority_id = %priority_id, "Changing priority");
+                            // Store request for the runner to pick up
+                            self.pending_priority_change = Some((issue_key, priority_id));
                         }
                     }
                 }

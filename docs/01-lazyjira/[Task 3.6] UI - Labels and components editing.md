@@ -412,3 +412,50 @@ impl IssueDetailView {
 - [ ] Visual feedback is clear
 - [ ] Changes persist correctly
 - [ ] Autocomplete is responsive
+
+---
+
+## Implementation Completion
+
+**Completed:** 2025-11-30
+**Commit:** `feat(ui): Add labels and components editing for issue detail view`
+**Branch:** `add-labels-components-editing`
+
+### Files Modified/Created
+
+1. **`src/ui/components/tag_editor.rs`** (new) - Reusable tag editor component with:
+   - Chip-based display for current tags
+   - Searchable list of available options
+   - Tab navigation between current/available sections
+   - j/k navigation, Enter/Space to add/remove, Esc to close
+   - Configurable colors (blue for labels, magenta for components)
+   - Comprehensive unit tests (17 tests)
+
+2. **`src/ui/components/mod.rs`** - Export TagEditor, TagAction, TagEditorConfig
+
+3. **`src/api/client.rs`** - Added `get_project_components` API method
+
+4. **`src/ui/views/detail.rs`** - Integrated tag editors:
+   - Added label_editor and component_editor fields
+   - Added 'l' key binding for labels, 'C' (Shift) for components
+   - Added handler methods for label/component input
+   - Show loading state while fetching available options
+
+5. **`src/app.rs`** - Added application state management:
+   - Pending request fields for labels/components operations
+   - DetailAction variants for FetchLabels, AddLabel, RemoveLabel, FetchComponents, AddComponent, RemoveComponent
+   - Handler methods for success/failure
+
+### Key Decisions
+
+1. **Simplified TagEditor design**: Instead of the generic `Tag` trait approach in the spec, used a simpler string-based approach that works well for both labels (simple strings) and components (names only needed)
+
+2. **Keyboard bindings**: Used 'l' for labels and 'C' (Shift+c) for components to avoid conflict with 'c' (comments)
+
+3. **Immediate feedback**: When adding/removing tags, the action is immediately dispatched but the editor stays open for more edits
+
+### Notes
+
+- The runner (main.rs) needs to be updated to handle the new pending requests and make the actual API calls
+- The API methods for updating labels/components already exist in client.rs (add_labels, remove_labels, add_components, remove_components)
+- The implementation follows the same patterns as the existing priority picker and assignee picker

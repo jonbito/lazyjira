@@ -482,6 +482,158 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
             }
         }
 
+        // Handle fetch labels request
+        if let Some(_issue_key) = app.take_pending_fetch_labels() {
+            if let Some(ref c) = client {
+                debug!("Fetching labels");
+                match c.get_labels().await {
+                    Ok(labels) => {
+                        debug!("Loaded {} labels", labels.len());
+                        app.set_labels(labels);
+                    }
+                    Err(e) => {
+                        error!("Failed to fetch labels: {}", e);
+                        app.handle_fetch_labels_failure(&e.to_string());
+                    }
+                }
+            } else {
+                app.handle_fetch_labels_failure("No JIRA connection");
+            }
+        }
+
+        // Handle add label request
+        if let Some((issue_key, label)) = app.take_pending_add_label() {
+            if let Some(ref c) = client {
+                debug!("Adding label {} to issue {}", label, issue_key);
+                match c.add_labels(&issue_key, vec![label.clone()]).await {
+                    Ok(()) => {
+                        // Fetch the updated issue
+                        match c.get_issue(&issue_key).await {
+                            Ok(updated_issue) => {
+                                info!("Label added to issue {}", issue_key);
+                                app.handle_label_change_success(updated_issue);
+                            }
+                            Err(e) => {
+                                warn!("Label added but failed to fetch updated issue: {}", e);
+                                app.notify_success(format!("Label '{}' added", label));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to add label: {}", e);
+                        app.handle_label_change_failure(&e.to_string());
+                    }
+                }
+            } else {
+                app.handle_label_change_failure("No JIRA connection");
+            }
+        }
+
+        // Handle remove label request
+        if let Some((issue_key, label)) = app.take_pending_remove_label() {
+            if let Some(ref c) = client {
+                debug!("Removing label {} from issue {}", label, issue_key);
+                match c.remove_labels(&issue_key, vec![label.clone()]).await {
+                    Ok(()) => {
+                        // Fetch the updated issue
+                        match c.get_issue(&issue_key).await {
+                            Ok(updated_issue) => {
+                                info!("Label removed from issue {}", issue_key);
+                                app.handle_label_change_success(updated_issue);
+                            }
+                            Err(e) => {
+                                warn!("Label removed but failed to fetch updated issue: {}", e);
+                                app.notify_success(format!("Label '{}' removed", label));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to remove label: {}", e);
+                        app.handle_label_change_failure(&e.to_string());
+                    }
+                }
+            } else {
+                app.handle_label_change_failure("No JIRA connection");
+            }
+        }
+
+        // Handle fetch components request
+        if let Some((_issue_key, project_key)) = app.take_pending_fetch_components() {
+            if let Some(ref c) = client {
+                debug!("Fetching components for project {}", project_key);
+                match c.get_project_components(&project_key).await {
+                    Ok(components) => {
+                        debug!("Loaded {} components", components.len());
+                        let component_names: Vec<String> =
+                            components.into_iter().map(|c| c.name).collect();
+                        app.set_components(component_names);
+                    }
+                    Err(e) => {
+                        error!("Failed to fetch components: {}", e);
+                        app.handle_fetch_components_failure(&e.to_string());
+                    }
+                }
+            } else {
+                app.handle_fetch_components_failure("No JIRA connection");
+            }
+        }
+
+        // Handle add component request
+        if let Some((issue_key, component)) = app.take_pending_add_component() {
+            if let Some(ref c) = client {
+                debug!("Adding component {} to issue {}", component, issue_key);
+                match c.add_components(&issue_key, vec![component.clone()]).await {
+                    Ok(()) => {
+                        // Fetch the updated issue
+                        match c.get_issue(&issue_key).await {
+                            Ok(updated_issue) => {
+                                info!("Component added to issue {}", issue_key);
+                                app.handle_component_change_success(updated_issue);
+                            }
+                            Err(e) => {
+                                warn!("Component added but failed to fetch updated issue: {}", e);
+                                app.notify_success(format!("Component '{}' added", component));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to add component: {}", e);
+                        app.handle_component_change_failure(&e.to_string());
+                    }
+                }
+            } else {
+                app.handle_component_change_failure("No JIRA connection");
+            }
+        }
+
+        // Handle remove component request
+        if let Some((issue_key, component)) = app.take_pending_remove_component() {
+            if let Some(ref c) = client {
+                debug!("Removing component {} from issue {}", component, issue_key);
+                match c.remove_components(&issue_key, vec![component.clone()]).await {
+                    Ok(()) => {
+                        // Fetch the updated issue
+                        match c.get_issue(&issue_key).await {
+                            Ok(updated_issue) => {
+                                info!("Component removed from issue {}", issue_key);
+                                app.handle_component_change_success(updated_issue);
+                            }
+                            Err(e) => {
+                                warn!("Component removed but failed to fetch updated issue: {}", e);
+                                app.notify_success(format!("Component '{}' removed", component));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to remove component: {}", e);
+                        app.handle_component_change_failure(&e.to_string());
+                    }
+                }
+            } else {
+                app.handle_component_change_failure("No JIRA connection");
+            }
+        }
+
         // Check if we should quit
         if app.should_quit() {
             break;

@@ -14,7 +14,7 @@ use ratatui::{
 };
 
 use crate::api::types::{AtlassianDoc, Comment, FieldUpdates, Issue, IssueUpdateRequest, Priority, Transition, User};
-use crate::ui::components::{AssigneeAction, AssigneePicker, CommentAction, CommentsPanel, PriorityAction, PriorityPicker, TextEditor, TextInput, TransitionAction, TransitionPicker};
+use crate::ui::components::{AssigneeAction, AssigneePicker, CommentAction, CommentsPanel, PriorityAction, PriorityPicker, TagAction, TagEditor, TextEditor, TextInput, TransitionAction, TransitionPicker};
 use crate::ui::theme::{issue_type_prefix, priority_style, status_style};
 
 /// Action that can be triggered from the detail view.
@@ -50,6 +50,18 @@ pub enum DetailAction {
     FetchPriorities(String),
     /// Change priority (issue key, priority_id).
     ChangePriority(String, String),
+    /// Request labels from the API (issue key).
+    FetchLabels(String),
+    /// Add a label to the issue (issue key, label).
+    AddLabel(String, String),
+    /// Remove a label from the issue (issue key, label).
+    RemoveLabel(String, String),
+    /// Request components from the API (issue key, project key).
+    FetchComponents(String, String),
+    /// Add a component to the issue (issue key, component name).
+    AddComponent(String, String),
+    /// Remove a component from the issue (issue key, component name).
+    RemoveComponent(String, String),
 }
 
 /// Which field is currently being edited.
@@ -100,6 +112,10 @@ pub struct DetailView {
     priority_picker: PriorityPicker,
     /// Comments panel for viewing and adding comments.
     comments_panel: CommentsPanel,
+    /// Label editor for adding/removing labels.
+    label_editor: TagEditor,
+    /// Component editor for adding/removing components.
+    component_editor: TagEditor,
 }
 
 impl DetailView {
@@ -117,6 +133,8 @@ impl DetailView {
             assignee_picker: AssigneePicker::new(),
             priority_picker: PriorityPicker::new(),
             comments_panel: CommentsPanel::new(),
+            label_editor: TagEditor::for_labels(),
+            component_editor: TagEditor::for_components(),
         }
     }
 
@@ -131,6 +149,8 @@ impl DetailView {
         self.assignee_picker.hide();
         self.priority_picker.hide();
         self.comments_panel.hide();
+        self.label_editor.hide();
+        self.component_editor.hide();
     }
 
     /// Clear the current issue.
@@ -144,6 +164,8 @@ impl DetailView {
         self.assignee_picker.hide();
         self.priority_picker.hide();
         self.comments_panel.hide();
+        self.label_editor.hide();
+        self.component_editor.hide();
     }
 
     /// Get a reference to the current issue.
@@ -313,6 +335,96 @@ impl DetailView {
     }
 
     // ========================================================================
+    // Label editor methods
+    // ========================================================================
+
+    /// Check if the label editor is visible.
+    pub fn is_label_editor_visible(&self) -> bool {
+        self.label_editor.is_visible()
+    }
+
+    /// Check if labels are loading.
+    pub fn is_labels_loading(&self) -> bool {
+        self.label_editor.is_loading()
+    }
+
+    /// Show the label editor in loading state.
+    ///
+    /// This should be called when the user presses 'l' to open the editor,
+    /// and then the API call to get labels should be made.
+    pub fn show_label_editor_loading(&mut self) {
+        if let Some(issue) = &self.issue {
+            let current_labels = issue.fields.labels.clone();
+            self.label_editor.show_loading(current_labels);
+        }
+    }
+
+    /// Set the available labels in the editor.
+    ///
+    /// Call this after receiving the labels from the API.
+    pub fn set_labels(&mut self, labels: Vec<String>) {
+        if let Some(issue) = &self.issue {
+            let current_labels = issue.fields.labels.clone();
+            self.label_editor.show(current_labels, labels);
+        }
+    }
+
+    /// Hide the label editor.
+    pub fn hide_label_editor(&mut self) {
+        self.label_editor.hide();
+    }
+
+    // ========================================================================
+    // Component editor methods
+    // ========================================================================
+
+    /// Check if the component editor is visible.
+    pub fn is_component_editor_visible(&self) -> bool {
+        self.component_editor.is_visible()
+    }
+
+    /// Check if components are loading.
+    pub fn is_components_loading(&self) -> bool {
+        self.component_editor.is_loading()
+    }
+
+    /// Show the component editor in loading state.
+    ///
+    /// This should be called when the user presses 'C' to open the editor,
+    /// and then the API call to get components should be made.
+    pub fn show_component_editor_loading(&mut self) {
+        if let Some(issue) = &self.issue {
+            let current_components: Vec<String> = issue
+                .fields
+                .components
+                .iter()
+                .map(|c| c.name.clone())
+                .collect();
+            self.component_editor.show_loading(current_components);
+        }
+    }
+
+    /// Set the available components in the editor.
+    ///
+    /// Call this after receiving the components from the API.
+    pub fn set_components(&mut self, components: Vec<String>) {
+        if let Some(issue) = &self.issue {
+            let current_components: Vec<String> = issue
+                .fields
+                .components
+                .iter()
+                .map(|c| c.name.clone())
+                .collect();
+            self.component_editor.show(current_components, components);
+        }
+    }
+
+    /// Hide the component editor.
+    pub fn hide_component_editor(&mut self) {
+        self.component_editor.hide();
+    }
+
+    // ========================================================================
     // Comments panel methods
     // ========================================================================
 
@@ -459,6 +571,16 @@ impl DetailView {
             return self.handle_priority_picker_input(key);
         }
 
+        // Handle label editor (blocks other input when visible)
+        if self.label_editor.is_visible() {
+            return self.handle_label_editor_input(key);
+        }
+
+        // Handle component editor (blocks other input when visible)
+        if self.component_editor.is_visible() {
+            return self.handle_component_editor_input(key);
+        }
+
         // If in edit mode, handle edit-specific input
         if self.edit_state.is_some() {
             return self.handle_edit_input(key);
@@ -544,6 +666,27 @@ impl DetailView {
                     None
                 }
             }
+            // Edit labels (open label editor)
+            (KeyCode::Char('l'), KeyModifiers::NONE) => {
+                if let Some(issue) = &self.issue {
+                    let issue_key = issue.key.clone();
+                    self.show_label_editor_loading();
+                    Some(DetailAction::FetchLabels(issue_key))
+                } else {
+                    None
+                }
+            }
+            // Edit components (open component editor)
+            (KeyCode::Char('C'), KeyModifiers::SHIFT) => {
+                if let Some(issue) = &self.issue {
+                    let issue_key = issue.key.clone();
+                    let project_key = issue.project_key().unwrap_or("").to_string();
+                    self.show_component_editor_loading();
+                    Some(DetailAction::FetchComponents(issue_key, project_key))
+                } else {
+                    None
+                }
+            }
             _ => None,
         }
     }
@@ -610,6 +753,60 @@ impl DetailView {
                     }
                 }
                 PriorityAction::Cancel => None,
+            }
+        } else {
+            None
+        }
+    }
+
+    /// Handle keyboard input for the label editor.
+    fn handle_label_editor_input(&mut self, key: KeyEvent) -> Option<DetailAction> {
+        if let Some(action) = self.label_editor.handle_input(key) {
+            match action {
+                TagAction::Add(label) => {
+                    if let Some(issue) = &self.issue {
+                        let issue_key = issue.key.clone();
+                        Some(DetailAction::AddLabel(issue_key, label))
+                    } else {
+                        None
+                    }
+                }
+                TagAction::Remove(label) => {
+                    if let Some(issue) = &self.issue {
+                        let issue_key = issue.key.clone();
+                        Some(DetailAction::RemoveLabel(issue_key, label))
+                    } else {
+                        None
+                    }
+                }
+                TagAction::Cancel => None,
+            }
+        } else {
+            None
+        }
+    }
+
+    /// Handle keyboard input for the component editor.
+    fn handle_component_editor_input(&mut self, key: KeyEvent) -> Option<DetailAction> {
+        if let Some(action) = self.component_editor.handle_input(key) {
+            match action {
+                TagAction::Add(component) => {
+                    if let Some(issue) = &self.issue {
+                        let issue_key = issue.key.clone();
+                        Some(DetailAction::AddComponent(issue_key, component))
+                    } else {
+                        None
+                    }
+                }
+                TagAction::Remove(component) => {
+                    if let Some(issue) = &self.issue {
+                        let issue_key = issue.key.clone();
+                        Some(DetailAction::RemoveComponent(issue_key, component))
+                    } else {
+                        None
+                    }
+                }
+                TagAction::Cancel => None,
             }
         } else {
             None
@@ -788,6 +985,8 @@ impl DetailView {
         self.transition_picker.render(frame, area);
         self.assignee_picker.render(frame, area);
         self.priority_picker.render(frame, area);
+        self.label_editor.render(frame, area);
+        self.component_editor.render(frame, area);
         self.comments_panel.render(frame, area);
     }
 
@@ -1135,7 +1334,7 @@ impl DetailView {
             Span::styled(scroll_info, Style::default().fg(Color::DarkGray)),
             Span::raw(" | "),
             Span::styled(
-                "j/k:scroll  q:back  e:edit  c:comments  s:status  a:assignee  P:priority",
+                "j/k:scroll  q:back  e:edit  c:comment  s:status  a:assignee  P:priority  l:labels  C:components",
                 Style::default().fg(Color::DarkGray),
             ),
         ]);

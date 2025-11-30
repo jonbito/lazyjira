@@ -624,6 +624,27 @@ impl JiraClient {
         Ok(response.values)
     }
 
+    /// Get all components for a project.
+    ///
+    /// # Arguments
+    ///
+    /// * `project_key` - The project key (e.g., "PROJ")
+    #[instrument(skip(self), fields(project = %project_key))]
+    pub async fn get_project_components(
+        &self,
+        project_key: &str,
+    ) -> Result<Vec<super::types::Component>> {
+        debug!("Fetching components for project");
+        let url = format!(
+            "{}/rest/api/3/project/{}/components",
+            self.base_url,
+            urlencoding::encode(project_key)
+        );
+        let components: Vec<super::types::Component> = self.get(&url).await?;
+        debug!("Found {} components", components.len());
+        Ok(components)
+    }
+
     /// Get all boards the user has access to.
     #[instrument(skip(self))]
     pub async fn get_boards(&self) -> Result<Vec<super::types::Board>> {

@@ -12,6 +12,7 @@ mod priority_picker;
 mod profile_picker;
 mod search_bar;
 mod table;
+mod tag_editor;
 mod text_editor;
 mod transition_picker;
 
@@ -27,5 +28,6 @@ pub use priority_picker::{PriorityAction, PriorityPicker};
 pub use profile_picker::{ProfilePicker, ProfilePickerAction};
 pub use search_bar::{highlight_text, render_search_bar, QuickSearch};
 pub use table::Table;
+pub use tag_editor::{TagAction, TagEditor, TagEditorConfig};
 pub use text_editor::TextEditor;
 pub use transition_picker::{TransitionAction, TransitionPicker};

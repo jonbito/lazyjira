@@ -111,6 +111,18 @@ pub struct App {
     pending_fetch_comments: Option<String>,
     /// Pending submit comment request (issue key, comment body).
     pending_submit_comment: Option<(String, String)>,
+    /// Pending fetch labels request (issue key).
+    pending_fetch_labels: Option<String>,
+    /// Pending add label request (issue key, label).
+    pending_add_label: Option<(String, String)>,
+    /// Pending remove label request (issue key, label).
+    pending_remove_label: Option<(String, String)>,
+    /// Pending fetch components request (issue key, project key).
+    pending_fetch_components: Option<(String, String)>,
+    /// Pending add component request (issue key, component name).
+    pending_add_component: Option<(String, String)>,
+    /// Pending remove component request (issue key, component name).
+    pending_remove_component: Option<(String, String)>,
 }
 
 impl App {
@@ -168,6 +180,12 @@ impl App {
             pending_priority_change: None,
             pending_fetch_comments: None,
             pending_submit_comment: None,
+            pending_fetch_labels: None,
+            pending_add_label: None,
+            pending_remove_label: None,
+            pending_fetch_components: None,
+            pending_add_component: None,
+            pending_remove_component: None,
         }
     }
 
@@ -220,6 +238,12 @@ impl App {
             pending_priority_change: None,
             pending_fetch_comments: None,
             pending_submit_comment: None,
+            pending_fetch_labels: None,
+            pending_add_label: None,
+            pending_remove_label: None,
+            pending_fetch_components: None,
+            pending_add_component: None,
+            pending_remove_component: None,
         }
     }
 
@@ -1102,6 +1126,136 @@ impl App {
         self.notify_error(format!("Failed to add comment: {}", error));
     }
 
+    // ========================================================================
+    // Labels methods
+    // ========================================================================
+
+    /// Take the pending fetch labels request.
+    pub fn take_pending_fetch_labels(&mut self) -> Option<String> {
+        self.pending_fetch_labels.take()
+    }
+
+    /// Check if there is a pending fetch labels request.
+    pub fn has_pending_fetch_labels(&self) -> bool {
+        self.pending_fetch_labels.is_some()
+    }
+
+    /// Set the available labels in the detail view.
+    pub fn set_labels(&mut self, labels: Vec<String>) {
+        self.detail_view.set_labels(labels);
+    }
+
+    /// Handle failure to fetch labels.
+    pub fn handle_fetch_labels_failure(&mut self, error: &str) {
+        warn!(error = %error, "Failed to fetch labels");
+        self.detail_view.hide_label_editor();
+        self.notify_error(format!("Failed to load labels: {}", error));
+    }
+
+    /// Take the pending add label request.
+    pub fn take_pending_add_label(&mut self) -> Option<(String, String)> {
+        self.pending_add_label.take()
+    }
+
+    /// Check if there is a pending add label request.
+    pub fn has_pending_add_label(&self) -> bool {
+        self.pending_add_label.is_some()
+    }
+
+    /// Take the pending remove label request.
+    pub fn take_pending_remove_label(&mut self) -> Option<(String, String)> {
+        self.pending_remove_label.take()
+    }
+
+    /// Check if there is a pending remove label request.
+    pub fn has_pending_remove_label(&self) -> bool {
+        self.pending_remove_label.is_some()
+    }
+
+    /// Handle successful label change.
+    pub fn handle_label_change_success(&mut self, updated_issue: Issue) {
+        info!(key = %updated_issue.key, "Label changed successfully");
+
+        // Update the detail view with the updated issue
+        self.detail_view.set_issue(updated_issue.clone());
+
+        // Update the issue in the list view if present
+        self.list_view.update_issue(&updated_issue);
+
+        self.notify_success(format!("Issue {} labels updated", updated_issue.key));
+    }
+
+    /// Handle failed label change.
+    pub fn handle_label_change_failure(&mut self, error: &str) {
+        warn!(error = %error, "Label change failed");
+        self.notify_error(format!("Failed to update labels: {}", error));
+    }
+
+    // ========================================================================
+    // Components methods
+    // ========================================================================
+
+    /// Take the pending fetch components request.
+    pub fn take_pending_fetch_components(&mut self) -> Option<(String, String)> {
+        self.pending_fetch_components.take()
+    }
+
+    /// Check if there is a pending fetch components request.
+    pub fn has_pending_fetch_components(&self) -> bool {
+        self.pending_fetch_components.is_some()
+    }
+
+    /// Set the available components in the detail view.
+    pub fn set_components(&mut self, components: Vec<String>) {
+        self.detail_view.set_components(components);
+    }
+
+    /// Handle failure to fetch components.
+    pub fn handle_fetch_components_failure(&mut self, error: &str) {
+        warn!(error = %error, "Failed to fetch components");
+        self.detail_view.hide_component_editor();
+        self.notify_error(format!("Failed to load components: {}", error));
+    }
+
+    /// Take the pending add component request.
+    pub fn take_pending_add_component(&mut self) -> Option<(String, String)> {
+        self.pending_add_component.take()
+    }
+
+    /// Check if there is a pending add component request.
+    pub fn has_pending_add_component(&self) -> bool {
+        self.pending_add_component.is_some()
+    }
+
+    /// Take the pending remove component request.
+    pub fn take_pending_remove_component(&mut self) -> Option<(String, String)> {
+        self.pending_remove_component.take()
+    }
+
+    /// Check if there is a pending remove component request.
+    pub fn has_pending_remove_component(&self) -> bool {
+        self.pending_remove_component.is_some()
+    }
+
+    /// Handle successful component change.
+    pub fn handle_component_change_success(&mut self, updated_issue: Issue) {
+        info!(key = %updated_issue.key, "Component changed successfully");
+
+        // Update the detail view with the updated issue
+        self.detail_view.set_issue(updated_issue.clone());
+
+        // Update the issue in the list view if present
+        self.list_view.update_issue(&updated_issue);
+
+        self.notify_success(format!("Issue {} components updated", updated_issue.key));
+    }
+
+    /// Handle failed component change.
+    pub fn handle_component_change_failure(&mut self, error: &str) {
+        warn!(error = %error, "Component change failed");
+        self.notify_error(format!("Failed to update components: {}", error));
+    }
+
     /// Returns whether the application should quit.
     pub fn should_quit(&self) -> bool {
         self.should_quit
@@ -1423,6 +1577,36 @@ impl App {
                             debug!(key = %issue_key, priority_id = %priority_id, "Changing priority");
                             // Store request for the runner to pick up
                             self.pending_priority_change = Some((issue_key, priority_id));
+                        }
+                        DetailAction::FetchLabels(issue_key) => {
+                            debug!(key = %issue_key, "Fetching labels");
+                            // Store request for the runner to pick up
+                            self.pending_fetch_labels = Some(issue_key);
+                        }
+                        DetailAction::AddLabel(issue_key, label) => {
+                            debug!(key = %issue_key, label = %label, "Adding label");
+                            // Store request for the runner to pick up
+                            self.pending_add_label = Some((issue_key, label));
+                        }
+                        DetailAction::RemoveLabel(issue_key, label) => {
+                            debug!(key = %issue_key, label = %label, "Removing label");
+                            // Store request for the runner to pick up
+                            self.pending_remove_label = Some((issue_key, label));
+                        }
+                        DetailAction::FetchComponents(issue_key, project_key) => {
+                            debug!(key = %issue_key, project = %project_key, "Fetching components");
+                            // Store request for the runner to pick up
+                            self.pending_fetch_components = Some((issue_key, project_key));
+                        }
+                        DetailAction::AddComponent(issue_key, component) => {
+                            debug!(key = %issue_key, component = %component, "Adding component");
+                            // Store request for the runner to pick up
+                            self.pending_add_component = Some((issue_key, component));
+                        }
+                        DetailAction::RemoveComponent(issue_key, component) => {
+                            debug!(key = %issue_key, component = %component, "Removing component");
+                            // Store request for the runner to pick up
+                            self.pending_remove_component = Some((issue_key, component));
                         }
                     }
                 }

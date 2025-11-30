@@ -100,6 +100,7 @@ fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Re
 /// 4. Repeat until quit
 async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
     use api::JiraClient;
+    use cache::{CacheManager, CacheStatus};
     use tracing::{debug, error, info, warn};
 
     let mut app = App::new();
@@ -107,8 +108,25 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
 
     // Create a JiraClient if a profile is configured
     let mut client: Option<JiraClient> = None;
+    let mut cache_manager: Option<CacheManager> = None;
 
     if let Some(profile) = app.current_profile().cloned() {
+        // Initialize cache manager
+        let cache_ttl = app.config().settings.cache_ttl_minutes;
+        match CacheManager::with_max_size(
+            &profile.name,
+            cache_ttl,
+            app.config().settings.cache_max_size_mb,
+        ) {
+            Ok(cm) => {
+                debug!("Cache manager initialized for profile: {}", profile.name);
+                cache_manager = Some(cm);
+            }
+            Err(e) => {
+                warn!("Failed to initialize cache: {}", e);
+            }
+        }
+
         match JiraClient::new(&profile).await {
             Ok(c) => {
                 info!("Connected to JIRA as profile: {}", profile.name);
@@ -130,29 +148,76 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
     loop {
         // Fetch issues if needed
         if needs_fetch {
-            if let Some(ref c) = client {
-                needs_fetch = false;
-                let jql = app.effective_jql();
-                // New JIRA API requires bounded queries - default to showing user's issues
-                let default_jql = "assignee = currentUser() OR reporter = currentUser() ORDER BY updated DESC";
-                let jql_query = if jql.is_empty() { default_jql } else { &jql };
+            needs_fetch = false;
+            let jql = app.effective_jql();
+            // New JIRA API requires bounded queries - default to showing user's issues
+            let default_jql = "assignee = currentUser() OR reporter = currentUser() ORDER BY updated DESC";
+            let jql_query = if jql.is_empty() { default_jql } else { &jql };
 
-                debug!("Fetching issues with JQL: {}", jql_query);
+            debug!("Fetching issues with JQL: {}", jql_query);
 
+            // Try cache first
+            let cached_result = cache_manager.as_ref().and_then(|cm| cm.get_search_results(jql_query));
+
+            if let Some(cached) = cached_result {
+                // Use cached data
+                info!("Loaded {} issues from cache (total: {})", cached.results.issues.len(), cached.results.total);
+                let issues_count = cached.results.issues.len() as u32;
+                app.list_view_mut().set_issues(cached.results.issues);
+                app.list_view_mut().set_loading(false);
+                app.list_view_mut().pagination_mut().update_from_response(0, issues_count, cached.results.total);
+                app.list_view_mut().set_cache_status(Some(CacheStatus::FromCache));
+
+                // Also fetch fresh data in the background (if client available)
+                if let Some(ref c) = client {
+                    match c.search_issues(jql_query, 0, 50).await {
+                        Ok(result) => {
+                            // Update cache
+                            if let Some(ref cm) = cache_manager {
+                                if let Err(e) = cm.set_search_results(jql_query, &result) {
+                                    debug!("Failed to update cache: {}", e);
+                                }
+                            }
+                            // Update display with fresh data
+                            let issues_count = result.issues.len() as u32;
+                            app.list_view_mut().set_issues(result.issues);
+                            app.list_view_mut().pagination_mut().update_from_response(0, issues_count, result.total);
+                            app.list_view_mut().set_cache_status(Some(CacheStatus::Fresh));
+                        }
+                        Err(e) => {
+                            // Cache data is still valid, just show a warning
+                            debug!("Background refresh failed (using cached data): {}", e);
+                        }
+                    }
+                }
+            } else if let Some(ref c) = client {
+                // No cache, fetch from API
                 match c.search_issues(jql_query, 0, 50).await {
                     Ok(result) => {
-                        info!("Loaded {} issues (total: {})", result.issues.len(), result.total);
+                        info!("Loaded {} issues from API (total: {})", result.issues.len(), result.total);
+                        // Store in cache
+                        if let Some(ref cm) = cache_manager {
+                            if let Err(e) = cm.set_search_results(jql_query, &result) {
+                                debug!("Failed to cache results: {}", e);
+                            }
+                        }
                         let issues_count = result.issues.len() as u32;
                         app.list_view_mut().set_issues(result.issues);
                         app.list_view_mut().set_loading(false);
                         app.list_view_mut().pagination_mut().update_from_response(0, issues_count, result.total);
+                        app.list_view_mut().set_cache_status(Some(CacheStatus::Fresh));
                     }
                     Err(e) => {
                         error!("Failed to fetch issues: {}", e);
                         app.notify_error(format!("Failed to fetch issues: {}", e));
                         app.list_view_mut().set_loading(false);
+                        app.list_view_mut().set_cache_status(None);
                     }
                 }
+            } else {
+                // No client available
+                app.list_view_mut().set_loading(false);
+                app.list_view_mut().set_cache_status(Some(CacheStatus::Offline));
             }
         }
 
@@ -188,9 +253,26 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
         let is_loading_now = app.list_view().is_loading();
         let new_profile = app.current_profile().map(|p| p.name.clone());
 
-        // Detect profile switch - need to recreate client
+        // Detect profile switch - need to recreate client and cache manager
         if old_profile != new_profile {
             if let Some(profile) = app.current_profile().cloned() {
+                // Recreate cache manager for new profile
+                let cache_ttl = app.config().settings.cache_ttl_minutes;
+                match CacheManager::with_max_size(
+                    &profile.name,
+                    cache_ttl,
+                    app.config().settings.cache_max_size_mb,
+                ) {
+                    Ok(cm) => {
+                        debug!("Cache manager initialized for profile: {}", profile.name);
+                        cache_manager = Some(cm);
+                    }
+                    Err(e) => {
+                        warn!("Failed to initialize cache: {}", e);
+                        cache_manager = None;
+                    }
+                }
+
                 match JiraClient::new(&profile).await {
                     Ok(c) => {
                         info!("Switched to profile: {}", profile.name);
@@ -207,6 +289,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
                 }
             } else {
                 client = None;
+                cache_manager = None;
             }
         }
         // Detect refresh request (loading changed from false to true)

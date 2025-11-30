@@ -312,6 +312,7 @@ mod tests {
                 theme: "light".to_string(),
                 vim_mode: false,
                 cache_ttl_minutes: 60,
+                cache_max_size_mb: 100,
                 jql_history: vec!["project = TEST".to_string()],
             },
             profiles: vec![

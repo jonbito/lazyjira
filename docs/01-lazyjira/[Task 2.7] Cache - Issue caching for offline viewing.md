@@ -321,8 +321,61 @@ fn render_cache_status(&self, frame: &mut Frame, area: Rect) {
 
 ## Definition of Done
 
-- [ ] All acceptance criteria met
-- [ ] Cache respects TTL setting
-- [ ] Disk usage stays reasonable
-- [ ] Offline experience is smooth
-- [ ] Cache status visible to user
+- [x] All acceptance criteria met
+- [x] Cache respects TTL setting
+- [x] Disk usage stays reasonable
+- [x] Offline experience is smooth
+- [x] Cache status visible to user
+
+---
+
+## Implementation Notes (Completed: 2025-11-30)
+
+### Summary
+
+Implemented a complete disk-based caching system for JIRA issues with:
+- Configurable TTL (default 30 minutes)
+- Configurable max cache size (default 100 MB)
+- Per-profile cache separation
+- LRU eviction when cache exceeds size limit
+- Visual cache status indicator in the status bar (Live/Cached/Offline)
+- Automatic background refresh when showing cached data
+
+### Files Modified
+
+1. **`Cargo.toml`** - Added `walkdir` and `tempfile` dependencies
+2. **`src/cache/mod.rs`** - Complete rewrite with:
+   - `CacheStatus` enum (Fresh, FromCache, Offline)
+   - `CacheEntry<T>` struct with TTL support
+   - `CachedSearchResult` struct for JQL query caching
+   - `CacheManager` with disk-based storage
+   - `CacheStats` for cache statistics
+   - Comprehensive unit tests (17 tests)
+3. **`src/config/settings.rs`** - Added `cache_max_size_mb` setting
+4. **`src/config/mod.rs`** - Updated test for new setting field
+5. **`src/ui/views/list.rs`** - Added cache status field and status bar indicator
+6. **`src/main.rs`** - Integrated cache with API calls:
+   - Cache manager initialization per profile
+   - Cache-first loading with background refresh
+   - Cache manager recreation on profile switch
+
+### Key Decisions
+
+1. **Stale-While-Revalidate Strategy**: When cached data exists, it's shown immediately while a background fetch updates the data. This provides instant responsiveness.
+
+2. **Per-Profile Cache Isolation**: Each profile has its own cache directory under `~/.cache/lazyjira/{profile_name}/` to prevent data mixing.
+
+3. **JQL Hash-Based Search Caching**: Search results are cached using a hash of the JQL query, allowing efficient lookup without storing the full query in the filename.
+
+4. **LRU Eviction**: When cache exceeds the size limit, the oldest 25% of files are automatically deleted.
+
+### Test Coverage
+
+- 429 tests total, all passing
+- 17 new cache-specific tests covering:
+  - Cache entry creation and expiration
+  - Issue caching roundtrip
+  - Search result caching
+  - Cache invalidation
+  - Cache statistics
+  - Special characters in issue keys

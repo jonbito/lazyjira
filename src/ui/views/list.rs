@@ -14,6 +14,7 @@ use ratatui::{
 };
 
 use crate::api::types::Issue;
+use crate::cache::CacheStatus;
 use crate::ui::components::{highlight_text, render_search_bar, QuickSearch};
 use crate::ui::theme::{issue_type_prefix, priority_style, status_style, truncate};
 
@@ -292,6 +293,8 @@ pub struct ListView {
     focused_column: usize,
     /// Quick search state.
     search: QuickSearch,
+    /// Cache status for data freshness indicator.
+    cache_status: Option<CacheStatus>,
 }
 
 impl ListView {
@@ -313,6 +316,7 @@ impl ListView {
             header_focused: false,
             focused_column: 0,
             search: QuickSearch::new(),
+            cache_status: None,
         }
     }
 
@@ -363,6 +367,16 @@ impl ListView {
     /// Get the number of issues.
     pub fn issue_count(&self) -> usize {
         self.issues.len()
+    }
+
+    /// Get the cache status.
+    pub fn cache_status(&self) -> Option<CacheStatus> {
+        self.cache_status
+    }
+
+    /// Set the cache status.
+    pub fn set_cache_status(&mut self, status: Option<CacheStatus>) {
+        self.cache_status = status;
     }
 
     // ========================================================================
@@ -950,6 +964,20 @@ impl ListView {
             spans.push(Span::styled(
                 format!("[Search: {} - {}]", self.search.query(), self.search.match_info()),
                 Style::default().fg(Color::Magenta),
+            ));
+        }
+
+        // Add cache status indicator
+        if let Some(status) = &self.cache_status {
+            spans.push(Span::raw(" "));
+            let status_color = match status {
+                CacheStatus::Fresh => Color::Green,
+                CacheStatus::FromCache => Color::Yellow,
+                CacheStatus::Offline => Color::Red,
+            };
+            spans.push(Span::styled(
+                format!("{} {}", status.icon(), status.text()),
+                Style::default().fg(status_color),
             ));
         }
 

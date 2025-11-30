@@ -17,6 +17,11 @@ fn default_cache_ttl() -> u32 {
     30
 }
 
+/// Default cache max size in MB.
+fn default_cache_max_size() -> u64 {
+    100
+}
+
 /// Maximum number of JQL queries to keep in history.
 const MAX_JQL_HISTORY: usize = 10;
 
@@ -47,6 +52,12 @@ pub struct Settings {
     #[serde(default = "default_cache_ttl")]
     pub cache_ttl_minutes: u32,
 
+    /// Maximum cache size in megabytes.
+    ///
+    /// Defaults to 100 MB.
+    #[serde(default = "default_cache_max_size")]
+    pub cache_max_size_mb: u64,
+
     /// JQL query history (most recent first).
     ///
     /// Limited to 10 entries.
@@ -61,6 +72,7 @@ impl Default for Settings {
             theme: default_theme(),
             vim_mode: default_vim_mode(),
             cache_ttl_minutes: default_cache_ttl(),
+            cache_max_size_mb: default_cache_max_size(),
             jql_history: Vec::new(),
         }
     }
@@ -95,6 +107,7 @@ mod tests {
         assert_eq!(settings.theme, "dark");
         assert!(settings.vim_mode);
         assert_eq!(settings.cache_ttl_minutes, 30);
+        assert_eq!(settings.cache_max_size_mb, 100);
         assert!(settings.jql_history.is_empty());
     }
 
@@ -105,6 +118,7 @@ mod tests {
             theme: "light".to_string(),
             vim_mode: false,
             cache_ttl_minutes: 60,
+            cache_max_size_mb: 200,
             jql_history: vec!["project = TEST".to_string()],
         };
 
@@ -126,6 +140,7 @@ theme = "monokai"
         assert_eq!(settings.theme, "monokai"); // specified
         assert!(settings.vim_mode); // default
         assert_eq!(settings.cache_ttl_minutes, 30); // default
+        assert_eq!(settings.cache_max_size_mb, 100); // default
         assert!(settings.jql_history.is_empty()); // default
     }
 
@@ -138,6 +153,7 @@ theme = "monokai"
         assert_eq!(settings.theme, "dark");
         assert!(settings.vim_mode);
         assert_eq!(settings.cache_ttl_minutes, 30);
+        assert_eq!(settings.cache_max_size_mb, 100);
         assert!(settings.jql_history.is_empty());
     }
 

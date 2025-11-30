@@ -13,8 +13,8 @@ use ratatui::{
     Frame,
 };
 
-use crate::api::types::{AtlassianDoc, FieldUpdates, Issue, IssueUpdateRequest, Priority, Transition, User};
-use crate::ui::components::{AssigneeAction, AssigneePicker, PriorityAction, PriorityPicker, TextEditor, TextInput, TransitionAction, TransitionPicker};
+use crate::api::types::{AtlassianDoc, Comment, FieldUpdates, Issue, IssueUpdateRequest, Priority, Transition, User};
+use crate::ui::components::{AssigneeAction, AssigneePicker, CommentAction, CommentsPanel, PriorityAction, PriorityPicker, TextEditor, TextInput, TransitionAction, TransitionPicker};
 use crate::ui::theme::{issue_type_prefix, priority_style, status_style};
 
 /// Action that can be triggered from the detail view.
@@ -24,8 +24,12 @@ pub enum DetailAction {
     GoBack,
     /// Enter edit mode for the issue.
     EditIssue,
-    /// Add a comment (future feature).
-    AddComment,
+    /// Open the comments panel (issue key).
+    OpenComments(String),
+    /// Request comments from the API (issue key).
+    FetchComments(String),
+    /// Submit a new comment (issue key, comment body).
+    SubmitComment(String, String),
     /// Save the current edit (issue key, update request).
     SaveEdit(String, IssueUpdateRequest),
     /// Show confirmation dialog before discarding changes.
@@ -94,6 +98,8 @@ pub struct DetailView {
     assignee_picker: AssigneePicker,
     /// Priority picker for changing priority.
     priority_picker: PriorityPicker,
+    /// Comments panel for viewing and adding comments.
+    comments_panel: CommentsPanel,
 }
 
 impl DetailView {
@@ -110,6 +116,7 @@ impl DetailView {
             transition_picker: TransitionPicker::new(),
             assignee_picker: AssigneePicker::new(),
             priority_picker: PriorityPicker::new(),
+            comments_panel: CommentsPanel::new(),
         }
     }
 
@@ -123,6 +130,7 @@ impl DetailView {
         self.transition_picker.hide();
         self.assignee_picker.hide();
         self.priority_picker.hide();
+        self.comments_panel.hide();
     }
 
     /// Clear the current issue.
@@ -135,6 +143,7 @@ impl DetailView {
         self.transition_picker.hide();
         self.assignee_picker.hide();
         self.priority_picker.hide();
+        self.comments_panel.hide();
     }
 
     /// Get a reference to the current issue.
@@ -303,6 +312,57 @@ impl DetailView {
         self.priority_picker.hide();
     }
 
+    // ========================================================================
+    // Comments panel methods
+    // ========================================================================
+
+    /// Check if the comments panel is visible.
+    pub fn is_comments_panel_visible(&self) -> bool {
+        self.comments_panel.is_visible()
+    }
+
+    /// Check if comments are loading.
+    pub fn is_comments_loading(&self) -> bool {
+        self.comments_panel.is_loading()
+    }
+
+    /// Check if a comment is being submitted.
+    pub fn is_comment_submitting(&self) -> bool {
+        self.comments_panel.is_submitting()
+    }
+
+    /// Show the comments panel for the current issue.
+    pub fn show_comments_panel(&mut self) {
+        if let Some(issue) = &self.issue {
+            self.comments_panel.show(&issue.key);
+        }
+    }
+
+    /// Set the comments to display.
+    pub fn set_comments(&mut self, comments: Vec<Comment>, total: u32) {
+        self.comments_panel.set_comments(comments, total);
+    }
+
+    /// Add a newly created comment to the panel.
+    pub fn add_comment(&mut self, comment: Comment) {
+        self.comments_panel.add_comment(comment);
+    }
+
+    /// Set the comments loading state.
+    pub fn set_comments_loading(&mut self, loading: bool) {
+        self.comments_panel.set_loading(loading);
+    }
+
+    /// Set the comment submitting state.
+    pub fn set_comment_submitting(&mut self, submitting: bool) {
+        self.comments_panel.set_submitting(submitting);
+    }
+
+    /// Hide the comments panel.
+    pub fn hide_comments_panel(&mut self) {
+        self.comments_panel.hide();
+    }
+
     /// Enter edit mode for the current issue.
     pub fn enter_edit_mode(&mut self) {
         if let Some(issue) = &self.issue {
@@ -379,6 +439,11 @@ impl DetailView {
     ///
     /// Returns an optional action to be handled by the application.
     pub fn handle_input(&mut self, key: KeyEvent) -> Option<DetailAction> {
+        // Handle comments panel first (blocks other input when visible)
+        if self.comments_panel.is_visible() {
+            return self.handle_comments_panel_input(key);
+        }
+
         // Handle transition picker first (blocks other input when visible)
         if self.transition_picker.is_visible() {
             return self.handle_transition_picker_input(key);
@@ -437,8 +502,16 @@ impl DetailView {
             }
             // Edit issue
             (KeyCode::Char('e'), KeyModifiers::NONE) => Some(DetailAction::EditIssue),
-            // Add comment
-            (KeyCode::Char('c'), KeyModifiers::NONE) => Some(DetailAction::AddComment),
+            // Open comments panel
+            (KeyCode::Char('c'), KeyModifiers::NONE) => {
+                if let Some(issue) = &self.issue {
+                    let issue_key = issue.key.clone();
+                    self.show_comments_panel();
+                    Some(DetailAction::FetchComments(issue_key))
+                } else {
+                    None
+                }
+            }
             // Change status (open transition picker)
             (KeyCode::Char('s'), KeyModifiers::NONE) => {
                 if let Some(issue) = &self.issue {
@@ -537,6 +610,29 @@ impl DetailView {
                     }
                 }
                 PriorityAction::Cancel => None,
+            }
+        } else {
+            None
+        }
+    }
+
+    /// Handle keyboard input for the comments panel.
+    fn handle_comments_panel_input(&mut self, key: KeyEvent) -> Option<DetailAction> {
+        if let Some(action) = self.comments_panel.handle_input(key) {
+            match action {
+                CommentAction::Submit(body) => {
+                    if let Some(issue) = &self.issue {
+                        let issue_key = issue.key.clone();
+                        self.comments_panel.set_submitting(true);
+                        Some(DetailAction::SubmitComment(issue_key, body))
+                    } else {
+                        None
+                    }
+                }
+                CommentAction::Cancel => None,
+                CommentAction::LoadComments(issue_key) => {
+                    Some(DetailAction::FetchComments(issue_key))
+                }
             }
         } else {
             None
@@ -688,10 +784,11 @@ impl DetailView {
         // Render description (scrollable)
         self.render_description(frame, chunks[3], &description);
 
-        // Render pickers (overlays)
+        // Render pickers and panels (overlays)
         self.transition_picker.render(frame, area);
         self.assignee_picker.render(frame, area);
         self.priority_picker.render(frame, area);
+        self.comments_panel.render(frame, area);
     }
 
     /// Render the edit mode interface.
@@ -1038,7 +1135,7 @@ impl DetailView {
             Span::styled(scroll_info, Style::default().fg(Color::DarkGray)),
             Span::raw(" | "),
             Span::styled(
-                "j/k:scroll  q:back  e:edit  s:status  a:assignee  P:priority",
+                "j/k:scroll  q:back  e:edit  c:comments  s:status  a:assignee  P:priority",
                 Style::default().fg(Color::DarkGray),
             ),
         ]);
@@ -1346,11 +1443,25 @@ mod tests {
     }
 
     #[test]
-    fn test_handle_input_comment() {
+    fn test_handle_input_comment_no_issue() {
         let mut view = DetailView::new();
         let key = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::NONE);
         let action = view.handle_input(key);
-        assert_eq!(action, Some(DetailAction::AddComment));
+        // No issue set, so pressing 'c' does nothing
+        assert_eq!(action, None);
+    }
+
+    #[test]
+    fn test_handle_input_comment_with_issue() {
+        let mut view = DetailView::new();
+        view.set_issue(create_test_issue("TEST-123", "Test issue"));
+
+        let key = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::NONE);
+        let action = view.handle_input(key);
+
+        // Should show comments panel and trigger fetch
+        assert_eq!(action, Some(DetailAction::FetchComments("TEST-123".to_string())));
+        assert!(view.is_comments_panel_visible());
     }
 
     #[test]

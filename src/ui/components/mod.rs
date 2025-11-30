@@ -1,6 +1,7 @@
 //! Reusable UI components.
 
 mod assignee_picker;
+mod comments;
 mod input;
 mod jql_input;
 mod loading;
@@ -15,6 +16,7 @@ mod text_editor;
 mod transition_picker;
 
 pub use assignee_picker::{AssigneeAction, AssigneePicker};
+pub use comments::{CommentAction, CommentPanelMode, CommentsPanel};
 pub use input::TextInput;
 pub use jql_input::{JqlAction, JqlInput};
 pub use loading::{InlineLoader, LoadingIndicator, SpinnerStyle};

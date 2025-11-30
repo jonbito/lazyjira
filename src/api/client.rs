@@ -11,10 +11,10 @@ use tracing::{debug, error, info, instrument, warn};
 use super::auth::Auth;
 use super::error::{ApiError, Result};
 use super::types::{
-    BoardsResponse, CurrentUser, FieldUpdates, FilterOption, FilterOptions, Issue,
-    IssueUpdateRequest, LabelOperation, LabelsResponse, Priority, Project, SearchResult,
-    SprintsResponse, Status, Transition, TransitionRef, TransitionRequest, TransitionsResponse,
-    UpdateOperations, User, UserRef,
+    AddCommentRequest, BoardsResponse, Comment, CommentsResponse, CurrentUser, FieldUpdates,
+    FilterOption, FilterOptions, Issue, IssueUpdateRequest, LabelOperation, LabelsResponse,
+    Priority, Project, SearchResult, SprintsResponse, Status, Transition, TransitionRef,
+    TransitionRequest, TransitionsResponse, UpdateOperations, User, UserRef,
 };
 use crate::config::Profile;
 
@@ -987,6 +987,63 @@ impl JiraClient {
             update: None,
         };
         self.update_issue(key, update).await
+    }
+
+    // ========================================================================
+    // Comment Operations
+    // ========================================================================
+
+    /// Get comments for an issue.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The issue key (e.g., "PROJ-123")
+    /// * `start_at` - Starting index for pagination (0-based)
+    /// * `max_results` - Maximum number of comments to return (default 50, max 100)
+    #[instrument(skip(self), fields(issue_key = %key))]
+    pub async fn get_comments(
+        &self,
+        key: &str,
+        start_at: u32,
+        max_results: u32,
+    ) -> Result<CommentsResponse> {
+        debug!("Fetching comments for issue {}", key);
+        let url = format!(
+            "{}/rest/api/3/issue/{}/comment?startAt={}&maxResults={}&orderBy=-created",
+            self.base_url,
+            key,
+            start_at,
+            max_results.min(100)
+        );
+        let response: CommentsResponse = self.get(&url).await?;
+        debug!(
+            "Found {} comments (total: {})",
+            response.comments.len(),
+            response.total
+        );
+        Ok(response)
+    }
+
+    /// Add a comment to an issue.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The issue key (e.g., "PROJ-123")
+    /// * `body` - The comment text (will be converted to ADF)
+    ///
+    /// # Returns
+    ///
+    /// The created comment.
+    #[instrument(skip(self, body), fields(issue_key = %key))]
+    pub async fn add_comment(&self, key: &str, body: &str) -> Result<Comment> {
+        info!("Adding comment to issue {}", key);
+        let url = format!("{}/rest/api/3/issue/{}/comment", self.base_url, key);
+        let request = AddCommentRequest::from_text(body);
+        let json_value = serde_json::to_value(request)
+            .map_err(|e| ApiError::InvalidResponse(format!("Failed to serialize comment: {}", e)))?;
+        let comment: Comment = self.post(&url, &json_value).await?;
+        info!("Successfully added comment {} to issue {}", comment.id, key);
+        Ok(comment)
     }
 }
 

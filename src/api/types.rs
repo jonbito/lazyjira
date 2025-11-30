@@ -426,6 +426,26 @@ impl CommentsResponse {
     }
 }
 
+/// Request body for adding a comment to an issue.
+///
+/// Used with `POST /rest/api/3/issue/{issueKey}/comment`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AddCommentRequest {
+    /// The comment body in Atlassian Document Format.
+    pub body: AtlassianDoc,
+}
+
+impl AddCommentRequest {
+    /// Create a new comment request from plain text.
+    ///
+    /// Converts the plain text into an Atlassian Document Format structure.
+    pub fn from_text(text: &str) -> Self {
+        Self {
+            body: AtlassianDoc::from_text(text),
+        }
+    }
+}
+
 /// Atlassian Document Format (ADF) content.
 ///
 /// JIRA uses ADF for rich text fields like descriptions and comments.
@@ -562,6 +582,39 @@ impl AtlassianDoc {
                 }
             }
             _ => {}
+        }
+    }
+
+    /// Create an ADF document from plain text.
+    ///
+    /// Converts plain text into an Atlassian Document Format structure
+    /// by splitting on newlines and creating paragraph nodes.
+    pub fn from_text(text: &str) -> Self {
+        let paragraphs: Vec<serde_json::Value> = text
+            .lines()
+            .map(|line| {
+                if line.is_empty() {
+                    // Empty paragraph
+                    serde_json::json!({
+                        "type": "paragraph",
+                        "content": []
+                    })
+                } else {
+                    serde_json::json!({
+                        "type": "paragraph",
+                        "content": [{
+                            "type": "text",
+                            "text": line
+                        }]
+                    })
+                }
+            })
+            .collect();
+
+        Self {
+            doc_type: "doc".to_string(),
+            version: Some(1),
+            content: paragraphs,
         }
     }
 }

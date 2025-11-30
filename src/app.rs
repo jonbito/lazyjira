@@ -107,6 +107,10 @@ pub struct App {
     pending_fetch_priorities: Option<String>,
     /// Pending priority change request (issue key, priority_id).
     pending_priority_change: Option<(String, String)>,
+    /// Pending fetch comments request (issue key).
+    pending_fetch_comments: Option<String>,
+    /// Pending submit comment request (issue key, comment body).
+    pending_submit_comment: Option<(String, String)>,
 }
 
 impl App {
@@ -162,6 +166,8 @@ impl App {
             pending_assignee_change: None,
             pending_fetch_priorities: None,
             pending_priority_change: None,
+            pending_fetch_comments: None,
+            pending_submit_comment: None,
         }
     }
 
@@ -212,6 +218,8 @@ impl App {
             pending_assignee_change: None,
             pending_fetch_priorities: None,
             pending_priority_change: None,
+            pending_fetch_comments: None,
+            pending_submit_comment: None,
         }
     }
 
@@ -1039,6 +1047,61 @@ impl App {
         self.notify_error(format!("Failed to load priorities: {}", error));
     }
 
+    // ========================================================================
+    // Comments methods
+    // ========================================================================
+
+    /// Take the pending fetch comments request.
+    pub fn take_pending_fetch_comments(&mut self) -> Option<String> {
+        self.pending_fetch_comments.take()
+    }
+
+    /// Check if there is a pending fetch comments request.
+    pub fn has_pending_fetch_comments(&self) -> bool {
+        self.pending_fetch_comments.is_some()
+    }
+
+    /// Handle successful comments fetch.
+    pub fn handle_comments_fetched(
+        &mut self,
+        comments: Vec<crate::api::types::Comment>,
+        total: u32,
+    ) {
+        debug!("Comments fetched: {} of {}", comments.len(), total);
+        self.detail_view.set_comments(comments, total);
+    }
+
+    /// Handle failure to fetch comments.
+    pub fn handle_fetch_comments_failure(&mut self, error: &str) {
+        warn!(error = %error, "Failed to fetch comments");
+        self.detail_view.hide_comments_panel();
+        self.notify_error(format!("Failed to load comments: {}", error));
+    }
+
+    /// Take the pending submit comment request.
+    pub fn take_pending_submit_comment(&mut self) -> Option<(String, String)> {
+        self.pending_submit_comment.take()
+    }
+
+    /// Check if there is a pending submit comment request.
+    pub fn has_pending_submit_comment(&self) -> bool {
+        self.pending_submit_comment.is_some()
+    }
+
+    /// Handle successful comment submission.
+    pub fn handle_comment_submitted(&mut self, comment: crate::api::types::Comment) {
+        info!(comment_id = %comment.id, "Comment submitted successfully");
+        self.detail_view.add_comment(comment);
+        self.notify_success("Comment added successfully");
+    }
+
+    /// Handle failure to submit comment.
+    pub fn handle_submit_comment_failure(&mut self, error: &str) {
+        warn!(error = %error, "Failed to submit comment");
+        self.detail_view.set_comment_submitting(false);
+        self.notify_error(format!("Failed to add comment: {}", error));
+    }
+
     /// Returns whether the application should quit.
     pub fn should_quit(&self) -> bool {
         self.should_quit
@@ -1298,9 +1361,17 @@ impl App {
                             debug!("Entering edit mode");
                             self.detail_view.enter_edit_mode();
                         }
-                        DetailAction::AddComment => {
-                            debug!("Add comment requested (not yet implemented)");
-                            // TODO: Implement commenting in Phase 3
+                        DetailAction::OpenComments(issue_key) => {
+                            debug!(key = %issue_key, "Opening comments panel");
+                            self.detail_view.show_comments_panel();
+                        }
+                        DetailAction::FetchComments(issue_key) => {
+                            debug!(key = %issue_key, "Fetching comments");
+                            self.pending_fetch_comments = Some(issue_key);
+                        }
+                        DetailAction::SubmitComment(issue_key, body) => {
+                            debug!(key = %issue_key, "Submitting comment");
+                            self.pending_submit_comment = Some((issue_key, body));
                         }
                         DetailAction::SaveEdit(issue_key, update_request) => {
                             debug!(key = %issue_key, "Save edit requested");

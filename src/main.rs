@@ -444,6 +444,44 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
             }
         }
 
+        // Handle fetch comments request
+        if let Some(issue_key) = app.take_pending_fetch_comments() {
+            if let Some(ref c) = client {
+                debug!("Fetching comments for issue {}", issue_key);
+                match c.get_comments(&issue_key, 0, 50).await {
+                    Ok(response) => {
+                        debug!("Loaded {} comments", response.comments.len());
+                        app.handle_comments_fetched(response.comments, response.total);
+                    }
+                    Err(e) => {
+                        error!("Failed to fetch comments: {}", e);
+                        app.handle_fetch_comments_failure(&e.to_string());
+                    }
+                }
+            } else {
+                app.handle_fetch_comments_failure("No JIRA connection");
+            }
+        }
+
+        // Handle submit comment request
+        if let Some((issue_key, body)) = app.take_pending_submit_comment() {
+            if let Some(ref c) = client {
+                debug!("Submitting comment to issue {}", issue_key);
+                match c.add_comment(&issue_key, &body).await {
+                    Ok(comment) => {
+                        info!("Comment added to issue {}", issue_key);
+                        app.handle_comment_submitted(comment);
+                    }
+                    Err(e) => {
+                        error!("Failed to submit comment: {}", e);
+                        app.handle_submit_comment_failure(&e.to_string());
+                    }
+                }
+            } else {
+                app.handle_submit_comment_failure("No JIRA connection");
+            }
+        }
+
         // Check if we should quit
         if app.should_quit() {
             break;

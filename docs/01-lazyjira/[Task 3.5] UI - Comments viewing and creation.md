@@ -411,3 +411,45 @@ impl CommentEditor {
 - [ ] Editor is usable
 - [ ] Pagination works smoothly
 - [ ] Success feedback provided
+
+---
+
+## Completion Summary
+
+**Completed:** 2025-11-30
+**Branch:** `add-comments-viewing-creation`
+**Commit:** `3c6ee04`
+
+### Files Modified/Created
+
+1. **`src/api/types.rs`** - Added `AddCommentRequest` type with `from_text()` helper, and `AtlassianDoc::from_text()` method for converting plain text to ADF
+2. **`src/api/client.rs`** - Added `get_comments()` and `add_comment()` API methods
+3. **`src/ui/components/comments.rs`** (NEW) - Complete `CommentsPanel` component with:
+   - Viewing mode with scrollable comment list
+   - Composing mode with multi-line text editor
+   - Comment author and timestamp display
+   - j/k navigation, Ctrl+Enter submit, Esc cancel
+4. **`src/ui/components/mod.rs`** - Exported new comments module
+5. **`src/ui/views/detail.rs`** - Integrated comments panel:
+   - Added `CommentsPanel` to `DetailView`
+   - New `DetailAction` variants: `OpenComments`, `FetchComments`, `SubmitComment`
+   - 'c' keybinding to open comments
+   - Comments panel methods and rendering
+6. **`src/app.rs`** - App state integration:
+   - Added `pending_fetch_comments` and `pending_submit_comment` fields
+   - Handler methods for comment operations
+7. **`src/main.rs`** - Event loop integration for comment API calls
+
+### Test Coverage
+
+- 15 unit tests added for `CommentsPanel` component
+- 2 updated tests for detail view 'c' key behavior
+- All 547 tests pass
+
+### Implementation Notes
+
+- Comments display newest first (sorted by `-created` in API call)
+- Comment body is converted to plain text from ADF for display
+- Plain text input is converted to ADF paragraphs when submitting
+- Comments panel is rendered as a modal overlay on detail view
+- Scrollbar shown when content exceeds visible area

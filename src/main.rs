@@ -301,6 +301,55 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
             needs_fetch = true;
         }
 
+        // Handle pending fetch transitions request
+        if let Some(issue_key) = app.take_pending_fetch_transitions() {
+            if let Some(ref c) = client {
+                debug!("Fetching transitions for issue: {}", issue_key);
+                match c.get_transitions(&issue_key).await {
+                    Ok(transitions) => {
+                        debug!("Loaded {} transitions", transitions.len());
+                        app.set_transitions(transitions);
+                    }
+                    Err(e) => {
+                        error!("Failed to fetch transitions: {}", e);
+                        app.handle_fetch_transitions_failure(&e.to_string());
+                    }
+                }
+            } else {
+                app.handle_fetch_transitions_failure("No JIRA connection");
+            }
+        }
+
+        // Handle pending transition execution
+        if let Some((issue_key, transition_id, fields)) = app.take_pending_transition() {
+            if let Some(ref c) = client {
+                debug!("Executing transition {} on issue {}", transition_id, issue_key);
+                match c.transition_issue(&issue_key, &transition_id, fields).await {
+                    Ok(()) => {
+                        // Fetch the updated issue to get the new status
+                        match c.get_issue(&issue_key).await {
+                            Ok(updated_issue) => {
+                                info!("Transition successful, issue {} now has status: {}",
+                                    issue_key, updated_issue.fields.status.name);
+                                app.handle_transition_success(updated_issue);
+                            }
+                            Err(e) => {
+                                // Transition succeeded but we couldn't fetch the updated issue
+                                warn!("Transition succeeded but failed to fetch updated issue: {}", e);
+                                app.notify_success(format!("Issue {} status changed", issue_key));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to execute transition: {}", e);
+                        app.handle_transition_failure(&e.to_string());
+                    }
+                }
+            } else {
+                app.handle_transition_failure("No JIRA connection");
+            }
+        }
+
         // Check if we should quit
         if app.should_quit() {
             break;

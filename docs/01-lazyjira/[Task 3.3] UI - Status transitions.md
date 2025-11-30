@@ -360,3 +360,40 @@ impl IssueDetailView {
 - [ ] Required fields handled properly
 - [ ] UI feedback is clear
 - [ ] Status updates immediately after transition
+
+---
+
+## Implementation Summary
+
+**Completed:** 2025-11-30
+
+### Files Created
+- `src/ui/components/transition_picker.rs` - New transition picker component with loading state, keyboard navigation (j/k/Enter/Esc), and color-coded status categories
+
+### Files Modified
+- `src/ui/components/mod.rs` - Added transition_picker module and exports
+- `src/ui/mod.rs` - Exported TransitionAction and TransitionPicker
+- `src/ui/views/detail.rs` - Integrated transition picker, added 's' key binding, new DetailAction variants
+- `src/app.rs` - Added transition handling methods, pending transition state
+
+### Key Implementation Decisions
+1. **Key binding:** Used 's' instead of 't' for "status" (more intuitive than 't' for "transition")
+2. **Required fields:** Show warning message when transition requires fields (form not yet implemented)
+3. **Loading state:** Show loading indicator while fetching transitions from API
+4. **Color coding:** Transitions colored by target status category (blue=new, yellow=indeterminate, green=done)
+5. **Architecture:** TransitionPicker is embedded in DetailView, not a modal overlay managed by App
+
+### Test Coverage
+- 10 new tests for transition picker component
+- 11 new tests for detail view transition integration
+- All 497 tests pass
+
+### Limitations
+- Required fields form not implemented (shows warning instead)
+- API integration pending (runner needs to call API methods)
+
+### Branch
+`status-transitions`
+
+### Commit
+`085753d` - feat(ui): Add status transition picker for issue detail view

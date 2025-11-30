@@ -8,5 +8,5 @@ mod theme;
 mod views;
 
 pub use components::{Input, Modal, Table};
-pub use theme::Theme;
-pub use views::{DetailView, FilterView, ListView, ProfileView};
+pub use theme::{issue_type_prefix, priority_style, status_style, truncate, Theme};
+pub use views::{DetailView, FilterView, ListAction, ListView, ProfileView};

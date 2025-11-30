@@ -11,16 +11,16 @@ Implement the main issue list view using ratatui's Table widget. Display issues 
 
 ## Acceptance Criteria
 
-- [ ] Table displaying issue list with columns: Key, Summary, Status, Assignee, Priority
-- [ ] Column headers with visual distinction
-- [ ] Row highlighting for selected item
-- [ ] Keyboard navigation: j/k (or arrow keys) to move, Enter to select
-- [ ] Visual indicators for issue priority (color coding)
-- [ ] Visual indicators for issue type (icon or prefix)
-- [ ] Status bar showing current profile and issue count
-- [ ] Loading indicator while fetching issues
-- [ ] Empty state when no issues found
-- [ ] Responsive layout adapting to terminal width
+- [x] Table displaying issue list with columns: Key, Summary, Status, Assignee, Priority
+- [x] Column headers with visual distinction
+- [x] Row highlighting for selected item
+- [x] Keyboard navigation: j/k (or arrow keys) to move, Enter to select
+- [x] Visual indicators for issue priority (color coding)
+- [x] Visual indicators for issue type (icon or prefix)
+- [x] Status bar showing current profile and issue count
+- [x] Loading indicator while fetching issues
+- [x] Empty state when no issues found
+- [x] Responsive layout adapting to terminal width
 
 ## Implementation Details
 
@@ -167,14 +167,14 @@ fn render_empty(&self, frame: &mut Frame, area: Rect) {
 
 ## Testing Requirements
 
-- [ ] Table renders with sample issues
-- [ ] Selected row highlights correctly
-- [ ] j/k navigation works at list boundaries
-- [ ] gg moves to first, G moves to last
-- [ ] Enter key triggers issue open action
-- [ ] Truncated summaries show ellipsis
-- [ ] Loading state displays spinner/message
-- [ ] Empty state displays helpful message
+- [x] Table renders with sample issues
+- [x] Selected row highlights correctly
+- [x] j/k navigation works at list boundaries
+- [x] gg moves to first, G moves to last
+- [x] Enter key triggers issue open action
+- [x] Truncated summaries show ellipsis
+- [x] Loading state displays spinner/message
+- [x] Empty state displays helpful message
 
 ## Dependencies
 
@@ -184,8 +184,54 @@ fn render_empty(&self, frame: &mut Frame, area: Rect) {
 
 ## Definition of Done
 
-- [ ] All acceptance criteria met
-- [ ] Responsive to different terminal sizes (80+ cols)
-- [ ] Color scheme consistent and accessible
-- [ ] Keyboard shortcuts documented in code
-- [ ] Performance: renders 100+ issues smoothly
+- [x] All acceptance criteria met
+- [x] Responsive to different terminal sizes (80+ cols)
+- [x] Color scheme consistent and accessible
+- [x] Keyboard shortcuts documented in code
+- [x] Performance: renders 100+ issues smoothly
+
+## Completion Summary
+
+### Implementation Date
+2025-11-29
+
+### Files Modified/Created
+- `src/ui/theme.rs`: Added status and priority color styling functions, issue type prefix icons, and string truncation utility
+- `src/ui/views/list.rs`: Complete rewrite implementing ListView with table rendering, navigation, loading/empty states, and status bar
+- `src/ui/views/mod.rs`: Updated exports to include ListAction
+- `src/ui/mod.rs`: Updated exports for new theme functions and ListAction
+- `src/app.rs`: Integrated ListView with app state, added keyboard input delegation and view rendering
+
+### Features Implemented
+1. **Table Display**: Displays issues with Key, Summary, Status, Assignee, and Priority columns using ratatui Table widget
+2. **Column Headers**: Bold white headers with visual distinction
+3. **Row Highlighting**: Dark gray background for selected row with ">>" indicator
+4. **Keyboard Navigation**:
+   - j/↓: Move down
+   - k/↑: Move up
+   - gg: Go to first issue
+   - G: Go to last issue
+   - Ctrl+d/PageDown: Page down (10 items)
+   - Ctrl+u/PageUp: Page up (10 items)
+   - Enter: Open issue detail
+   - r: Refresh
+   - f: Open filter panel
+5. **Visual Indicators**:
+   - Status colors: Blue (new), Yellow (in progress), Green (done)
+   - Priority colors: Red/bold (Highest), Red (High), Yellow (Medium), Green (Low), Gray (Lowest)
+   - Issue type icons: 🐛 (Bug), 📖 (Story), ✓ (Task), ⚡ (Epic), └ (Sub-task)
+6. **Status Bar**: Shows profile name, issue count, selected position, and keyboard hints
+7. **Loading State**: Centered "Loading issues..." message
+8. **Empty State**: "No issues found" message with hints
+9. **Responsive Layout**: Summary column expands/contracts with terminal width
+
+### Tests Added
+- 20 unit tests for ListView (navigation, input handling, state management)
+- 16 unit tests for theme functions (status/priority styles, truncation)
+- 7 integration tests in app.rs for list view interaction
+
+### Key Design Decisions
+- Used ListAction enum for decoupled action handling between view and app
+- Implemented vim-style "gg" navigation with pending state tracking
+- Status bar is part of ListView for context-aware display
+- Column widths are dynamically calculated based on terminal width

@@ -7,5 +7,5 @@ mod profile;
 
 pub use detail::DetailView;
 pub use filter::FilterView;
-pub use list::ListView;
+pub use list::{ListAction, ListView};
 pub use profile::ProfileView;

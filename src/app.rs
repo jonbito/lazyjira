@@ -14,7 +14,7 @@ use ratatui::{
 };
 
 use crate::api::auth;
-use crate::api::types::{FilterOptions, FilterState, Issue, IssueUpdateRequest};
+use crate::api::types::{FieldUpdates, FilterOptions, FilterState, Issue, IssueUpdateRequest, Transition};
 use crate::config::{Config, ConfigError, Profile};
 use crate::error::AppError;
 use crate::events::Event;
@@ -95,6 +95,10 @@ pub struct App {
     pending_issue_update: Option<(String, IssueUpdateRequest)>,
     /// Discard changes confirmation dialog.
     discard_confirm_dialog: ConfirmDialog,
+    /// Pending transition request (issue key, transition ID, optional fields).
+    pending_transition: Option<(String, String, Option<FieldUpdates>)>,
+    /// Pending fetch transitions request (issue key).
+    pending_fetch_transitions: Option<String>,
 }
 
 impl App {
@@ -144,6 +148,8 @@ impl App {
             current_jql: None,
             pending_issue_update: None,
             discard_confirm_dialog: ConfirmDialog::new(),
+            pending_transition: None,
+            pending_fetch_transitions: None,
         }
     }
 
@@ -188,6 +194,8 @@ impl App {
             current_jql: None,
             pending_issue_update: None,
             discard_confirm_dialog: ConfirmDialog::new(),
+            pending_transition: None,
+            pending_fetch_transitions: None,
         }
     }
 
@@ -815,6 +823,72 @@ impl App {
         self.discard_confirm_dialog.is_visible()
     }
 
+    // ========================================================================
+    // Transition methods
+    // ========================================================================
+
+    /// Take the pending transition request, if any.
+    ///
+    /// Returns (issue_key, transition_id, optional fields).
+    pub fn take_pending_transition(&mut self) -> Option<(String, String, Option<FieldUpdates>)> {
+        self.pending_transition.take()
+    }
+
+    /// Check if there is a pending transition.
+    pub fn has_pending_transition(&self) -> bool {
+        self.pending_transition.is_some()
+    }
+
+    /// Take the pending fetch transitions request, if any.
+    ///
+    /// Returns the issue key.
+    pub fn take_pending_fetch_transitions(&mut self) -> Option<String> {
+        self.pending_fetch_transitions.take()
+    }
+
+    /// Check if there is a pending fetch transitions request.
+    pub fn has_pending_fetch_transitions(&self) -> bool {
+        self.pending_fetch_transitions.is_some()
+    }
+
+    /// Set the available transitions in the detail view.
+    pub fn set_transitions(&mut self, transitions: Vec<Transition>) {
+        self.detail_view.set_transitions(transitions);
+    }
+
+    /// Handle successful transition completion.
+    ///
+    /// Updates the local issue data with the refreshed issue.
+    pub fn handle_transition_success(&mut self, updated_issue: Issue) {
+        info!(key = %updated_issue.key, "Issue transitioned successfully");
+
+        // Update the detail view with the updated issue
+        self.detail_view.set_issue(updated_issue.clone());
+
+        // Update the issue in the list view if present
+        self.list_view.update_issue(&updated_issue);
+
+        // Show success notification
+        self.notify_success(format!(
+            "Issue {} status changed to {}",
+            updated_issue.key, updated_issue.fields.status.name
+        ));
+    }
+
+    /// Handle failed transition.
+    pub fn handle_transition_failure(&mut self, error: &str) {
+        warn!(error = %error, "Transition failed");
+        self.detail_view.hide_transition_picker();
+        self.notify_error(format!("Failed to change status: {}", error));
+    }
+
+    /// Handle failure to fetch transitions.
+    pub fn handle_fetch_transitions_failure(&mut self, error: &str) {
+        warn!(error = %error, "Failed to fetch transitions");
+        self.detail_view.hide_transition_picker();
+        self.notify_error(format!("Failed to load transitions: {}", error));
+    }
+
     /// Returns whether the application should quit.
     pub fn should_quit(&self) -> bool {
         self.should_quit
@@ -1088,6 +1162,26 @@ impl App {
                         DetailAction::ConfirmDiscard => {
                             debug!("Confirm discard changes dialog requested");
                             self.show_discard_confirm_dialog();
+                        }
+                        DetailAction::OpenTransitionPicker => {
+                            debug!("Opening transition picker");
+                            self.detail_view.show_transition_picker_loading();
+                        }
+                        DetailAction::FetchTransitions(issue_key, _current_status) => {
+                            debug!(key = %issue_key, "Fetching transitions");
+                            // Store request for the runner to pick up
+                            self.pending_fetch_transitions = Some(issue_key);
+                        }
+                        DetailAction::ExecuteTransition(issue_key, transition_id, fields) => {
+                            debug!(key = %issue_key, transition = %transition_id, "Executing transition");
+                            // Store request for the runner to pick up
+                            self.pending_transition = Some((issue_key, transition_id, fields));
+                        }
+                        DetailAction::TransitionRequiresFields(transition_id) => {
+                            debug!(transition = %transition_id, "Transition requires fields (not yet supported)");
+                            self.notify_warning(
+                                "This transition requires additional fields which are not yet supported"
+                            );
                         }
                     }
                 }
@@ -1395,7 +1489,8 @@ impl App {
             Line::raw("  Ctrl+d  - Page down"),
             Line::raw("  Ctrl+u  - Page up"),
             Line::raw("  q / Esc - Go back to list"),
-            Line::raw("  e       - Edit issue (coming soon)"),
+            Line::raw("  e       - Edit issue"),
+            Line::raw("  s       - Change status"),
             Line::raw("  c       - Add comment (coming soon)"),
             Line::raw(""),
             Line::styled("Profile Management:", Style::default().fg(Color::Yellow)),

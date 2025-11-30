@@ -10,7 +10,8 @@ mod views;
 pub use components::{
     ConfirmDialog, ErrorDialog, InlineLoader, JqlAction, JqlInput, LoadingIndicator, Modal,
     MultiSelect, Notification, NotificationManager, NotificationType, ProfilePicker,
-    ProfilePickerAction, SelectItem, SpinnerStyle, Table, TextEditor, TextInput,
+    ProfilePickerAction, SelectItem, SpinnerStyle, Table, TextEditor, TextInput, TransitionAction,
+    TransitionPicker,
 };
 pub use theme::{issue_type_prefix, priority_style, status_style, truncate, Theme};
 pub use views::{

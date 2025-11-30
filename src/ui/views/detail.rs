@@ -13,8 +13,8 @@ use ratatui::{
     Frame,
 };
 
-use crate::api::types::{AtlassianDoc, FieldUpdates, Issue, IssueUpdateRequest};
-use crate::ui::components::{TextEditor, TextInput};
+use crate::api::types::{AtlassianDoc, FieldUpdates, Issue, IssueUpdateRequest, Transition};
+use crate::ui::components::{TextEditor, TextInput, TransitionAction, TransitionPicker};
 use crate::ui::theme::{issue_type_prefix, priority_style, status_style};
 
 /// Action that can be triggered from the detail view.
@@ -30,6 +30,14 @@ pub enum DetailAction {
     SaveEdit(String, IssueUpdateRequest),
     /// Show confirmation dialog before discarding changes.
     ConfirmDiscard,
+    /// Open the status transition picker.
+    OpenTransitionPicker,
+    /// Request transitions from the API (issue key, current status).
+    FetchTransitions(String, String),
+    /// Execute a status transition (issue key, transition ID, optional fields).
+    ExecuteTransition(String, String, Option<FieldUpdates>),
+    /// Show a message that transition requires fields (not yet supported).
+    TransitionRequiresFields(String),
 }
 
 /// Which field is currently being edited.
@@ -72,6 +80,8 @@ pub struct DetailView {
     edit_state: Option<EditState>,
     /// Whether we are currently saving.
     is_saving: bool,
+    /// Transition picker for status changes.
+    transition_picker: TransitionPicker,
 }
 
 impl DetailView {
@@ -85,6 +95,7 @@ impl DetailView {
             visible_height: 0,
             edit_state: None,
             is_saving: false,
+            transition_picker: TransitionPicker::new(),
         }
     }
 
@@ -95,6 +106,7 @@ impl DetailView {
         self.max_scroll = 0;
         self.edit_state = None;
         self.is_saving = false;
+        self.transition_picker.hide();
     }
 
     /// Clear the current issue.
@@ -104,6 +116,7 @@ impl DetailView {
         self.max_scroll = 0;
         self.edit_state = None;
         self.is_saving = false;
+        self.transition_picker.hide();
     }
 
     /// Get a reference to the current issue.
@@ -150,6 +163,46 @@ impl DetailView {
     /// Set the saving state.
     pub fn set_saving(&mut self, saving: bool) {
         self.is_saving = saving;
+    }
+
+    // ========================================================================
+    // Transition picker methods
+    // ========================================================================
+
+    /// Check if the transition picker is visible.
+    pub fn is_transition_picker_visible(&self) -> bool {
+        self.transition_picker.is_visible()
+    }
+
+    /// Check if transitions are loading.
+    pub fn is_transitions_loading(&self) -> bool {
+        self.transition_picker.is_loading()
+    }
+
+    /// Show the transition picker in loading state.
+    ///
+    /// This should be called when the user presses 's' to open the picker,
+    /// and then the API call to get transitions should be made.
+    pub fn show_transition_picker_loading(&mut self) {
+        if let Some(issue) = &self.issue {
+            let current_status = issue.fields.status.name.clone();
+            self.transition_picker.show_loading(&current_status);
+        }
+    }
+
+    /// Set the available transitions in the picker.
+    ///
+    /// Call this after receiving the transitions from the API.
+    pub fn set_transitions(&mut self, transitions: Vec<Transition>) {
+        if let Some(issue) = &self.issue {
+            let current_status = issue.fields.status.name.clone();
+            self.transition_picker.show(transitions, &current_status);
+        }
+    }
+
+    /// Hide the transition picker.
+    pub fn hide_transition_picker(&mut self) {
+        self.transition_picker.hide();
     }
 
     /// Enter edit mode for the current issue.
@@ -228,6 +281,11 @@ impl DetailView {
     ///
     /// Returns an optional action to be handled by the application.
     pub fn handle_input(&mut self, key: KeyEvent) -> Option<DetailAction> {
+        // Handle transition picker first (blocks other input when visible)
+        if self.transition_picker.is_visible() {
+            return self.handle_transition_picker_input(key);
+        }
+
         // If in edit mode, handle edit-specific input
         if self.edit_state.is_some() {
             return self.handle_edit_input(key);
@@ -273,7 +331,40 @@ impl DetailView {
             (KeyCode::Char('e'), KeyModifiers::NONE) => Some(DetailAction::EditIssue),
             // Add comment
             (KeyCode::Char('c'), KeyModifiers::NONE) => Some(DetailAction::AddComment),
+            // Change status (open transition picker)
+            (KeyCode::Char('s'), KeyModifiers::NONE) => {
+                if let Some(issue) = &self.issue {
+                    let issue_key = issue.key.clone();
+                    let current_status = issue.fields.status.name.clone();
+                    self.show_transition_picker_loading();
+                    Some(DetailAction::FetchTransitions(issue_key, current_status))
+                } else {
+                    None
+                }
+            }
             _ => None,
+        }
+    }
+
+    /// Handle keyboard input for the transition picker.
+    fn handle_transition_picker_input(&mut self, key: KeyEvent) -> Option<DetailAction> {
+        if let Some(action) = self.transition_picker.handle_input(key) {
+            match action {
+                TransitionAction::Execute(transition_id, fields) => {
+                    if let Some(issue) = &self.issue {
+                        let issue_key = issue.key.clone();
+                        Some(DetailAction::ExecuteTransition(issue_key, transition_id, fields))
+                    } else {
+                        None
+                    }
+                }
+                TransitionAction::RequiresFields(transition_id) => {
+                    Some(DetailAction::TransitionRequiresFields(transition_id))
+                }
+                TransitionAction::Cancel => None,
+            }
+        } else {
+            None
         }
     }
 
@@ -421,6 +512,9 @@ impl DetailView {
 
         // Render description (scrollable)
         self.render_description(frame, chunks[3], &description);
+
+        // Render transition picker (overlay)
+        self.transition_picker.render(frame, area);
     }
 
     /// Render the edit mode interface.
@@ -767,7 +861,7 @@ impl DetailView {
             Span::styled(scroll_info, Style::default().fg(Color::DarkGray)),
             Span::raw(" | "),
             Span::styled(
-                "j/k:scroll  q:back  e:edit  c:comment",
+                "j/k:scroll  q:back  e:edit  s:status  c:comment",
                 Style::default().fg(Color::DarkGray),
             ),
         ]);
@@ -1168,5 +1262,181 @@ mod tests {
         assert_eq!(issue.reporter(), None);
         assert!(issue.fields.labels.is_empty());
         assert!(issue.fields.components.is_empty());
+    }
+
+    // ========================================================================
+    // Transition picker tests
+    // ========================================================================
+
+    fn create_test_transition(id: &str, name: &str, target_name: &str) -> Transition {
+        use crate::api::types::{StatusCategory, TransitionTarget};
+        use std::collections::HashMap;
+
+        Transition {
+            id: id.to_string(),
+            name: name.to_string(),
+            to: TransitionTarget {
+                id: "1".to_string(),
+                name: target_name.to_string(),
+                status_category: Some(StatusCategory {
+                    id: 2,
+                    key: "indeterminate".to_string(),
+                    name: "In Progress".to_string(),
+                    color_name: Some("yellow".to_string()),
+                }),
+            },
+            fields: HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn test_transition_picker_visibility() {
+        let mut view = DetailView::new();
+        let issue = create_test_issue("TEST-1", "Test issue");
+        view.set_issue(issue);
+
+        assert!(!view.is_transition_picker_visible());
+        assert!(!view.is_transitions_loading());
+
+        view.show_transition_picker_loading();
+
+        assert!(view.is_transition_picker_visible());
+        assert!(view.is_transitions_loading());
+
+        view.hide_transition_picker();
+
+        assert!(!view.is_transition_picker_visible());
+    }
+
+    #[test]
+    fn test_set_transitions() {
+        let mut view = DetailView::new();
+        let issue = create_test_issue("TEST-1", "Test issue");
+        view.set_issue(issue);
+
+        view.show_transition_picker_loading();
+        assert!(view.is_transitions_loading());
+
+        let transitions = vec![
+            create_test_transition("11", "Start Progress", "In Progress"),
+            create_test_transition("21", "Done", "Done"),
+        ];
+
+        view.set_transitions(transitions);
+
+        assert!(view.is_transition_picker_visible());
+        assert!(!view.is_transitions_loading());
+    }
+
+    #[test]
+    fn test_s_key_opens_transition_picker() {
+        let mut view = DetailView::new();
+        let issue = create_test_issue("TEST-1", "Test issue");
+        view.set_issue(issue);
+
+        let key = KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE);
+        let action = view.handle_input(key);
+
+        assert!(matches!(action, Some(DetailAction::FetchTransitions(_, _))));
+        assert!(view.is_transition_picker_visible());
+        assert!(view.is_transitions_loading());
+    }
+
+    #[test]
+    fn test_s_key_without_issue_does_nothing() {
+        let mut view = DetailView::new();
+
+        let key = KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE);
+        let action = view.handle_input(key);
+
+        assert!(action.is_none());
+        assert!(!view.is_transition_picker_visible());
+    }
+
+    #[test]
+    fn test_transition_picker_blocks_other_input() {
+        let mut view = DetailView::new();
+        let issue = create_test_issue("TEST-1", "Test issue");
+        view.set_issue(issue);
+
+        view.show_transition_picker_loading();
+
+        // 'q' should not go back while transition picker is visible
+        let key = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE);
+        let action = view.handle_input(key);
+
+        // Cancel action is returned when pressing q/Esc in transition picker
+        assert!(action.is_none() || matches!(action, Some(DetailAction::GoBack)) == false);
+    }
+
+    #[test]
+    fn test_transition_picker_cancel() {
+        let mut view = DetailView::new();
+        let issue = create_test_issue("TEST-1", "Test issue");
+        view.set_issue(issue);
+
+        let transitions = vec![create_test_transition("11", "Start", "In Progress")];
+        view.set_transitions(transitions);
+
+        assert!(view.is_transition_picker_visible());
+
+        let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+        let action = view.handle_input(key);
+
+        assert!(action.is_none()); // Cancel returns None
+        assert!(!view.is_transition_picker_visible());
+    }
+
+    #[test]
+    fn test_transition_execute() {
+        let mut view = DetailView::new();
+        let issue = create_test_issue("TEST-1", "Test issue");
+        view.set_issue(issue);
+
+        let transitions = vec![create_test_transition("11", "Start Progress", "In Progress")];
+        view.set_transitions(transitions);
+
+        // Press Enter to select the transition
+        let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        let action = view.handle_input(key);
+
+        match action {
+            Some(DetailAction::ExecuteTransition(issue_key, transition_id, _)) => {
+                assert_eq!(issue_key, "TEST-1");
+                assert_eq!(transition_id, "11");
+            }
+            _ => panic!("Expected ExecuteTransition action"),
+        }
+        assert!(!view.is_transition_picker_visible());
+    }
+
+    #[test]
+    fn test_set_issue_hides_transition_picker() {
+        let mut view = DetailView::new();
+        let issue = create_test_issue("TEST-1", "Test issue");
+        view.set_issue(issue);
+
+        view.show_transition_picker_loading();
+        assert!(view.is_transition_picker_visible());
+
+        // Setting a new issue should hide the transition picker
+        let new_issue = create_test_issue("TEST-2", "Another issue");
+        view.set_issue(new_issue);
+
+        assert!(!view.is_transition_picker_visible());
+    }
+
+    #[test]
+    fn test_clear_hides_transition_picker() {
+        let mut view = DetailView::new();
+        let issue = create_test_issue("TEST-1", "Test issue");
+        view.set_issue(issue);
+
+        view.show_transition_picker_loading();
+        assert!(view.is_transition_picker_visible());
+
+        view.clear();
+
+        assert!(!view.is_transition_picker_visible());
     }
 }

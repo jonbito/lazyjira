@@ -201,6 +201,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
     use api::JiraClient;
     use cache::{CacheManager, CacheStatus};
     use tracing::{debug, error, info, warn};
+    use ui::ExternalEditor;
 
     let mut app = App::new();
     let event_handler = EventHandler::new();
@@ -377,6 +378,42 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
         let old_profile = app.current_profile().map(|p| p.name.clone());
 
         app.update(event);
+
+        // Handle pending external editor request
+        if let Some((issue_key, current_content)) = app.take_pending_external_edit() {
+            debug!(issue_key = %issue_key, "Opening external editor");
+
+            // Get a reference to stdout for suspend/resume
+            let mut stdout = stdout();
+
+            // Use the guard to ensure TUI is always restored
+            let _guard = TuiSuspendGuard::new(&mut stdout, terminal)?;
+
+            // Launch external editor synchronously
+            let editor = ExternalEditor::new();
+            let result = editor.open(&issue_key, &current_content);
+
+            // Guard is dropped here, restoring TUI
+
+            // Handle the result
+            match result {
+                Ok(edit_result) if edit_result.was_modified => {
+                    info!(issue_key = %issue_key, "External editor content modified");
+                    app.apply_external_edit_result(edit_result.content);
+                }
+                Ok(_) => {
+                    debug!(issue_key = %issue_key, "External editor content unchanged");
+                    // No changes, do nothing
+                }
+                Err(e) => {
+                    error!(issue_key = %issue_key, error = %e, "External editor error");
+                    app.notify_error(format!("Editor error: {}", e));
+                }
+            }
+
+            // Force a redraw to update the view
+            continue;
+        }
 
         // Check if we need to refresh issues
         let is_loading_now = app.list_view().is_loading();

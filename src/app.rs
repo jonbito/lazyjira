@@ -1587,6 +1587,16 @@ impl App {
         self.pending_external_edit.take()
     }
 
+    /// Apply the result from an external editor session to the detail view.
+    ///
+    /// If the content was modified, this enters edit mode with the new content
+    /// ready for the user to review and save. If the content wasn't modified,
+    /// nothing happens.
+    pub fn apply_external_edit_result(&mut self, content: String) {
+        info!("Applying external edit result to detail view");
+        self.detail_view.set_external_edit_content(content);
+    }
+
     /// Returns whether the application should quit.
     pub fn should_quit(&self) -> bool {
         self.should_quit
@@ -3091,5 +3101,94 @@ mod tests {
         let config = app.config();
         assert_eq!(config.profiles.len(), 3);
         assert_eq!(config.settings.default_profile, Some("work".to_string()));
+    }
+
+    // ========================================================================
+    // External editor tests
+    // ========================================================================
+
+    #[test]
+    fn test_pending_external_edit_initially_none() {
+        let mut app = App::new();
+        assert!(app.take_pending_external_edit().is_none());
+    }
+
+    #[test]
+    fn test_take_pending_external_edit_clears_state() {
+        let mut app = App::new();
+
+        // Manually set pending external edit
+        app.pending_external_edit = Some(("TEST-123".to_string(), "Test description".to_string()));
+
+        // First take should return the value
+        let result = app.take_pending_external_edit();
+        assert!(result.is_some());
+        let (key, content) = result.unwrap();
+        assert_eq!(key, "TEST-123");
+        assert_eq!(content, "Test description");
+
+        // Second take should return None (state was cleared)
+        assert!(app.take_pending_external_edit().is_none());
+    }
+
+    #[test]
+    fn test_apply_external_edit_result_enters_edit_mode() {
+        use crate::api::types::{Issue, IssueFields, IssueType, Status, StatusCategory};
+
+        let mut app = App::new();
+
+        // Create a test issue and set it in the detail view
+        let issue = Issue {
+            id: "1".to_string(),
+            key: "TEST-123".to_string(),
+            self_url: "https://jira.example.com/rest/api/2/issue/1".to_string(),
+            fields: IssueFields {
+                summary: "Test issue".to_string(),
+                description: None,
+                status: Status {
+                    id: "1".to_string(),
+                    name: "Open".to_string(),
+                    status_category: Some(StatusCategory {
+                        id: 1,
+                        key: "new".to_string(),
+                        name: "To Do".to_string(),
+                        color_name: Some("blue-gray".to_string()),
+                    }),
+                },
+                issuetype: IssueType {
+                    id: "1".to_string(),
+                    name: "Story".to_string(),
+                    subtask: false,
+                    description: None,
+                    icon_url: None,
+                },
+                priority: None,
+                assignee: None,
+                reporter: None,
+                created: Some("2024-01-01T00:00:00.000Z".to_string()),
+                updated: Some("2024-01-01T00:00:00.000Z".to_string()),
+                labels: vec![],
+                components: vec![],
+                issue_links: vec![],
+                project: Some(crate::api::types::Project {
+                    id: "1".to_string(),
+                    key: "TEST".to_string(),
+                    name: "Test Project".to_string(),
+                    avatar_urls: None,
+                }),
+                ..Default::default()
+            },
+        };
+
+        app.detail_view_mut().set_issue(issue);
+
+        // Verify not in edit mode initially
+        assert!(!app.detail_view().is_editing());
+
+        // Apply external edit result
+        app.apply_external_edit_result("New description from external editor".to_string());
+
+        // Should now be in edit mode
+        assert!(app.detail_view().is_editing());
     }
 }

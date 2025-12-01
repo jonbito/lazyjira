@@ -451,3 +451,18 @@ fn render_header(&self, frame: &mut Frame, area: Rect) {
 - 631 tests pass
 - Tests for theme creation, color parsing, custom theme application
 - Tests for settings serialization with custom_theme field
+
+#### Theme Applied to Views and Components
+
+Views updated to use theme colors:
+- `src/ui/views/list.rs` - Table headers, selection, status bar, loading/empty states
+- `src/ui/views/detail.rs` - Header, metadata, labels, components, description, status bar
+- `src/ui/views/filter.rs` - Panel border, help text
+- `src/ui/views/profile.rs` - Profile list, form dialogs, delete confirmation
+- `src/ui/views/help.rs` - Keyboard shortcuts display, section headers
+
+Components updated:
+- `src/ui/components/input.rs` - Border colors, text colors, focus indicators
+
+Note: Additional components (notification, modal, pickers, etc.) retain hardcoded colors
+for now but can access the theme via `theme()` for future updates.

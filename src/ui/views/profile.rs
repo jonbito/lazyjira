@@ -15,6 +15,7 @@ use ratatui::{
 
 use crate::config::Profile;
 use crate::ui::components::TextInput;
+use crate::ui::theme::theme;
 
 // ============================================================================
 // Profile List View
@@ -191,15 +192,16 @@ impl ProfileListView {
 
     /// Render the profile list view.
     pub fn render(&mut self, frame: &mut Frame, area: Rect) {
+        let t = theme();
         let block = Block::default()
             .title(Span::styled(
                 " Profiles ",
                 Style::default()
-                    .fg(Color::Cyan)
+                    .fg(t.accent)
                     .add_modifier(Modifier::BOLD),
             ))
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Cyan));
+            .border_style(Style::default().fg(t.accent));
 
         let inner = block.inner(area);
         frame.render_widget(block, area);
@@ -209,12 +211,12 @@ impl ProfileListView {
                 Line::raw(""),
                 Line::styled(
                     "No profiles configured",
-                    Style::default().fg(Color::DarkGray),
+                    Style::default().fg(t.dim),
                 ),
                 Line::raw(""),
                 Line::styled(
                     "Press 'a' to add a new profile",
-                    Style::default().fg(Color::Yellow),
+                    Style::default().fg(t.warning),
                 ),
             ])
             .alignment(Alignment::Center);
@@ -241,20 +243,20 @@ impl ProfileListView {
                 if profile.is_default {
                     spans.push(Span::styled(
                         " (default)",
-                        Style::default().fg(Color::Green),
+                        Style::default().fg(t.success),
                     ));
                 }
 
                 if !profile.has_token {
-                    spans.push(Span::styled(" [no token]", Style::default().fg(Color::Red)));
+                    spans.push(Span::styled(" [no token]", Style::default().fg(t.error)));
                 }
 
                 let line1 = Line::from(spans);
                 let line2 = Line::from(vec![
                     Span::styled("  ", Style::default()),
-                    Span::styled(&profile.url, Style::default().fg(Color::DarkGray)),
-                    Span::styled(" - ", Style::default().fg(Color::DarkGray)),
-                    Span::styled(&profile.email, Style::default().fg(Color::DarkGray)),
+                    Span::styled(&profile.url, Style::default().fg(t.dim)),
+                    Span::styled(" - ", Style::default().fg(t.dim)),
+                    Span::styled(&profile.email, Style::default().fg(t.dim)),
                 ]);
 
                 ListItem::new(vec![line1, line2])
@@ -264,7 +266,7 @@ impl ProfileListView {
         let list = List::new(items)
             .highlight_style(
                 Style::default()
-                    .bg(Color::DarkGray)
+                    .bg(t.selection_bg)
                     .add_modifier(Modifier::BOLD),
             )
             .highlight_symbol("> ");
@@ -273,17 +275,17 @@ impl ProfileListView {
 
         // Render help bar
         let help = Line::from(vec![
-            Span::styled("[a]", Style::default().fg(Color::Yellow)),
+            Span::styled("[a]", Style::default().fg(t.warning)),
             Span::raw("dd "),
-            Span::styled("[e]", Style::default().fg(Color::Yellow)),
+            Span::styled("[e]", Style::default().fg(t.warning)),
             Span::raw("dit "),
-            Span::styled("[d]", Style::default().fg(Color::Yellow)),
+            Span::styled("[d]", Style::default().fg(t.warning)),
             Span::raw("elete "),
-            Span::styled("[s]", Style::default().fg(Color::Yellow)),
+            Span::styled("[s]", Style::default().fg(t.warning)),
             Span::raw("et default "),
-            Span::styled("[Space]", Style::default().fg(Color::Yellow)),
+            Span::styled("[Space]", Style::default().fg(t.warning)),
             Span::raw("switch "),
-            Span::styled("[q]", Style::default().fg(Color::Yellow)),
+            Span::styled("[q]", Style::default().fg(t.warning)),
             Span::raw("back"),
         ]);
         let help_para = Paragraph::new(help).alignment(Alignment::Center);
@@ -655,6 +657,7 @@ impl ProfileFormView {
         frame.render_widget(Clear, dialog_area);
 
         // Create the outer block
+        let t = theme();
         let title = match &self.mode {
             FormMode::Add => " Add Profile ",
             FormMode::Edit(name) => &format!(" Edit Profile: {} ", name),
@@ -664,11 +667,11 @@ impl ProfileFormView {
             .title(Span::styled(
                 title,
                 Style::default()
-                    .fg(Color::Cyan)
+                    .fg(t.accent)
                     .add_modifier(Modifier::BOLD),
             ))
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Cyan));
+            .border_style(Style::default().fg(t.accent));
 
         let inner = block.inner(dialog_area);
         frame.render_widget(block, dialog_area);
@@ -709,14 +712,14 @@ impl ProfileFormView {
         if let Some(ref error) = self.error {
             let error_text = Paragraph::new(Span::styled(
                 &error.message,
-                Style::default().fg(Color::Red),
+                Style::default().fg(t.error),
             ))
             .alignment(Alignment::Center);
             frame.render_widget(error_text, chunks[4]);
         } else if self.validating {
             let validating_text = Paragraph::new(Span::styled(
                 "Validating connection...",
-                Style::default().fg(Color::Yellow),
+                Style::default().fg(t.warning),
             ))
             .alignment(Alignment::Center);
             frame.render_widget(validating_text, chunks[4]);
@@ -725,11 +728,11 @@ impl ProfileFormView {
         // Render submit button
         let button_style = if self.focus == FormField::Submit {
             Style::default()
-                .fg(Color::Black)
-                .bg(Color::Green)
+                .fg(t.selection_fg)
+                .bg(t.success)
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(Color::Green)
+            Style::default().fg(t.success)
         };
 
         let button_text = if self.validating {
@@ -837,6 +840,8 @@ impl DeleteProfileDialog {
 
         let dialog_area = centered_rect(area, dialog_width, dialog_height);
 
+        let t = theme();
+
         // Clear the dialog area
         frame.render_widget(Clear, dialog_area);
 
@@ -844,10 +849,10 @@ impl DeleteProfileDialog {
         let block = Block::default()
             .title(Span::styled(
                 " Delete Profile ",
-                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                Style::default().fg(t.error).add_modifier(Modifier::BOLD),
             ))
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Red));
+            .border_style(Style::default().fg(t.error));
 
         let inner = block.inner(dialog_area);
         frame.render_widget(block, dialog_area);
@@ -865,7 +870,7 @@ impl DeleteProfileDialog {
             self.profile_name
         );
         let message_para = Paragraph::new(message)
-            .style(Style::default().fg(Color::White))
+            .style(Style::default().fg(t.fg))
             .wrap(Wrap { trim: true })
             .alignment(Alignment::Center);
         frame.render_widget(message_para, chunks[0]);
@@ -873,20 +878,20 @@ impl DeleteProfileDialog {
         // Render buttons
         let confirm_style = if self.selected_confirm {
             Style::default()
-                .fg(Color::Black)
-                .bg(Color::Red)
+                .fg(t.selection_fg)
+                .bg(t.error)
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(Color::Red)
+            Style::default().fg(t.error)
         };
 
         let cancel_style = if !self.selected_confirm {
             Style::default()
-                .fg(Color::Black)
-                .bg(Color::Green)
+                .fg(t.selection_fg)
+                .bg(t.success)
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(Color::Green)
+            Style::default().fg(t.success)
         };
 
         let buttons = Line::from(vec![

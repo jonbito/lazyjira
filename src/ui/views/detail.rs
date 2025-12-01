@@ -20,7 +20,7 @@ use crate::ui::components::{
     AssigneeAction, AssigneePicker, CommentAction, CommentsPanel, PriorityAction, PriorityPicker,
     TagAction, TagEditor, TextEditor, TextInput, TransitionAction, TransitionPicker,
 };
-use crate::ui::theme::{issue_type_prefix, priority_style, status_style};
+use crate::ui::theme::{issue_type_prefix, priority_style, status_style, theme};
 
 /// Action that can be triggered from the detail view.
 #[derive(Debug, Clone, PartialEq)]
@@ -1036,16 +1036,17 @@ impl DetailView {
             type_prefix, issue_type_name, issue_key, edit_indicator, saving_indicator
         );
 
+        let t = theme();
         let header = Paragraph::new(Line::from(vec![Span::styled(
             header_text,
             Style::default()
-                .fg(Color::Yellow)
+                .fg(t.warning)
                 .add_modifier(Modifier::BOLD),
         )]))
         .block(
             Block::default()
                 .borders(Borders::BOTTOM)
-                .border_style(Style::default().fg(Color::Yellow)),
+                .border_style(Style::default().fg(t.warning)),
         );
         frame.render_widget(header, chunks[0]);
 
@@ -1083,11 +1084,11 @@ impl DetailView {
 
         // Render edit mode hints
         let hints = Line::from(vec![
-            Span::styled("Tab", Style::default().fg(Color::Yellow)),
+            Span::styled("Tab", Style::default().fg(t.warning)),
             Span::raw(": switch field  "),
-            Span::styled("Ctrl+S", Style::default().fg(Color::Green)),
+            Span::styled("Ctrl+S", Style::default().fg(t.success)),
             Span::raw(": save  "),
-            Span::styled("Esc", Style::default().fg(Color::Red)),
+            Span::styled("Esc", Style::default().fg(t.error)),
             Span::raw(": cancel"),
         ]);
         let hints_paragraph = Paragraph::new(hints);
@@ -1096,27 +1097,29 @@ impl DetailView {
 
     /// Render when no issue is set.
     fn render_no_issue(&self, frame: &mut Frame, area: Rect) {
+        let t = theme();
         let message = Paragraph::new("No issue selected")
-            .style(Style::default().fg(Color::Gray))
+            .style(Style::default().fg(t.muted))
             .block(Block::default().borders(Borders::ALL).title("Issue Detail"));
         frame.render_widget(message, area);
     }
 
     /// Render the header section with issue type and key.
     fn render_header(&self, frame: &mut Frame, area: Rect, issue_type: &str, key: &str) {
+        let t = theme();
         let type_prefix = issue_type_prefix(issue_type);
         let header_text = format!("{} {} - {}", type_prefix, issue_type, key);
 
         let header = Paragraph::new(Line::from(vec![Span::styled(
             header_text,
             Style::default()
-                .fg(Color::Cyan)
+                .fg(t.accent)
                 .add_modifier(Modifier::BOLD),
         )]))
         .block(
             Block::default()
                 .borders(Borders::BOTTOM)
-                .border_style(Style::default().fg(Color::DarkGray)),
+                .border_style(Style::default().fg(t.border)),
         );
 
         frame.render_widget(header, area);
@@ -1149,6 +1152,7 @@ impl DetailView {
         components: &[String],
         project: Option<&str>,
     ) {
+        let t = theme();
         let status_sty = status_style(status);
         let priority_sty = priority_style(priority);
         let priority_name = priority.map(|p| p.name.as_str()).unwrap_or("None");
@@ -1156,18 +1160,18 @@ impl DetailView {
         let mut lines = vec![
             // Status and Priority
             Line::from(vec![
-                Span::styled("Status: ", Style::default().fg(Color::DarkGray)),
+                Span::styled("Status: ", Style::default().fg(t.dim)),
                 Span::styled(&status.name, status_sty),
                 Span::raw("    "),
-                Span::styled("Priority: ", Style::default().fg(Color::DarkGray)),
+                Span::styled("Priority: ", Style::default().fg(t.dim)),
                 Span::styled(priority_name, priority_sty),
             ]),
             // Assignee and Reporter
             Line::from(vec![
-                Span::styled("Assignee: ", Style::default().fg(Color::DarkGray)),
+                Span::styled("Assignee: ", Style::default().fg(t.dim)),
                 Span::raw(assignee),
                 Span::raw("    "),
-                Span::styled("Reporter: ", Style::default().fg(Color::DarkGray)),
+                Span::styled("Reporter: ", Style::default().fg(t.dim)),
                 Span::raw(reporter),
             ]),
         ];
@@ -1175,7 +1179,7 @@ impl DetailView {
         // Project (if available)
         if let Some(proj) = project {
             lines.push(Line::from(vec![
-                Span::styled("Project: ", Style::default().fg(Color::DarkGray)),
+                Span::styled("Project: ", Style::default().fg(t.dim)),
                 Span::raw(proj),
             ]));
         }
@@ -1189,10 +1193,10 @@ impl DetailView {
             .unwrap_or_else(|| "Unknown".to_string());
 
         lines.push(Line::from(vec![
-            Span::styled("Created: ", Style::default().fg(Color::DarkGray)),
+            Span::styled("Created: ", Style::default().fg(t.dim)),
             Span::raw(&created_str),
             Span::raw("    "),
-            Span::styled("Updated: ", Style::default().fg(Color::DarkGray)),
+            Span::styled("Updated: ", Style::default().fg(t.dim)),
             Span::raw(&updated_str),
         ]));
 
@@ -1200,7 +1204,7 @@ impl DetailView {
         if !labels.is_empty() {
             let mut label_spans = vec![Span::styled(
                 "Labels: ",
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(t.dim),
             )];
             for (i, label) in labels.iter().enumerate() {
                 if i > 0 {
@@ -1208,7 +1212,7 @@ impl DetailView {
                 }
                 label_spans.push(Span::styled(
                     format!(" {} ", label),
-                    Style::default().bg(Color::Blue).fg(Color::White),
+                    Style::default().bg(t.tag_bg).fg(t.tag_fg),
                 ));
             }
             lines.push(Line::from(label_spans));
@@ -1218,7 +1222,7 @@ impl DetailView {
         if !components.is_empty() {
             let mut comp_spans = vec![Span::styled(
                 "Components: ",
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(t.dim),
             )];
             for (i, component) in components.iter().enumerate() {
                 if i > 0 {
@@ -1226,7 +1230,7 @@ impl DetailView {
                 }
                 comp_spans.push(Span::styled(
                     format!(" {} ", component),
-                    Style::default().bg(Color::Magenta).fg(Color::White),
+                    Style::default().bg(t.component_bg).fg(t.component_fg),
                 ));
             }
             lines.push(Line::from(comp_spans));
@@ -1235,7 +1239,7 @@ impl DetailView {
         let metadata = Paragraph::new(lines).block(
             Block::default()
                 .borders(Borders::BOTTOM)
-                .border_style(Style::default().fg(Color::DarkGray)),
+                .border_style(Style::default().fg(t.border)),
         );
 
         frame.render_widget(metadata, area);
@@ -1265,12 +1269,13 @@ impl DetailView {
             self.scroll = self.max_scroll;
         }
 
+        let t = theme();
         let description_paragraph = Paragraph::new(description_text)
             .block(
                 Block::default()
                     .title("Description")
                     .borders(Borders::ALL)
-                    .border_style(Style::default().fg(Color::DarkGray)),
+                    .border_style(Style::default().fg(t.border)),
             )
             .wrap(Wrap { trim: true })
             .scroll((self.scroll, 0));
@@ -1280,6 +1285,7 @@ impl DetailView {
 
     /// Render the status bar for the detail view.
     pub fn render_status_bar(&self, frame: &mut Frame, area: Rect) {
+        let t = theme();
         let issue_key = self
             .issue
             .as_ref()
@@ -1299,16 +1305,16 @@ impl DetailView {
             let status_line = Line::from(vec![
                 Span::styled(
                     format!(" {} ", issue_key),
-                    Style::default().fg(Color::Black).bg(Color::Yellow),
+                    Style::default().fg(t.selection_fg).bg(t.warning),
                 ),
                 Span::styled(
                     " EDITING ",
                     Style::default()
-                        .fg(Color::Yellow)
+                        .fg(t.warning)
                         .add_modifier(Modifier::BOLD),
                 ),
-                Span::styled(unsaved_indicator, Style::default().fg(Color::Red)),
-                Span::styled(saving_indicator, Style::default().fg(Color::Cyan)),
+                Span::styled(unsaved_indicator, Style::default().fg(t.error)),
+                Span::styled(saving_indicator, Style::default().fg(t.accent)),
             ]);
 
             let paragraph = Paragraph::new(status_line);
@@ -1326,13 +1332,13 @@ impl DetailView {
         let status_line = Line::from(vec![
             Span::styled(
                 format!(" {} ", issue_key),
-                Style::default().fg(Color::Black).bg(Color::Cyan),
+                Style::default().fg(t.selection_fg).bg(t.accent),
             ),
-            Span::styled(scroll_info, Style::default().fg(Color::DarkGray)),
+            Span::styled(scroll_info, Style::default().fg(t.dim)),
             Span::raw(" | "),
             Span::styled(
                 "j/k:scroll  q:back  e:edit  c:comment  s:status  a:assignee  P:priority  l:labels  C:components",
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(t.dim),
             ),
         ]);
 

@@ -16,7 +16,7 @@ use ratatui::{
 use crate::api::types::Issue;
 use crate::cache::CacheStatus;
 use crate::ui::components::{highlight_text, render_search_bar, QuickSearch};
-use crate::ui::theme::{issue_type_prefix, priority_style, status_style, truncate};
+use crate::ui::theme::{issue_type_prefix, priority_style, status_style, theme, truncate};
 
 // ============================================================================
 // Sorting Types
@@ -725,9 +725,10 @@ impl ListView {
 
     /// Render the loading state.
     fn render_loading(&self, frame: &mut Frame, area: Rect) {
+        let t = theme();
         let loading = Paragraph::new("Loading issues...")
             .alignment(Alignment::Center)
-            .style(Style::default().fg(Color::Gray));
+            .style(Style::default().fg(t.muted));
 
         // Center the loading message vertically
         let vertical_center = area.y + area.height / 2;
@@ -743,20 +744,21 @@ impl ListView {
 
     /// Render the empty state.
     fn render_empty(&self, frame: &mut Frame, area: Rect) {
+        let t = theme();
         let message = vec![
             Line::from(""),
             Line::from(Span::styled(
                 "No issues found",
-                Style::default().fg(Color::Yellow),
+                Style::default().fg(t.warning),
             )),
             Line::from(""),
             Line::from(Span::styled(
                 "Press 'f' to change filters",
-                Style::default().fg(Color::Gray),
+                Style::default().fg(t.muted),
             )),
             Line::from(Span::styled(
                 "Press 'r' to refresh",
-                Style::default().fg(Color::Gray),
+                Style::default().fg(t.muted),
             )),
         ];
 
@@ -776,6 +778,8 @@ impl ListView {
 
     /// Render the issue table.
     fn render_table(&mut self, frame: &mut Frame, area: Rect) {
+        let t = theme();
+
         // Calculate column widths based on available space
         let key_width = 14; // PROJ-12345
         let status_width = 15;
@@ -815,12 +819,12 @@ impl ListView {
                 // Style: highlight focused column when in header mode
                 let style = if self.header_focused && i == self.focused_column {
                     Style::default()
-                        .fg(Color::Black)
-                        .bg(Color::Cyan)
+                        .fg(t.selection_fg)
+                        .bg(t.accent)
                         .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default()
-                        .fg(Color::White)
+                        .fg(t.fg)
                         .add_modifier(Modifier::BOLD)
                 };
 
@@ -907,7 +911,7 @@ impl ListView {
         let table = Table::new(rows, widths)
             .header(header)
             .block(Block::default().borders(Borders::NONE))
-            .highlight_style(Style::default().bg(Color::DarkGray))
+            .highlight_style(Style::default().bg(t.selection_bg))
             .highlight_symbol(">> ");
 
         frame.render_stateful_widget(table, area, &mut self.table_state);
@@ -915,6 +919,7 @@ impl ListView {
 
     /// Render the status bar.
     pub fn render_status_bar(&self, frame: &mut Frame, area: Rect) {
+        let t = theme();
         let profile_text = self.profile_name.as_deref().unwrap_or("No profile");
 
         // Use pagination display if we have pagination info, otherwise fall back to issue count
@@ -935,11 +940,11 @@ impl ListView {
         let mut spans = vec![
             Span::styled(
                 format!(" {} ", profile_text),
-                Style::default().fg(Color::Black).bg(Color::Cyan),
+                Style::default().fg(t.selection_fg).bg(t.accent),
             ),
             Span::raw(" "),
-            Span::styled(issue_count_text, Style::default().fg(Color::Gray)),
-            Span::styled(selected_text, Style::default().fg(Color::DarkGray)),
+            Span::styled(issue_count_text, Style::default().fg(t.muted)),
+            Span::styled(selected_text, Style::default().fg(t.dim)),
         ];
 
         // Add sort info
@@ -950,7 +955,7 @@ impl ListView {
                 self.sort.column.display_name(),
                 self.sort.direction.indicator()
             ),
-            Style::default().fg(Color::Cyan),
+            Style::default().fg(t.accent),
         ));
 
         // Add filter summary if active
@@ -958,7 +963,7 @@ impl ListView {
             spans.push(Span::raw(" "));
             spans.push(Span::styled(
                 format!("[Filter: {}]", summary),
-                Style::default().fg(Color::Yellow),
+                Style::default().fg(t.warning),
             ));
         }
 
@@ -971,7 +976,7 @@ impl ListView {
                     self.search.query(),
                     self.search.match_info()
                 ),
-                Style::default().fg(Color::Magenta),
+                Style::default().fg(t.info),
             ));
         }
 
@@ -979,9 +984,9 @@ impl ListView {
         if let Some(status) = &self.cache_status {
             spans.push(Span::raw(" "));
             let status_color = match status {
-                CacheStatus::Fresh => Color::Green,
-                CacheStatus::FromCache => Color::Yellow,
-                CacheStatus::Offline => Color::Red,
+                CacheStatus::Fresh => t.success,
+                CacheStatus::FromCache => t.warning,
+                CacheStatus::Offline => t.error,
             };
             spans.push(Span::styled(
                 format!("{} {}", status.icon(), status.text()),
@@ -1003,7 +1008,7 @@ impl ListView {
         };
         spans.push(Span::styled(
             help_text,
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(t.dim),
         ));
 
         let status_line = Line::from(spans);

@@ -17,6 +17,7 @@ use ratatui::{
 
 use crate::api::types::{FilterOptions, FilterState, SprintFilter};
 use crate::ui::components::{MultiSelect, SelectItem};
+use crate::ui::theme::theme;
 
 /// Actions that can be returned from the filter panel.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -363,6 +364,8 @@ impl FilterPanelView {
 
         let panel_area = Rect::new(panel_x, panel_y, panel_width, panel_height);
 
+        let t = theme();
+
         // Clear the background
         frame.render_widget(Clear, panel_area);
 
@@ -371,7 +374,7 @@ impl FilterPanelView {
             .title(" Filters ")
             .title_style(Style::default().add_modifier(Modifier::BOLD))
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Cyan));
+            .border_style(Style::default().fg(t.border_focused));
 
         let inner_area = outer_block.inner(panel_area);
         frame.render_widget(outer_block, panel_area);
@@ -411,21 +414,21 @@ impl FilterPanelView {
 
         // Render footer with help
         let help_text = Line::from(vec![
-            Span::styled("Tab/←→", Style::default().fg(Color::Yellow)),
+            Span::styled("Tab/←→", Style::default().fg(t.warning)),
             Span::raw(": switch section  "),
-            Span::styled("↑↓", Style::default().fg(Color::Yellow)),
+            Span::styled("↑↓", Style::default().fg(t.warning)),
             Span::raw(": navigate  "),
-            Span::styled("Space", Style::default().fg(Color::Yellow)),
+            Span::styled("Space", Style::default().fg(t.warning)),
             Span::raw(": toggle  "),
-            Span::styled("Enter", Style::default().fg(Color::Yellow)),
+            Span::styled("Enter", Style::default().fg(t.warning)),
             Span::raw(": apply  "),
-            Span::styled("c", Style::default().fg(Color::Yellow)),
+            Span::styled("c", Style::default().fg(t.warning)),
             Span::raw(": clear  "),
-            Span::styled("Esc", Style::default().fg(Color::Yellow)),
+            Span::styled("Esc", Style::default().fg(t.warning)),
             Span::raw(": cancel"),
         ]);
 
-        let footer = Paragraph::new(help_text).style(Style::default().fg(Color::Gray));
+        let footer = Paragraph::new(help_text).style(Style::default().fg(t.muted));
         frame.render_widget(footer, content_footer[1]);
     }
 }

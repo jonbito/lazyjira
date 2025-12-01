@@ -14,6 +14,7 @@ use ratatui::{
 };
 
 use crate::events::{get_keybindings_grouped, Keybinding, KeyContext};
+use crate::ui::theme::theme;
 
 /// Actions that can be returned from the help view.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -129,6 +130,8 @@ impl HelpView {
 
     /// Render the help view.
     pub fn render(&mut self, frame: &mut Frame, area: Rect) {
+        let t = theme();
+
         // Clear the area first
         frame.render_widget(Clear, area);
 
@@ -137,7 +140,7 @@ impl HelpView {
             .title(" Help - Keyboard Shortcuts ")
             .title_alignment(Alignment::Center)
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Cyan));
+            .border_style(Style::default().fg(t.accent));
 
         let inner = block.inner(area);
         frame.render_widget(block, area);
@@ -178,6 +181,7 @@ impl HelpView {
 
     /// Build the content lines for the help panel.
     fn build_content_lines(&self) -> Vec<Line<'static>> {
+        let t = theme();
         let mut lines: Vec<Line<'static>> = Vec::new();
 
         for (context, bindings) in &self.grouped_bindings {
@@ -185,7 +189,7 @@ impl HelpView {
             lines.push(Line::from(vec![Span::styled(
                 format!("── {} ──", context.display()),
                 Style::default()
-                    .fg(Color::Yellow)
+                    .fg(t.warning)
                     .add_modifier(Modifier::BOLD),
             )]));
             lines.push(Line::from(""));
@@ -196,7 +200,7 @@ impl HelpView {
                     Span::styled(
                         format!("{:>14}", binding.key),
                         Style::default()
-                            .fg(Color::Green)
+                            .fg(t.success)
                             .add_modifier(Modifier::BOLD),
                     ),
                     Span::raw("  "),
@@ -210,7 +214,7 @@ impl HelpView {
         // Footer hint
         lines.push(Line::from(vec![Span::styled(
             "Press ?, q, or Esc to close",
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(t.dim),
         )]));
 
         lines
@@ -226,6 +230,16 @@ impl Default for HelpView {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ui::theme::{init_theme, Theme};
+    use std::sync::Once;
+
+    static INIT: Once = Once::new();
+
+    fn init_test_theme() {
+        INIT.call_once(|| {
+            init_theme(Theme::dark());
+        });
+    }
 
     #[test]
     fn test_help_view_new() {
@@ -311,6 +325,7 @@ mod tests {
 
     #[test]
     fn test_build_content_lines() {
+        init_test_theme();
         let view = HelpView::new();
         let lines = view.build_content_lines();
         assert!(!lines.is_empty());

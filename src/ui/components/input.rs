@@ -37,6 +37,8 @@ use ratatui::{
     Frame,
 };
 
+use crate::ui::theme::theme;
+
 /// A text input widget.
 #[derive(Debug, Clone)]
 pub struct TextInput {
@@ -236,6 +238,7 @@ impl TextInput {
     /// * `area` - The area to render in
     /// * `focused` - Whether this input is currently focused
     pub fn render(&self, frame: &mut Frame, area: Rect, focused: bool) {
+        let t = theme();
         let display = if self.value.is_empty() && !self.placeholder.is_empty() {
             self.placeholder.clone()
         } else {
@@ -243,17 +246,17 @@ impl TextInput {
         };
 
         let style = if focused {
-            Style::default().fg(Color::Yellow)
+            Style::default().fg(t.accent)
         } else if self.value.is_empty() && !self.placeholder.is_empty() {
-            Style::default().fg(Color::DarkGray)
+            Style::default().fg(t.input_placeholder)
         } else {
-            Style::default()
+            Style::default().fg(t.input_fg)
         };
 
         let border_style = if focused {
-            Style::default().fg(Color::Yellow)
+            Style::default().fg(t.border_focused)
         } else {
-            Style::default().fg(Color::DarkGray)
+            Style::default().fg(t.border)
         };
 
         let input = Paragraph::new(display).style(style).block(
@@ -286,6 +289,7 @@ impl TextInput {
     /// * `label` - The label to display
     /// * `focused` - Whether this input is currently focused
     pub fn render_with_label(&self, frame: &mut Frame, area: Rect, label: &str, focused: bool) {
+        let t = theme();
         let display = if self.value.is_empty() && !self.placeholder.is_empty() {
             self.placeholder.clone()
         } else {
@@ -293,25 +297,25 @@ impl TextInput {
         };
 
         let style = if focused {
-            Style::default().fg(Color::Yellow)
+            Style::default().fg(t.accent)
         } else if self.value.is_empty() && !self.placeholder.is_empty() {
-            Style::default().fg(Color::DarkGray)
+            Style::default().fg(t.input_placeholder)
         } else {
-            Style::default()
+            Style::default().fg(t.input_fg)
         };
 
         let border_style = if focused {
-            Style::default().fg(Color::Yellow)
+            Style::default().fg(t.border_focused)
         } else {
-            Style::default().fg(Color::DarkGray)
+            Style::default().fg(t.border)
         };
 
         let title_style = if focused {
             Style::default()
-                .fg(Color::Yellow)
+                .fg(t.accent)
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(Color::White)
+            Style::default().fg(t.fg)
         };
 
         let block = Block::default()

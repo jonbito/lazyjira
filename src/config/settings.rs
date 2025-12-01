@@ -22,6 +22,11 @@ fn default_cache_max_size() -> u64 {
     100
 }
 
+/// Default for confirm_discard_changes setting.
+fn default_confirm_discard() -> bool {
+    true
+}
+
 /// Maximum number of JQL queries to keep in history.
 const MAX_JQL_HISTORY: usize = 10;
 
@@ -63,6 +68,18 @@ pub struct Settings {
     /// Limited to 10 entries.
     #[serde(default)]
     pub jql_history: Vec<String>,
+
+    /// Whether to show confirmation dialog for status transitions.
+    ///
+    /// Defaults to `false` (transitions execute immediately).
+    #[serde(default)]
+    pub confirm_transitions: bool,
+
+    /// Whether to show confirmation dialog for discarding unsaved changes.
+    ///
+    /// Defaults to `true`.
+    #[serde(default = "default_confirm_discard")]
+    pub confirm_discard_changes: bool,
 }
 
 impl Default for Settings {
@@ -74,6 +91,8 @@ impl Default for Settings {
             cache_ttl_minutes: default_cache_ttl(),
             cache_max_size_mb: default_cache_max_size(),
             jql_history: Vec::new(),
+            confirm_transitions: false,
+            confirm_discard_changes: default_confirm_discard(),
         }
     }
 }
@@ -109,6 +128,8 @@ mod tests {
         assert_eq!(settings.cache_ttl_minutes, 30);
         assert_eq!(settings.cache_max_size_mb, 100);
         assert!(settings.jql_history.is_empty());
+        assert!(!settings.confirm_transitions);
+        assert!(settings.confirm_discard_changes);
     }
 
     #[test]
@@ -120,6 +141,8 @@ mod tests {
             cache_ttl_minutes: 60,
             cache_max_size_mb: 200,
             jql_history: vec!["project = TEST".to_string()],
+            confirm_transitions: true,
+            confirm_discard_changes: false,
         };
 
         let toml_str = toml::to_string(&settings).unwrap();
@@ -142,6 +165,8 @@ theme = "monokai"
         assert_eq!(settings.cache_ttl_minutes, 30); // default
         assert_eq!(settings.cache_max_size_mb, 100); // default
         assert!(settings.jql_history.is_empty()); // default
+        assert!(!settings.confirm_transitions); // default
+        assert!(settings.confirm_discard_changes); // default
     }
 
     #[test]
@@ -155,6 +180,20 @@ theme = "monokai"
         assert_eq!(settings.cache_ttl_minutes, 30);
         assert_eq!(settings.cache_max_size_mb, 100);
         assert!(settings.jql_history.is_empty());
+        assert!(!settings.confirm_transitions);
+        assert!(settings.confirm_discard_changes);
+    }
+
+    #[test]
+    fn test_confirmation_settings() {
+        let toml_content = r#"
+confirm_transitions = true
+confirm_discard_changes = false
+"#;
+
+        let settings: Settings = toml::from_str(toml_content).unwrap();
+        assert!(settings.confirm_transitions);
+        assert!(!settings.confirm_discard_changes);
     }
 
     #[test]

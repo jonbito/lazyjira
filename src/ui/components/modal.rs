@@ -125,9 +125,7 @@ impl ErrorDialog {
         let block = Block::default()
             .title(Span::styled(
                 format!(" {} ", self.title),
-                Style::default()
-                    .fg(Color::Red)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
             ))
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::Red));
@@ -180,12 +178,21 @@ impl ErrorDialog {
 }
 
 /// A confirmation dialog for user confirmations.
+///
+/// Supports both normal and destructive action styling, with customizable
+/// button labels and keyboard shortcuts (y/n or Enter/Esc).
 #[derive(Debug, Default)]
 pub struct ConfirmDialog {
     /// The dialog title.
     title: String,
     /// The confirmation message.
     message: String,
+    /// Label for the confirm button.
+    confirm_label: String,
+    /// Label for the cancel button.
+    cancel_label: String,
+    /// Whether this is a destructive action (uses red styling).
+    destructive: bool,
     /// Whether the dialog is visible.
     visible: bool,
     /// Current selection (true = confirm, false = cancel).
@@ -195,15 +202,66 @@ pub struct ConfirmDialog {
 impl ConfirmDialog {
     /// Create a new confirmation dialog.
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            confirm_label: "Confirm".to_string(),
+            cancel_label: "Cancel".to_string(),
+            ..Self::default()
+        }
     }
 
     /// Show the dialog with a message.
     pub fn show(&mut self, title: impl Into<String>, message: impl Into<String>) {
         self.title = title.into();
         self.message = message.into();
+        self.confirm_label = "Confirm".to_string();
+        self.cancel_label = "Cancel".to_string();
+        self.destructive = false;
         self.visible = true;
         self.selected_confirm = false; // Default to cancel for safety
+    }
+
+    /// Show the dialog with a destructive action (red styling).
+    pub fn show_destructive(&mut self, title: impl Into<String>, message: impl Into<String>) {
+        self.title = title.into();
+        self.message = message.into();
+        self.confirm_label = "Delete".to_string();
+        self.cancel_label = "Cancel".to_string();
+        self.destructive = true;
+        self.visible = true;
+        self.selected_confirm = false; // Default to cancel for safety
+    }
+
+    /// Show the dialog with custom button labels.
+    pub fn show_with_labels(
+        &mut self,
+        title: impl Into<String>,
+        message: impl Into<String>,
+        confirm_label: impl Into<String>,
+        cancel_label: impl Into<String>,
+    ) {
+        self.title = title.into();
+        self.message = message.into();
+        self.confirm_label = confirm_label.into();
+        self.cancel_label = cancel_label.into();
+        self.destructive = false;
+        self.visible = true;
+        self.selected_confirm = false;
+    }
+
+    /// Show a destructive dialog with custom confirm label.
+    pub fn show_destructive_with_label(
+        &mut self,
+        title: impl Into<String>,
+        message: impl Into<String>,
+        confirm_label: impl Into<String>,
+    ) {
+        self.title = title.into();
+        self.message = message.into();
+        self.confirm_label = confirm_label.into();
+        self.cancel_label = "Cancel".to_string();
+        self.destructive = true;
+        self.visible = true;
+        self.selected_confirm = false;
     }
 
     /// Hide the dialog.
@@ -214,6 +272,11 @@ impl ConfirmDialog {
     /// Check if the dialog is visible.
     pub fn is_visible(&self) -> bool {
         self.visible
+    }
+
+    /// Check if the dialog is for a destructive action.
+    pub fn is_destructive(&self) -> bool {
+        self.destructive
     }
 
     /// Toggle the selection.
@@ -297,16 +360,23 @@ impl ConfirmDialog {
         // Clear the dialog area
         frame.render_widget(Clear, dialog_area);
 
+        // Use red border for destructive actions, yellow for normal
+        let border_color = if self.destructive {
+            Color::Red
+        } else {
+            Color::Yellow
+        };
+
         // Create the outer block
         let block = Block::default()
             .title(Span::styled(
                 format!(" {} ", self.title),
                 Style::default()
-                    .fg(Color::Yellow)
+                    .fg(border_color)
                     .add_modifier(Modifier::BOLD),
             ))
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Yellow));
+            .border_style(Style::default().fg(border_color));
 
         let inner_area = block.inner(dialog_area);
         frame.render_widget(block, dialog_area);
@@ -316,7 +386,7 @@ impl ConfirmDialog {
             .direction(Direction::Vertical)
             .margin(1)
             .constraints([
-                Constraint::Min(2), // Message
+                Constraint::Min(2),    // Message
                 Constraint::Length(1), // Buttons
             ])
             .split(inner_area);
@@ -328,29 +398,38 @@ impl ConfirmDialog {
             .alignment(Alignment::Center);
         frame.render_widget(message, chunks[0]);
 
-        // Render buttons
+        // Determine button colors based on destructive mode
+        let (confirm_base_color, cancel_base_color) = if self.destructive {
+            // Destructive: confirm is red (danger), cancel is green (safe)
+            (Color::Red, Color::Green)
+        } else {
+            // Normal: confirm is green (positive), cancel is gray
+            (Color::Green, Color::Gray)
+        };
+
+        // Render buttons with selection highlighting
         let confirm_style = if self.selected_confirm {
             Style::default()
                 .fg(Color::Black)
-                .bg(Color::Green)
+                .bg(confirm_base_color)
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(Color::Green)
+            Style::default().fg(confirm_base_color)
         };
 
         let cancel_style = if !self.selected_confirm {
             Style::default()
                 .fg(Color::Black)
-                .bg(Color::Red)
+                .bg(cancel_base_color)
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(Color::Red)
+            Style::default().fg(cancel_base_color)
         };
 
         let buttons = Line::from(vec![
-            Span::styled(" [Y] Confirm ", confirm_style),
+            Span::styled(format!(" [Y] {} ", self.confirm_label), confirm_style),
             Span::raw("  "),
-            Span::styled(" [N] Cancel ", cancel_style),
+            Span::styled(format!(" [N] {} ", self.cancel_label), cancel_style),
         ]);
 
         let buttons_paragraph = Paragraph::new(buttons).alignment(Alignment::Center);
@@ -493,5 +572,115 @@ mod tests {
         // Should be clamped to area size
         assert_eq!(centered.width, 30);
         assert_eq!(centered.height, 20);
+    }
+
+    #[test]
+    fn test_confirm_dialog_show_destructive() {
+        let mut dialog = ConfirmDialog::new();
+        dialog.show_destructive("Delete Item?", "This action cannot be undone.");
+        assert!(dialog.is_visible());
+        assert!(dialog.is_destructive());
+        assert!(!dialog.is_confirm_selected()); // Default to cancel for safety
+    }
+
+    #[test]
+    fn test_confirm_dialog_show_with_labels() {
+        let mut dialog = ConfirmDialog::new();
+        dialog.show_with_labels("Save Changes?", "Save your work?", "Save", "Discard");
+        assert!(dialog.is_visible());
+        assert!(!dialog.is_destructive());
+        assert!(!dialog.is_confirm_selected());
+    }
+
+    #[test]
+    fn test_confirm_dialog_show_destructive_with_label() {
+        let mut dialog = ConfirmDialog::new();
+        dialog.show_destructive_with_label(
+            "Clear Cache?",
+            "All cached data will be removed.",
+            "Clear",
+        );
+        assert!(dialog.is_visible());
+        assert!(dialog.is_destructive());
+        assert!(!dialog.is_confirm_selected());
+    }
+
+    #[test]
+    fn test_confirm_dialog_normal_not_destructive() {
+        let mut dialog = ConfirmDialog::new();
+        dialog.show("Confirm Action", "Proceed with this action?");
+        assert!(!dialog.is_destructive());
+    }
+
+    #[test]
+    fn test_confirm_dialog_handle_input_y() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let mut dialog = ConfirmDialog::new();
+        dialog.show("Confirm", "Test");
+
+        let key = KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE);
+        let result = dialog.handle_input(key);
+
+        assert_eq!(result, Some(true));
+        assert!(!dialog.is_visible());
+    }
+
+    #[test]
+    fn test_confirm_dialog_handle_input_n() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let mut dialog = ConfirmDialog::new();
+        dialog.show("Confirm", "Test");
+
+        let key = KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE);
+        let result = dialog.handle_input(key);
+
+        assert_eq!(result, Some(false));
+        assert!(!dialog.is_visible());
+    }
+
+    #[test]
+    fn test_confirm_dialog_handle_input_esc() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let mut dialog = ConfirmDialog::new();
+        dialog.show("Confirm", "Test");
+
+        let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+        let result = dialog.handle_input(key);
+
+        assert_eq!(result, Some(false));
+        assert!(!dialog.is_visible());
+    }
+
+    #[test]
+    fn test_confirm_dialog_handle_input_enter_with_selection() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let mut dialog = ConfirmDialog::new();
+        dialog.show("Confirm", "Test");
+        dialog.select_confirm();
+
+        let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        let result = dialog.handle_input(key);
+
+        assert_eq!(result, Some(true));
+        assert!(!dialog.is_visible());
+    }
+
+    #[test]
+    fn test_confirm_dialog_handle_input_tab_toggles() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let mut dialog = ConfirmDialog::new();
+        dialog.show("Confirm", "Test");
+        assert!(!dialog.is_confirm_selected());
+
+        let key = KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE);
+        let result = dialog.handle_input(key);
+
+        assert_eq!(result, None); // Tab doesn't confirm/cancel
+        assert!(dialog.is_confirm_selected()); // But it toggles
     }
 }

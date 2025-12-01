@@ -6,15 +6,17 @@
 use tracing::{debug, info, trace, warn};
 
 use ratatui::{
-    Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
+    Frame,
 };
 
 use crate::api::auth;
-use crate::api::types::{FieldUpdates, FilterOptions, FilterState, Issue, IssueUpdateRequest, Priority, Transition, User};
+use crate::api::types::{
+    FieldUpdates, FilterOptions, FilterState, Issue, IssueUpdateRequest, Priority, Transition, User,
+};
 use crate::config::{Config, ConfigError, Profile};
 use crate::error::AppError;
 use crate::events::Event;
@@ -95,6 +97,10 @@ pub struct App {
     pending_issue_update: Option<(String, IssueUpdateRequest)>,
     /// Discard changes confirmation dialog.
     discard_confirm_dialog: ConfirmDialog,
+    /// Transition confirmation dialog.
+    transition_confirm_dialog: ConfirmDialog,
+    /// Pending transition awaiting confirmation (issue key, transition ID, transition name, optional fields).
+    pending_transition_confirm: Option<(String, String, String, Option<FieldUpdates>)>,
     /// Pending transition request (issue key, transition ID, optional fields).
     pending_transition: Option<(String, String, Option<FieldUpdates>)>,
     /// Pending fetch transitions request (issue key).
@@ -172,6 +178,8 @@ impl App {
             current_jql: None,
             pending_issue_update: None,
             discard_confirm_dialog: ConfirmDialog::new(),
+            transition_confirm_dialog: ConfirmDialog::new(),
+            pending_transition_confirm: None,
             pending_transition: None,
             pending_fetch_transitions: None,
             pending_fetch_assignees: None,
@@ -230,6 +238,8 @@ impl App {
             current_jql: None,
             pending_issue_update: None,
             discard_confirm_dialog: ConfirmDialog::new(),
+            transition_confirm_dialog: ConfirmDialog::new(),
+            pending_transition_confirm: None,
             pending_transition: None,
             pending_fetch_transitions: None,
             pending_fetch_assignees: None,
@@ -325,7 +335,8 @@ impl App {
             self.error_dialog.show(error);
         } else {
             debug!(error = %error, "Recoverable error occurred");
-            self.notifications.push(Notification::error(error.user_message()));
+            self.notifications
+                .push(Notification::error(error.user_message()));
         }
     }
 
@@ -395,7 +406,12 @@ impl App {
 
     /// Show the profile picker popup.
     pub fn show_profile_picker(&mut self) {
-        let profile_names: Vec<String> = self.config.profiles.iter().map(|p| p.name.clone()).collect();
+        let profile_names: Vec<String> = self
+            .config
+            .profiles
+            .iter()
+            .map(|p| p.name.clone())
+            .collect();
 
         if profile_names.is_empty() {
             self.notify_warning("No profiles configured");
@@ -545,9 +561,7 @@ impl App {
             .ok_or_else(|| ConfigError::ProfileNotFound(original_name.clone()))?;
 
         // Check for duplicate name (if name changed)
-        if data.name != *original_name
-            && self.config.profiles.iter().any(|p| p.name == data.name)
-        {
+        if data.name != *original_name && self.config.profiles.iter().any(|p| p.name == data.name) {
             return Err(ConfigError::ValidationError(format!(
                 "Profile '{}' already exists",
                 data.name
@@ -579,12 +593,7 @@ impl App {
         self.config.save()?;
 
         // Update current profile if it was the one being edited
-        if self
-            .current_profile
-            .as_ref()
-            .map(|p| p.name.as_str())
-            == Some(original_name)
-        {
+        if self.current_profile.as_ref().map(|p| p.name.as_str()) == Some(original_name) {
             self.current_profile = Some(profile);
             self.list_view.set_profile_name(Some(data.name.clone()));
         }
@@ -619,16 +628,10 @@ impl App {
         self.config.save()?;
 
         // If we deleted the current profile, switch to another
-        if self
-            .current_profile
-            .as_ref()
-            .map(|p| p.name.as_str())
-            == Some(&profile.name)
-        {
+        if self.current_profile.as_ref().map(|p| p.name.as_str()) == Some(&profile.name) {
             self.current_profile = self.config.profiles.first().cloned();
-            self.list_view.set_profile_name(
-                self.current_profile.as_ref().map(|p| p.name.clone()),
-            );
+            self.list_view
+                .set_profile_name(self.current_profile.as_ref().map(|p| p.name.clone()));
             // Clear session data
             self.list_view.set_issues(Vec::new());
             self.list_view.set_loading(true);
@@ -766,7 +769,8 @@ impl App {
         self.filter_state.clear();
         self.current_jql = Some(jql.clone());
         // Update filter summary to show JQL is active
-        self.list_view.set_filter_summary(Some(format!("JQL: {}", jql)));
+        self.list_view
+            .set_filter_summary(Some(format!("JQL: {}", jql)));
 
         // Save to config history
         self.config.add_jql_to_history(jql);
@@ -860,15 +864,67 @@ impl App {
 
     /// Show the discard changes confirmation dialog.
     fn show_discard_confirm_dialog(&mut self) {
-        self.discard_confirm_dialog.show(
+        self.discard_confirm_dialog.show_destructive_with_label(
             "Discard Changes?",
             "You have unsaved changes. Are you sure you want to discard them?",
+            "Discard",
         );
     }
 
     /// Check if the discard confirm dialog is visible.
     pub fn is_discard_confirm_visible(&self) -> bool {
         self.discard_confirm_dialog.is_visible()
+    }
+
+    /// Check if the transition confirm dialog is visible.
+    pub fn is_transition_confirm_visible(&self) -> bool {
+        self.transition_confirm_dialog.is_visible()
+    }
+
+    /// Show the transition confirmation dialog.
+    ///
+    /// If confirm_transitions setting is true, shows a confirmation dialog.
+    /// Otherwise, executes the transition immediately.
+    fn request_transition_with_confirmation(
+        &mut self,
+        issue_key: String,
+        transition_id: String,
+        transition_name: String,
+        fields: Option<FieldUpdates>,
+    ) {
+        if self.config.settings.confirm_transitions {
+            // Store the pending transition for confirmation
+            self.pending_transition_confirm = Some((
+                issue_key.clone(),
+                transition_id,
+                transition_name.clone(),
+                fields,
+            ));
+            // Show the confirmation dialog
+            self.transition_confirm_dialog.show_with_labels(
+                "Change Status?",
+                &format!("Move issue {} to '{}'?", issue_key, transition_name),
+                "Confirm",
+                "Cancel",
+            );
+        } else {
+            // Execute immediately without confirmation
+            self.pending_transition = Some((issue_key, transition_id, fields));
+        }
+    }
+
+    /// Confirm the pending transition and execute it.
+    fn confirm_transition(&mut self) {
+        if let Some((issue_key, transition_id, _name, fields)) =
+            self.pending_transition_confirm.take()
+        {
+            self.pending_transition = Some((issue_key, transition_id, fields));
+        }
+    }
+
+    /// Cancel the pending transition confirmation.
+    fn cancel_transition_confirm(&mut self) {
+        self.pending_transition_confirm = None;
     }
 
     // ========================================================================
@@ -1338,6 +1394,20 @@ impl App {
             return;
         }
 
+        // Handle transition confirmation dialog (blocks other input)
+        if self.transition_confirm_dialog.is_visible() {
+            if let Some(confirmed) = self.transition_confirm_dialog.handle_input(key_event) {
+                if confirmed {
+                    debug!("Transition confirmed");
+                    self.confirm_transition();
+                } else {
+                    debug!("Transition cancelled");
+                    self.cancel_transition_confirm();
+                }
+            }
+            return;
+        }
+
         // Handle profile form (blocks other input when visible)
         if self.profile_form_view.is_visible() {
             if let Some(action) = self.profile_form_view.handle_input(key_event) {
@@ -1359,10 +1429,8 @@ impl App {
                                 self.profile_form_view.hide();
                             }
                             Err(e) => {
-                                self.profile_form_view.set_error(
-                                    FormField::Name,
-                                    format!("Failed to save: {}", e),
-                                );
+                                self.profile_form_view
+                                    .set_error(FormField::Name, format!("Failed to save: {}", e));
                             }
                         }
                     }
@@ -1547,10 +1615,20 @@ impl App {
                             // Store request for the runner to pick up
                             self.pending_fetch_transitions = Some(issue_key);
                         }
-                        DetailAction::ExecuteTransition(issue_key, transition_id, fields) => {
+                        DetailAction::ExecuteTransition(
+                            issue_key,
+                            transition_id,
+                            transition_name,
+                            fields,
+                        ) => {
                             debug!(key = %issue_key, transition = %transition_id, "Executing transition");
-                            // Store request for the runner to pick up
-                            self.pending_transition = Some((issue_key, transition_id, fields));
+                            // Use confirmation if configured, otherwise execute immediately
+                            self.request_transition_with_confirmation(
+                                issue_key,
+                                transition_id,
+                                transition_name,
+                                fields,
+                            );
                         }
                         DetailAction::TransitionRequiresFields(transition_id) => {
                             debug!(transition = %transition_id, "Transition requires fields (not yet supported)");
@@ -1747,6 +1825,9 @@ impl App {
 
         // Render discard changes dialog (on top of profile form)
         self.discard_confirm_dialog.render(frame, area);
+
+        // Render transition confirmation dialog
+        self.transition_confirm_dialog.render(frame, area);
 
         // Render error dialog (on top of everything)
         self.error_dialog.render(frame, area);
@@ -2234,7 +2315,8 @@ mod tests {
         let mut app = App::new();
 
         // Test mutable accessor
-        app.list_view_mut().set_profile_name(Some("work".to_string()));
+        app.list_view_mut()
+            .set_profile_name(Some("work".to_string()));
 
         // Test immutable accessor
         assert_eq!(app.list_view().issue_count(), 0);

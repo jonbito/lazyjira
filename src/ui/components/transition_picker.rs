@@ -17,8 +17,8 @@ use crate::api::types::{FieldUpdates, Transition};
 /// Action resulting from transition picker input.
 #[derive(Debug, Clone, PartialEq)]
 pub enum TransitionAction {
-    /// Execute a transition (transition ID, optional field updates).
-    Execute(String, Option<FieldUpdates>),
+    /// Execute a transition (transition ID, transition name, optional field updates).
+    Execute(String, String, Option<FieldUpdates>),
     /// Transition requires fields - not yet supported, show message.
     RequiresFields(String),
     /// Cancel the transition picker.
@@ -140,12 +140,10 @@ impl TransitionPicker {
             (KeyCode::Enter, KeyModifiers::NONE) => {
                 if let Some(transition) = self.transitions.get(self.selected) {
                     let transition_id = transition.id.clone();
+                    let transition_name = transition.to.name.clone();
 
                     // Check if transition has required fields
-                    let has_required_fields = transition
-                        .fields
-                        .values()
-                        .any(|f| f.required);
+                    let has_required_fields = transition.fields.values().any(|f| f.required);
 
                     self.hide();
 
@@ -153,7 +151,11 @@ impl TransitionPicker {
                         // For now, we don't support required fields form
                         Some(TransitionAction::RequiresFields(transition_id))
                     } else {
-                        Some(TransitionAction::Execute(transition_id, None))
+                        Some(TransitionAction::Execute(
+                            transition_id,
+                            transition_name,
+                            None,
+                        ))
                     }
                 } else {
                     None
@@ -449,7 +451,14 @@ mod tests {
         let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
         let action = picker.handle_input(key);
 
-        assert_eq!(action, Some(TransitionAction::Execute("11".to_string(), None)));
+        assert_eq!(
+            action,
+            Some(TransitionAction::Execute(
+                "11".to_string(),
+                "In Progress".to_string(),
+                None
+            ))
+        );
         assert!(!picker.is_visible());
     }
 
@@ -472,7 +481,10 @@ mod tests {
     #[test]
     fn test_cancel_with_esc() {
         let mut picker = TransitionPicker::new();
-        picker.show(vec![create_test_transition("11", "Start", "In Progress")], "Open");
+        picker.show(
+            vec![create_test_transition("11", "Start", "In Progress")],
+            "Open",
+        );
 
         let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
         let action = picker.handle_input(key);
@@ -484,7 +496,10 @@ mod tests {
     #[test]
     fn test_cancel_with_q() {
         let mut picker = TransitionPicker::new();
-        picker.show(vec![create_test_transition("11", "Start", "In Progress")], "Open");
+        picker.show(
+            vec![create_test_transition("11", "Start", "In Progress")],
+            "Open",
+        );
 
         // 'q' should cancel (vim-style)
         let key = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE);

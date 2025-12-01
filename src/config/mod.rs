@@ -314,6 +314,8 @@ mod tests {
                 cache_ttl_minutes: 60,
                 cache_max_size_mb: 100,
                 jql_history: vec!["project = TEST".to_string()],
+                confirm_transitions: false,
+                confirm_discard_changes: true,
             },
             profiles: vec![
                 Profile::new(
@@ -332,7 +334,10 @@ mod tests {
         let toml_str = toml::to_string_pretty(&config).unwrap();
         let parsed: Config = toml::from_str(&toml_str).unwrap();
 
-        assert_eq!(parsed.settings.default_profile, config.settings.default_profile);
+        assert_eq!(
+            parsed.settings.default_profile,
+            config.settings.default_profile
+        );
         assert_eq!(parsed.settings.theme, config.settings.theme);
         assert_eq!(parsed.profiles.len(), 2);
         assert_eq!(parsed.profiles[0].name, "work");
@@ -360,7 +365,10 @@ mod tests {
 
         let result = config.validate();
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("duplicate profile name"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("duplicate profile name"));
     }
 
     #[test]
@@ -437,7 +445,10 @@ mod tests {
                 "user@company.com".to_string(),
             )],
         };
-        assert_eq!(config_no_default.get_default_profile().unwrap().name, "work");
+        assert_eq!(
+            config_no_default.get_default_profile().unwrap().name,
+            "work"
+        );
 
         // Empty profiles
         let empty_config = Config::default();

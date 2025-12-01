@@ -13,8 +13,13 @@ use ratatui::{
     Frame,
 };
 
-use crate::api::types::{AtlassianDoc, Comment, FieldUpdates, Issue, IssueUpdateRequest, Priority, Transition, User};
-use crate::ui::components::{AssigneeAction, AssigneePicker, CommentAction, CommentsPanel, PriorityAction, PriorityPicker, TagAction, TagEditor, TextEditor, TextInput, TransitionAction, TransitionPicker};
+use crate::api::types::{
+    AtlassianDoc, Comment, FieldUpdates, Issue, IssueUpdateRequest, Priority, Transition, User,
+};
+use crate::ui::components::{
+    AssigneeAction, AssigneePicker, CommentAction, CommentsPanel, PriorityAction, PriorityPicker,
+    TagAction, TagEditor, TextEditor, TextInput, TransitionAction, TransitionPicker,
+};
 use crate::ui::theme::{issue_type_prefix, priority_style, status_style};
 
 /// Action that can be triggered from the detail view.
@@ -38,8 +43,8 @@ pub enum DetailAction {
     OpenTransitionPicker,
     /// Request transitions from the API (issue key, current status).
     FetchTransitions(String, String),
-    /// Execute a status transition (issue key, transition ID, optional fields).
-    ExecuteTransition(String, String, Option<FieldUpdates>),
+    /// Execute a status transition (issue key, transition ID, transition name, optional fields).
+    ExecuteTransition(String, String, String, Option<FieldUpdates>),
     /// Show a message that transition requires fields (not yet supported).
     TransitionRequiresFields(String),
     /// Request assignable users from the API (issue key, project key).
@@ -695,10 +700,15 @@ impl DetailView {
     fn handle_transition_picker_input(&mut self, key: KeyEvent) -> Option<DetailAction> {
         if let Some(action) = self.transition_picker.handle_input(key) {
             match action {
-                TransitionAction::Execute(transition_id, fields) => {
+                TransitionAction::Execute(transition_id, transition_name, fields) => {
                     if let Some(issue) = &self.issue {
                         let issue_key = issue.key.clone();
-                        Some(DetailAction::ExecuteTransition(issue_key, transition_id, fields))
+                        Some(DetailAction::ExecuteTransition(
+                            issue_key,
+                            transition_id,
+                            transition_name,
+                            fields,
+                        ))
                     } else {
                         None
                     }
@@ -930,10 +940,7 @@ impl DetailView {
         let status = issue.fields.status.clone();
         let priority = issue.fields.priority.clone();
         let assignee_name = issue.assignee_name().to_string();
-        let reporter_name = issue
-            .reporter()
-            .unwrap_or("Unknown")
-            .to_string();
+        let reporter_name = issue.reporter().unwrap_or("Unknown").to_string();
         let created = issue.fields.created.clone();
         let updated = issue.fields.updated.clone();
         let labels = issue.fields.labels.clone();
@@ -1029,14 +1036,12 @@ impl DetailView {
             type_prefix, issue_type_name, issue_key, edit_indicator, saving_indicator
         );
 
-        let header = Paragraph::new(Line::from(vec![
-            Span::styled(
-                header_text,
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            ),
-        ]))
+        let header = Paragraph::new(Line::from(vec![Span::styled(
+            header_text,
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )]))
         .block(
             Block::default()
                 .borders(Borders::BOTTOM)
@@ -1102,14 +1107,12 @@ impl DetailView {
         let type_prefix = issue_type_prefix(issue_type);
         let header_text = format!("{} {} - {}", type_prefix, issue_type, key);
 
-        let header = Paragraph::new(Line::from(vec![
-            Span::styled(
-                header_text,
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            ),
-        ]))
+        let header = Paragraph::new(Line::from(vec![Span::styled(
+            header_text,
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )]))
         .block(
             Block::default()
                 .borders(Borders::BOTTOM)
@@ -1291,11 +1294,7 @@ impl DetailView {
                 " "
             };
 
-            let saving_indicator = if self.is_saving {
-                "Saving..."
-            } else {
-                ""
-            };
+            let saving_indicator = if self.is_saving { "Saving..." } else { "" };
 
             let status_line = Line::from(vec![
                 Span::styled(
@@ -1304,7 +1303,9 @@ impl DetailView {
                 ),
                 Span::styled(
                     " EDITING ",
-                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(unsaved_indicator, Style::default().fg(Color::Red)),
                 Span::styled(saving_indicator, Style::default().fg(Color::Cyan)),
@@ -1317,11 +1318,7 @@ impl DetailView {
 
         // Normal mode status bar
         let scroll_info = if self.max_scroll > 0 {
-            format!(
-                " [scroll: {}/{}]",
-                self.scroll + 1,
-                self.max_scroll + 1
-            )
+            format!(" [scroll: {}/{}]", self.scroll + 1, self.max_scroll + 1)
         } else {
             String::new()
         };
@@ -1659,7 +1656,10 @@ mod tests {
         let action = view.handle_input(key);
 
         // Should show comments panel and trigger fetch
-        assert_eq!(action, Some(DetailAction::FetchComments("TEST-123".to_string())));
+        assert_eq!(
+            action,
+            Some(DetailAction::FetchComments("TEST-123".to_string()))
+        );
         assert!(view.is_comments_panel_visible());
     }
 
@@ -1690,10 +1690,7 @@ mod tests {
 
     #[test]
     fn test_format_date() {
-        assert_eq!(
-            format_date("2024-01-15T10:00:00.000+0000"),
-            "2024-01-15"
-        );
+        assert_eq!(format_date("2024-01-15T10:00:00.000+0000"), "2024-01-15");
         assert_eq!(format_date("2024-01-15"), "2024-01-15");
         assert_eq!(format_date("short"), "short");
     }
@@ -1880,7 +1877,11 @@ mod tests {
         let issue = create_test_issue("TEST-1", "Test issue");
         view.set_issue(issue);
 
-        let transitions = vec![create_test_transition("11", "Start Progress", "In Progress")];
+        let transitions = vec![create_test_transition(
+            "11",
+            "Start Progress",
+            "In Progress",
+        )];
         view.set_transitions(transitions);
 
         // Press Enter to select the transition
@@ -1888,9 +1889,10 @@ mod tests {
         let action = view.handle_input(key);
 
         match action {
-            Some(DetailAction::ExecuteTransition(issue_key, transition_id, _)) => {
+            Some(DetailAction::ExecuteTransition(issue_key, transition_id, transition_name, _)) => {
                 assert_eq!(issue_key, "TEST-1");
                 assert_eq!(transition_id, "11");
+                assert_eq!(transition_name, "In Progress");
             }
             _ => panic!("Expected ExecuteTransition action"),
         }

@@ -8,10 +8,10 @@ pub mod theme;
 mod views;
 
 pub use components::{
-    render_context_help, ConfirmDialog, ErrorDialog, InlineLoader, JqlAction, JqlInput,
-    LoadingIndicator, Modal, MultiSelect, Notification, NotificationManager, NotificationType,
-    ProfilePicker, ProfilePickerAction, SelectItem, SpinnerStyle, Table, TextEditor, TextInput,
-    TransitionAction, TransitionPicker,
+    render_context_help, CommandPalette, CommandPaletteAction, ConfirmDialog, ErrorDialog,
+    InlineLoader, JqlAction, JqlInput, LoadingIndicator, Modal, MultiSelect, Notification,
+    NotificationManager, NotificationType, ProfilePicker, ProfilePickerAction, SelectItem,
+    SpinnerStyle, Table, TextEditor, TextInput, TransitionAction, TransitionPicker,
 };
 pub use theme::{
     init_theme, issue_type_prefix, load_theme, parse_color, priority_style, status_style, theme,

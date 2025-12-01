@@ -89,6 +89,7 @@ pub fn get_keybindings() -> Vec<Keybinding> {
         Keybinding::new("p", "switch_profile", "Switch JIRA profile (quick)", KeyContext::Global),
         Keybinding::new("P", "manage_profiles", "Manage profiles (CRUD)", KeyContext::Global),
         Keybinding::new("r", "refresh", "Refresh current view", KeyContext::Global),
+        Keybinding::new("Ctrl+P / Ctrl+K", "command_palette", "Open command palette", KeyContext::Global),
         // Issue List keybindings
         Keybinding::new("j / ↓", "move_down", "Move down", KeyContext::IssueList),
         Keybinding::new("k / ↑", "move_up", "Move up", KeyContext::IssueList),

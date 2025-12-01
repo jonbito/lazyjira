@@ -5,6 +5,7 @@
 mod api;
 mod app;
 mod cache;
+mod commands;
 mod config;
 mod error;
 mod events;

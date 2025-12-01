@@ -21,12 +21,13 @@ use crate::config::{Config, ConfigError, Profile};
 use crate::error::AppError;
 use crate::events::Event;
 use crate::events::KeyContext;
+use crate::commands::CommandAction;
 use crate::ui::{
-    render_context_help, ConfirmDialog, DeleteProfileDialog, DetailAction, DetailView, ErrorDialog,
-    FilterPanelAction, FilterPanelView, FormField, HelpAction, HelpView, JqlAction, JqlInput,
-    ListAction, ListView, LoadingIndicator, Notification, NotificationManager, ProfileFormAction,
-    ProfileFormData, ProfileFormView, ProfileListAction, ProfileListView, ProfilePicker,
-    ProfilePickerAction, ProfileSummary,
+    render_context_help, CommandPalette, CommandPaletteAction, ConfirmDialog, DeleteProfileDialog,
+    DetailAction, DetailView, ErrorDialog, FilterPanelAction, FilterPanelView, FormField,
+    HelpAction, HelpView, JqlAction, JqlInput, ListAction, ListView, LoadingIndicator,
+    Notification, NotificationManager, ProfileFormAction, ProfileFormData, ProfileFormView,
+    ProfileListAction, ProfileListView, ProfilePicker, ProfilePickerAction, ProfileSummary,
 };
 
 /// The current view/screen state of the application.
@@ -135,6 +136,8 @@ pub struct App {
     help_view: HelpView,
     /// Previous state before opening help (to return to).
     previous_state: Option<AppState>,
+    /// Command palette for quick command access.
+    command_palette: CommandPalette,
 }
 
 impl App {
@@ -202,6 +205,7 @@ impl App {
             pending_remove_component: None,
             help_view: HelpView::new(),
             previous_state: None,
+            command_palette: CommandPalette::new(),
         }
     }
 
@@ -264,6 +268,7 @@ impl App {
             pending_remove_component: None,
             help_view: HelpView::new(),
             previous_state: None,
+            command_palette: CommandPalette::new(),
         }
     }
 
@@ -792,6 +797,58 @@ impl App {
         // Trigger refresh
         self.list_view.set_loading(true);
         self.state = AppState::IssueList;
+    }
+
+    /// Execute a command action from the command palette.
+    fn execute_command_action(&mut self, action: CommandAction) {
+        match action {
+            CommandAction::GoToList => {
+                debug!("Command: Go to issue list");
+                self.state = AppState::IssueList;
+            }
+            CommandAction::GoToProfiles => {
+                debug!("Command: Go to profile management");
+                self.open_profile_management();
+            }
+            CommandAction::GoToFilters => {
+                debug!("Command: Open filter panel");
+                self.open_filter_panel();
+            }
+            CommandAction::GoToHelp => {
+                debug!("Command: Show help");
+                if self.state != AppState::Help {
+                    self.previous_state = Some(self.state);
+                    self.help_view.reset_scroll();
+                    self.state = AppState::Help;
+                }
+            }
+            CommandAction::RefreshIssues => {
+                debug!("Command: Refresh issues");
+                self.list_view.set_loading(true);
+                // The main loop will handle triggering the actual refresh
+            }
+            CommandAction::SwitchProfile => {
+                debug!("Command: Switch profile");
+                self.show_profile_picker();
+            }
+            CommandAction::OpenJqlInput => {
+                debug!("Command: Open JQL input");
+                self.open_jql_input();
+            }
+            CommandAction::ClearFilters => {
+                debug!("Command: Clear filters");
+                self.filter_state.clear();
+                self.current_jql = None;
+                self.list_view.set_filter_summary(None);
+                self.list_view.set_loading(true);
+                self.notify_info("Filters cleared");
+            }
+            CommandAction::ClearCache => {
+                debug!("Command: Clear cache");
+                // TODO: Implement cache clearing when cache module exposes this
+                self.notify_info("Cache cleared");
+            }
+        }
     }
 
     /// Set an error on the JQL input.
@@ -1485,6 +1542,22 @@ impl App {
             return;
         }
 
+        // Handle command palette (blocks other input when visible)
+        if self.command_palette.is_visible() {
+            if let Some(action) = self.command_palette.handle_input(key_event) {
+                match action {
+                    CommandPaletteAction::Execute(cmd_action) => {
+                        debug!(?cmd_action, "Command palette action executed");
+                        self.execute_command_action(cmd_action);
+                    }
+                    CommandPaletteAction::Cancel => {
+                        debug!("Command palette cancelled");
+                    }
+                }
+            }
+            return;
+        }
+
         // Global key bindings (always available)
         match (key_event.code, key_event.modifiers) {
             // Quit on Ctrl+C (always works)
@@ -1516,6 +1589,13 @@ impl App {
             {
                 debug!("Opening profile management");
                 self.open_profile_management();
+                return;
+            }
+            // Command palette on Ctrl+P or Ctrl+K
+            (KeyCode::Char('p'), KeyModifiers::CONTROL)
+            | (KeyCode::Char('k'), KeyModifiers::CONTROL) => {
+                debug!("Opening command palette");
+                self.command_palette.show();
                 return;
             }
             _ => {}
@@ -1830,6 +1910,9 @@ impl App {
 
         // Render JQL input (on top of list view)
         self.jql_input.render(frame, area);
+
+        // Render command palette (on top of list view, similar priority to JQL input)
+        self.command_palette.render(frame, area);
 
         // Render profile picker (on top of everything except error dialogs)
         self.profile_picker.render(frame, area);

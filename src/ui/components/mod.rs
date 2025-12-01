@@ -1,6 +1,7 @@
 //! Reusable UI components.
 
 mod assignee_picker;
+mod command_palette;
 mod comments;
 mod help_bar;
 mod input;
@@ -18,6 +19,7 @@ mod text_editor;
 mod transition_picker;
 
 pub use assignee_picker::{AssigneeAction, AssigneePicker};
+pub use command_palette::{CommandPalette, CommandPaletteAction};
 pub use comments::{CommentAction, CommentPanelMode, CommentsPanel};
 pub use help_bar::render_context_help;
 pub use input::{InputMode, TextInput};

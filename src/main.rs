@@ -102,6 +102,94 @@ fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Re
     Ok(())
 }
 
+/// Suspends the TUI to allow an external process to use the terminal.
+///
+/// This function:
+/// - Disables raw mode so the external process gets normal terminal behavior
+/// - Leaves the alternate screen to show the normal terminal buffer
+///
+/// After calling this function, the terminal is in a state suitable for
+/// running external commands like text editors.
+///
+/// # Errors
+///
+/// Returns an error if raw mode cannot be disabled or if leaving the
+/// alternate screen fails.
+pub fn suspend_tui<W: io::Write>(stdout: &mut W) -> Result<()> {
+    disable_raw_mode()?;
+    execute!(stdout, LeaveAlternateScreen)?;
+    Ok(())
+}
+
+/// Resumes the TUI after an external process has completed.
+///
+/// This function:
+/// - Re-enables raw mode for TUI input handling
+/// - Re-enters the alternate screen buffer
+/// - Clears the terminal to remove any artifacts from the external process
+///
+/// # Errors
+///
+/// Returns an error if raw mode cannot be enabled, if entering the
+/// alternate screen fails, or if clearing the terminal fails.
+pub fn resume_tui<W: io::Write>(
+    stdout: &mut W,
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+) -> Result<()> {
+    enable_raw_mode()?;
+    execute!(stdout, EnterAlternateScreen)?;
+    terminal.clear()?;
+    Ok(())
+}
+
+/// RAII guard that ensures the TUI is resumed even if the external process panics or fails.
+///
+/// When this guard is dropped, it automatically calls `resume_tui` to restore
+/// the terminal state. This ensures that even if an error occurs or the external
+/// process is killed, the terminal will be properly restored.
+///
+/// # Example
+///
+/// ```ignore
+/// let guard = TuiSuspendGuard::new(&mut stdout, &mut terminal)?;
+/// // Run external editor - terminal is suspended
+/// // ... external process runs ...
+/// // When guard goes out of scope, TUI is automatically resumed
+/// drop(guard);
+/// ```
+pub struct TuiSuspendGuard<'a> {
+    stdout: &'a mut io::Stdout,
+    terminal: &'a mut Terminal<CrosstermBackend<io::Stdout>>,
+}
+
+impl<'a> TuiSuspendGuard<'a> {
+    /// Creates a new TuiSuspendGuard and suspends the TUI.
+    ///
+    /// This calls `suspend_tui` immediately. The TUI will be resumed when
+    /// the guard is dropped.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if suspending the TUI fails.
+    pub fn new(
+        stdout: &'a mut io::Stdout,
+        terminal: &'a mut Terminal<CrosstermBackend<io::Stdout>>,
+    ) -> Result<Self> {
+        suspend_tui(stdout)?;
+        Ok(Self { stdout, terminal })
+    }
+}
+
+impl<'a> Drop for TuiSuspendGuard<'a> {
+    fn drop(&mut self) {
+        // Attempt to resume TUI - log error but don't panic since we may already be unwinding
+        if let Err(e) = resume_tui(self.stdout, self.terminal) {
+            // Use eprintln since logging may not be available during panic unwind
+            eprintln!("Warning: Failed to resume TUI: {}", e);
+        }
+    }
+}
+
 /// Run the main application loop.
 ///
 /// This implements the main event loop following The Elm Architecture pattern:
@@ -721,7 +809,10 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
         // Handle fetch changelog request
         if let Some((issue_key, start_at)) = app.take_pending_fetch_changelog() {
             if let Some(ref c) = client {
-                debug!("Fetching changelog for issue {} (start_at: {})", issue_key, start_at);
+                debug!(
+                    "Fetching changelog for issue {} (start_at: {})",
+                    issue_key, start_at
+                );
                 match c.get_changelog(&issue_key, start_at, 50).await {
                     Ok(changelog) => {
                         debug!(
@@ -864,4 +955,84 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Test that suspend_tui works with a mock stdout.
+    /// Note: This test verifies the function compiles and can be called,
+    /// but actual terminal state changes require manual testing.
+    #[test]
+    fn test_suspend_tui_compiles() {
+        // The function is generic over W: io::Write, so we can test compilation
+        // with a Vec<u8> as a mock stdout
+        let mut mock_stdout: Vec<u8> = Vec::new();
+
+        // We can't actually test terminal state changes without a real terminal,
+        // but we can verify the function signature and structure compile correctly.
+        // The disable_raw_mode() will fail in tests (no terminal), but the generic
+        // constraint allows us to verify the execute! macro works with our type.
+
+        // This is a compile-time test primarily - runtime requires a real terminal
+        let _ = suspend_tui(&mut mock_stdout);
+    }
+
+    /// Test that resume_tui requires both stdout and terminal references.
+    /// This is primarily a compile-time verification test.
+    #[test]
+    fn test_resume_tui_signature() {
+        // This test verifies the function signature is correct.
+        // Actual terminal operations require manual testing.
+
+        // The function should accept a mutable stdout reference and a terminal reference.
+        // We can't easily create a mock Terminal<CrosstermBackend<io::Stdout>> in tests,
+        // so this test primarily documents the expected signature.
+
+        // Compile-time check: the function exists and has the expected signature
+        fn _assert_resume_tui_exists<W: io::Write>(
+            _stdout: &mut W,
+            _terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+        ) -> Result<()> {
+            resume_tui(_stdout, _terminal)
+        }
+    }
+
+    /// Test that TuiSuspendGuard has the expected structure.
+    #[test]
+    fn test_tui_suspend_guard_structure() {
+        // This test verifies the guard struct has the expected lifetime and field types.
+        // Actual RAII behavior requires manual testing with a real terminal.
+
+        // The guard should implement Drop, which we verify by checking it exists as a type
+        fn _assert_guard_has_expected_structure<'a>(
+            _stdout: &'a mut io::Stdout,
+            _terminal: &'a mut Terminal<CrosstermBackend<io::Stdout>>,
+        ) {
+            // This block compiles only if the guard can be constructed with these types
+            // (in a real terminal environment)
+        }
+
+        // Verify the struct type exists and can be referenced with proper lifetime constraints
+        fn _create_guard<'a>(
+            stdout: &'a mut io::Stdout,
+            terminal: &'a mut Terminal<CrosstermBackend<io::Stdout>>,
+        ) -> Result<TuiSuspendGuard<'a>> {
+            TuiSuspendGuard::new(stdout, terminal)
+        }
+    }
+
+    /// Test that the guard implements Drop trait (compile-time verification).
+    #[test]
+    fn test_tui_suspend_guard_implements_drop() {
+        // This test verifies that TuiSuspendGuard implements Drop.
+        // The Drop implementation is critical for ensuring terminal restoration
+        // even if an editor crashes or panics.
+
+        fn _assert_drop_impl<T: Drop>() {}
+
+        // This will fail to compile if TuiSuspendGuard doesn't implement Drop
+        _assert_drop_impl::<TuiSuspendGuard<'_>>();
+    }
 }

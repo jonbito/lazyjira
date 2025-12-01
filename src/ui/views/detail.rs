@@ -1240,11 +1240,11 @@ impl DetailView {
             Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(3),                     // Header (type + key)
-                    Constraint::Length(2),                     // Summary
-                    Constraint::Length(7),                     // Metadata
-                    Constraint::Length(linked_issues_height),  // Linked issues
-                    Constraint::Min(5),                        // Description (scrollable)
+                    Constraint::Length(3),                    // Header (type + key)
+                    Constraint::Length(2),                    // Summary
+                    Constraint::Length(7),                    // Metadata
+                    Constraint::Length(linked_issues_height), // Linked issues
+                    Constraint::Min(5),                       // Description (scrollable)
                 ])
                 .split(area)
         } else {
@@ -1344,9 +1344,7 @@ impl DetailView {
         let t = theme();
         let header = Paragraph::new(Line::from(vec![Span::styled(
             header_text,
-            Style::default()
-                .fg(t.warning)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(t.warning).add_modifier(Modifier::BOLD),
         )]))
         .block(
             Block::default()
@@ -1417,9 +1415,7 @@ impl DetailView {
 
         let header = Paragraph::new(Line::from(vec![Span::styled(
             header_text,
-            Style::default()
-                .fg(t.accent)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
         )]))
         .block(
             Block::default()
@@ -1507,10 +1503,7 @@ impl DetailView {
 
         // Labels
         if !labels.is_empty() {
-            let mut label_spans = vec![Span::styled(
-                "Labels: ",
-                Style::default().fg(t.dim),
-            )];
+            let mut label_spans = vec![Span::styled("Labels: ", Style::default().fg(t.dim))];
             for (i, label) in labels.iter().enumerate() {
                 if i > 0 {
                     label_spans.push(Span::raw(" "));
@@ -1525,10 +1518,7 @@ impl DetailView {
 
         // Components
         if !components.is_empty() {
-            let mut comp_spans = vec![Span::styled(
-                "Components: ",
-                Style::default().fg(t.dim),
-            )];
+            let mut comp_spans = vec![Span::styled("Components: ", Style::default().fg(t.dim))];
             for (i, component) in components.iter().enumerate() {
                 if i > 0 {
                     comp_spans.push(Span::raw(" "));
@@ -1614,9 +1604,7 @@ impl DetailView {
                 ),
                 Span::styled(
                     " EDITING ",
-                    Style::default()
-                        .fg(t.warning)
-                        .add_modifier(Modifier::BOLD),
+                    Style::default().fg(t.warning).add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(unsaved_indicator, Style::default().fg(t.error)),
                 Span::styled(saving_indicator, Style::default().fg(t.accent)),

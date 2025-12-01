@@ -196,9 +196,7 @@ impl ProfileListView {
         let block = Block::default()
             .title(Span::styled(
                 " Profiles ",
-                Style::default()
-                    .fg(t.accent)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
             ))
             .borders(Borders::ALL)
             .border_style(Style::default().fg(t.accent));
@@ -209,10 +207,7 @@ impl ProfileListView {
         if self.profiles.is_empty() {
             let message = Paragraph::new(vec![
                 Line::raw(""),
-                Line::styled(
-                    "No profiles configured",
-                    Style::default().fg(t.dim),
-                ),
+                Line::styled("No profiles configured", Style::default().fg(t.dim)),
                 Line::raw(""),
                 Line::styled(
                     "Press 'a' to add a new profile",
@@ -241,10 +236,7 @@ impl ProfileListView {
                 )];
 
                 if profile.is_default {
-                    spans.push(Span::styled(
-                        " (default)",
-                        Style::default().fg(t.success),
-                    ));
+                    spans.push(Span::styled(" (default)", Style::default().fg(t.success)));
                 }
 
                 if !profile.has_token {
@@ -666,9 +658,7 @@ impl ProfileFormView {
         let block = Block::default()
             .title(Span::styled(
                 title,
-                Style::default()
-                    .fg(t.accent)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
             ))
             .borders(Borders::ALL)
             .border_style(Style::default().fg(t.accent));
@@ -710,11 +700,9 @@ impl ProfileFormView {
 
         // Render error if present
         if let Some(ref error) = self.error {
-            let error_text = Paragraph::new(Span::styled(
-                &error.message,
-                Style::default().fg(t.error),
-            ))
-            .alignment(Alignment::Center);
+            let error_text =
+                Paragraph::new(Span::styled(&error.message, Style::default().fg(t.error)))
+                    .alignment(Alignment::Center);
             frame.render_widget(error_text, chunks[4]);
         } else if self.validating {
             let validating_text = Paragraph::new(Span::styled(

@@ -11,12 +11,12 @@ use tracing::{debug, error, info, instrument, warn};
 use super::auth::Auth;
 use super::error::{ApiError, Result};
 use super::types::{
-    AddCommentRequest, BoardsResponse, Changelog, Comment, CommentsResponse, CreateIssueLinkRequest,
-    CurrentUser, FieldUpdates, FilterOption, FilterOptions, Issue, IssueKeyRef,
-    IssueLinkType, IssueLinkTypeRef, IssueLinkTypesResponse, IssuePickerResponse, IssueSuggestion,
-    IssueUpdateRequest, LabelOperation, LabelsResponse, Priority, Project, SearchResult,
-    SprintsResponse, Status, Transition, TransitionRef, TransitionRequest, TransitionsResponse,
-    UpdateOperations, User,
+    AddCommentRequest, BoardsResponse, Changelog, Comment, CommentsResponse,
+    CreateIssueLinkRequest, CurrentUser, FieldUpdates, FilterOption, FilterOptions, Issue,
+    IssueKeyRef, IssueLinkType, IssueLinkTypeRef, IssueLinkTypesResponse, IssuePickerResponse,
+    IssueSuggestion, IssueUpdateRequest, LabelOperation, LabelsResponse, Priority, Project,
+    SearchResult, SprintsResponse, Status, Transition, TransitionRef, TransitionRequest,
+    TransitionsResponse, UpdateOperations, User,
 };
 use crate::config::Profile;
 
@@ -1286,8 +1286,9 @@ impl JiraClient {
         debug!("Issue picker raw response: {:?}", raw_response);
 
         // Parse the response
-        let response: IssuePickerResponse = serde_json::from_value(raw_response)
-            .map_err(|e| ApiError::InvalidResponse(format!("Failed to parse picker response: {}", e)))?;
+        let response: IssuePickerResponse = serde_json::from_value(raw_response).map_err(|e| {
+            ApiError::InvalidResponse(format!("Failed to parse picker response: {}", e))
+        })?;
 
         // Flatten all sections into a single list
         let suggestions: Vec<IssueSuggestion> = response

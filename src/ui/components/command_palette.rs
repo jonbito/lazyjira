@@ -284,7 +284,12 @@ impl CommandPalette {
     }
 
     /// Render a single command item.
-    fn render_command_item<'a>(&self, cmd: &'a Command, is_selected: bool, width: usize) -> ListItem<'a> {
+    fn render_command_item<'a>(
+        &self,
+        cmd: &'a Command,
+        is_selected: bool,
+        width: usize,
+    ) -> ListItem<'a> {
         let style = if is_selected {
             Style::default().bg(Color::DarkGray)
         } else {
@@ -302,10 +307,7 @@ impl CommandPalette {
         }
 
         // Command title
-        spans.push(Span::styled(
-            &cmd.title,
-            style.add_modifier(Modifier::BOLD),
-        ));
+        spans.push(Span::styled(&cmd.title, style.add_modifier(Modifier::BOLD)));
 
         // Category badge
         let category_style = self.category_style(cmd.category);
@@ -493,7 +495,10 @@ mod tests {
         }
 
         assert!(palette.results.len() < initial_count);
-        assert!(palette.results.iter().any(|c| c.title.to_lowercase().contains("help")));
+        assert!(palette
+            .results
+            .iter()
+            .any(|c| c.title.to_lowercase().contains("help")));
     }
 
     #[test]

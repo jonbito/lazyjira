@@ -233,8 +233,8 @@ impl IssueSearchPicker {
         let input_inner = input_block.inner(chunks[0]);
         frame.render_widget(input_block, chunks[0]);
 
-        let input_text = Paragraph::new(self.query.as_str())
-            .style(Style::default().fg(Color::White));
+        let input_text =
+            Paragraph::new(self.query.as_str()).style(Style::default().fg(Color::White));
         frame.render_widget(input_text, input_inner);
 
         // Show cursor at end of input
@@ -267,7 +267,9 @@ impl IssueSearchPicker {
                 .suggestions
                 .iter()
                 .map(|s| {
-                    let summary = s.summary_text.as_deref()
+                    let summary = s
+                        .summary_text
+                        .as_deref()
                         .or(s.summary.as_deref())
                         .unwrap_or("");
                     let text = format!("{}: {}", s.key, truncate(summary, 40));
@@ -472,7 +474,10 @@ mod tests {
         let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
         let action = picker.handle_input(key);
 
-        assert_eq!(action, Some(IssueSearchPickerAction::Select("TEST-1".to_string())));
+        assert_eq!(
+            action,
+            Some(IssueSearchPickerAction::Select("TEST-1".to_string()))
+        );
         assert!(!picker.is_visible());
     }
 
@@ -491,7 +496,10 @@ mod tests {
         let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
         let action = picker.handle_input(key);
 
-        assert_eq!(action, Some(IssueSearchPickerAction::Search("test".to_string())));
+        assert_eq!(
+            action,
+            Some(IssueSearchPickerAction::Search("test".to_string()))
+        );
         assert!(picker.is_loading());
     }
 
@@ -509,7 +517,10 @@ mod tests {
         let key = KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE);
         let action = picker.handle_input(key);
 
-        assert_eq!(action, Some(IssueSearchPickerAction::Search("proj".to_string())));
+        assert_eq!(
+            action,
+            Some(IssueSearchPickerAction::Search("proj".to_string()))
+        );
     }
 
     #[test]
@@ -563,9 +574,7 @@ mod tests {
     fn test_typing_clears_old_suggestions() {
         let mut picker = IssueSearchPicker::new();
         picker.show(None);
-        picker.set_suggestions(vec![
-            create_test_suggestion("OLD-1", "Old result"),
-        ]);
+        picker.set_suggestions(vec![create_test_suggestion("OLD-1", "Old result")]);
         picker.selected = 0;
 
         assert_eq!(picker.suggestion_count(), 1);

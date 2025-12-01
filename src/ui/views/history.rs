@@ -78,9 +78,15 @@ impl HistoryFilter {
     pub fn matches(&self, item: &ChangeItem) -> bool {
         match self {
             Self::All => true,
-            Self::Status => matches!(item.change_type(), ChangeType::Status | ChangeType::Resolution),
+            Self::Status => matches!(
+                item.change_type(),
+                ChangeType::Status | ChangeType::Resolution
+            ),
             Self::Assignee => matches!(item.change_type(), ChangeType::Assignee),
-            Self::Content => matches!(item.change_type(), ChangeType::Content | ChangeType::Comment),
+            Self::Content => matches!(
+                item.change_type(),
+                ChangeType::Content | ChangeType::Comment
+            ),
             Self::Fields => matches!(
                 item.change_type(),
                 ChangeType::Priority
@@ -294,7 +300,8 @@ impl HistoryView {
             }
 
             // Go to bottom
-            (KeyCode::Char('G'), KeyModifiers::SHIFT) | (KeyCode::Char('G'), KeyModifiers::NONE) => {
+            (KeyCode::Char('G'), KeyModifiers::SHIFT)
+            | (KeyCode::Char('G'), KeyModifiers::NONE) => {
                 self.scroll = self.max_scroll();
                 // Trigger load more when at bottom
                 if self.can_load_more() {
@@ -315,8 +322,7 @@ impl HistoryView {
             }
 
             // Previous filter
-            (KeyCode::BackTab, KeyModifiers::SHIFT)
-            | (KeyCode::Char('F'), KeyModifiers::SHIFT) => {
+            (KeyCode::BackTab, KeyModifiers::SHIFT) | (KeyCode::Char('F'), KeyModifiers::SHIFT) => {
                 self.filter = self.filter.prev();
                 self.update_filtered_count();
                 self.scroll = 0;
@@ -433,15 +439,9 @@ impl HistoryView {
                 .begin_symbol(Some("▲"))
                 .end_symbol(Some("▼"));
 
-            let mut scrollbar_state =
-                ScrollbarState::new(self.max_scroll()).position(self.scroll);
+            let mut scrollbar_state = ScrollbarState::new(self.max_scroll()).position(self.scroll);
 
-            let scrollbar_area = Rect::new(
-                area.x + area.width - 1,
-                area.y,
-                1,
-                area.height,
-            );
+            let scrollbar_area = Rect::new(area.x + area.width - 1, area.y, 1, area.height);
 
             frame.render_stateful_widget(scrollbar, scrollbar_area, &mut scrollbar_state);
         }
@@ -498,9 +498,7 @@ impl HistoryView {
                 current_date = date.to_string();
                 lines.push(Line::from(vec![Span::styled(
                     format!("─── {} ───", date),
-                    Style::default()
-                        .fg(t.warning)
-                        .add_modifier(Modifier::BOLD),
+                    Style::default().fg(t.warning).add_modifier(Modifier::BOLD),
                 )]));
                 lines.push(Line::from(""));
             }
@@ -513,15 +511,10 @@ impl HistoryView {
             };
 
             lines.push(Line::from(vec![
-                Span::styled(
-                    format!("{} ", time),
-                    Style::default().fg(t.dim),
-                ),
+                Span::styled(format!("{} ", time), Style::default().fg(t.dim)),
                 Span::styled(
                     history.author.display_name.clone(),
-                    Style::default()
-                        .fg(t.accent)
-                        .add_modifier(Modifier::BOLD),
+                    Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
                 ),
             ]));
 
@@ -554,10 +547,7 @@ impl HistoryView {
                 lines.push(Line::from(vec![
                     Span::raw("  "),
                     Span::styled(format!("{} ", icon), type_style),
-                    Span::styled(
-                        format!("{}: ", item.field),
-                        Style::default().fg(t.dim),
-                    ),
+                    Span::styled(format!("{}: ", item.field), Style::default().fg(t.dim)),
                     Span::styled(from_display, Style::default().fg(t.error)),
                     Span::styled(" → ", Style::default().fg(t.dim)),
                     Span::styled(to_display, Style::default().fg(t.success)),
@@ -636,7 +626,12 @@ mod tests {
         });
     }
 
-    fn create_test_history(id: &str, author_name: &str, date: &str, items: Vec<ChangeItem>) -> ChangeHistory {
+    fn create_test_history(
+        id: &str,
+        author_name: &str,
+        date: &str,
+        items: Vec<ChangeItem>,
+    ) -> ChangeHistory {
         ChangeHistory {
             id: id.to_string(),
             author: User {

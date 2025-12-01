@@ -70,11 +70,7 @@ pub struct LinkedIssuesSection {
 
 impl LinkedIssuesSection {
     /// Create a new linked issues section.
-    pub fn new(
-        links: &[IssueLink],
-        subtasks: &[Subtask],
-        parent: Option<ParentIssue>,
-    ) -> Self {
+    pub fn new(links: &[IssueLink], subtasks: &[Subtask], parent: Option<ParentIssue>) -> Self {
         let display_links: Vec<DisplayLink> = links
             .iter()
             .filter_map(|link| {
@@ -332,7 +328,9 @@ impl LinkedIssuesSection {
         if !self.links.is_empty() {
             lines.push(Line::from(Span::styled(
                 "Linked Issues:",
-                Style::default().add_modifier(Modifier::BOLD).fg(Color::Gray),
+                Style::default()
+                    .add_modifier(Modifier::BOLD)
+                    .fg(Color::Gray),
             )));
 
             for link in &self.links {
@@ -359,7 +357,9 @@ impl LinkedIssuesSection {
             }
             lines.push(Line::from(Span::styled(
                 "Subtasks:",
-                Style::default().add_modifier(Modifier::BOLD).fg(Color::Gray),
+                Style::default()
+                    .add_modifier(Modifier::BOLD)
+                    .fg(Color::Gray),
             )));
 
             for subtask in &self.subtasks {
@@ -763,13 +763,17 @@ mod tests {
         assert_eq!(empty.height(), 0);
 
         // Collapsed section
-        let mut section =
-            LinkedIssuesSection::new(&[create_test_link("1", "PROJ-1", "Link", "Blocks")], &[], None);
+        let mut section = LinkedIssuesSection::new(
+            &[create_test_link("1", "PROJ-1", "Link", "Blocks")],
+            &[],
+            None,
+        );
         section.toggle_expand();
         assert_eq!(section.height(), 3);
 
         // With parent only
-        let section = LinkedIssuesSection::new(&[], &[], Some(create_test_parent("PROJ-1", "Parent")));
+        let section =
+            LinkedIssuesSection::new(&[], &[], Some(create_test_parent("PROJ-1", "Parent")));
         assert!(section.height() >= 3);
     }
 

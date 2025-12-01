@@ -823,9 +823,7 @@ impl ListView {
                         .bg(t.accent)
                         .add_modifier(Modifier::BOLD)
                 } else {
-                    Style::default()
-                        .fg(t.fg)
-                        .add_modifier(Modifier::BOLD)
+                    Style::default().fg(t.fg).add_modifier(Modifier::BOLD)
                 };
 
                 Cell::from(text).style(style)
@@ -1006,10 +1004,7 @@ impl ListView {
         } else {
             "j/k:nav  /:search  s:sort  f:filter  :jql  ?:help"
         };
-        spans.push(Span::styled(
-            help_text,
-            Style::default().fg(t.dim),
-        ));
+        spans.push(Span::styled(help_text, Style::default().fg(t.dim)));
 
         let status_line = Line::from(spans);
         let paragraph = Paragraph::new(status_line);

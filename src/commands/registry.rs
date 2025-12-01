@@ -106,7 +106,11 @@ impl CommandRegistry {
                 title: "Manage Profiles".to_string(),
                 description: Some("View and edit JIRA profiles".to_string()),
                 category: CommandCategory::Profile,
-                keywords: vec!["account".to_string(), "connection".to_string(), "jira".to_string()],
+                keywords: vec![
+                    "account".to_string(),
+                    "connection".to_string(),
+                    "jira".to_string(),
+                ],
                 shortcut: Some("P".to_string()),
                 action: CommandAction::GoToProfiles,
             },
@@ -115,7 +119,11 @@ impl CommandRegistry {
                 title: "Switch Profile".to_string(),
                 description: Some("Quick switch to another profile".to_string()),
                 category: CommandCategory::Profile,
-                keywords: vec!["change".to_string(), "account".to_string(), "select".to_string()],
+                keywords: vec![
+                    "change".to_string(),
+                    "account".to_string(),
+                    "select".to_string(),
+                ],
                 shortcut: Some("p".to_string()),
                 action: CommandAction::SwitchProfile,
             },
@@ -124,7 +132,11 @@ impl CommandRegistry {
                 title: "Refresh Issues".to_string(),
                 description: Some("Reload issues from JIRA".to_string()),
                 category: CommandCategory::Issue,
-                keywords: vec!["reload".to_string(), "update".to_string(), "fetch".to_string()],
+                keywords: vec![
+                    "reload".to_string(),
+                    "update".to_string(),
+                    "fetch".to_string(),
+                ],
                 shortcut: Some("r".to_string()),
                 action: CommandAction::RefreshIssues,
             },
@@ -133,7 +145,11 @@ impl CommandRegistry {
                 title: "Enter JQL Query".to_string(),
                 description: Some("Search with JIRA Query Language".to_string()),
                 category: CommandCategory::Filter,
-                keywords: vec!["search".to_string(), "query".to_string(), "find".to_string()],
+                keywords: vec![
+                    "search".to_string(),
+                    "query".to_string(),
+                    "find".to_string(),
+                ],
                 shortcut: Some(":".to_string()),
                 action: CommandAction::OpenJqlInput,
             },
@@ -142,7 +158,11 @@ impl CommandRegistry {
                 title: "Open Filter Panel".to_string(),
                 description: Some("Show filter options for issues".to_string()),
                 category: CommandCategory::Filter,
-                keywords: vec!["search".to_string(), "status".to_string(), "assignee".to_string()],
+                keywords: vec![
+                    "search".to_string(),
+                    "status".to_string(),
+                    "assignee".to_string(),
+                ],
                 shortcut: Some("f".to_string()),
                 action: CommandAction::GoToFilters,
             },
@@ -160,7 +180,11 @@ impl CommandRegistry {
                 title: "Clear Cache".to_string(),
                 description: Some("Remove cached issue data".to_string()),
                 category: CommandCategory::Settings,
-                keywords: vec!["reset".to_string(), "storage".to_string(), "data".to_string()],
+                keywords: vec![
+                    "reset".to_string(),
+                    "storage".to_string(),
+                    "data".to_string(),
+                ],
                 shortcut: None,
                 action: CommandAction::ClearCache,
             },
@@ -169,7 +193,11 @@ impl CommandRegistry {
                 title: "Show Help".to_string(),
                 description: Some("Display keyboard shortcuts and help".to_string()),
                 category: CommandCategory::Help,
-                keywords: vec!["shortcuts".to_string(), "keys".to_string(), "documentation".to_string()],
+                keywords: vec![
+                    "shortcuts".to_string(),
+                    "keys".to_string(),
+                    "documentation".to_string(),
+                ],
                 shortcut: Some("?".to_string()),
                 action: CommandAction::GoToHelp,
             },
@@ -232,7 +260,10 @@ impl CommandRegistry {
                 score += 50;
             }
             // Bonus for word boundary match
-            if title_lower.split_whitespace().any(|word| word.starts_with(query)) {
+            if title_lower
+                .split_whitespace()
+                .any(|word| word.starts_with(query))
+            {
                 score += 25;
             }
         }
@@ -430,11 +461,7 @@ mod tests {
         let registry = CommandRegistry::new();
 
         // Verify we have commands in different categories
-        let categories: Vec<_> = registry
-            .commands()
-            .iter()
-            .map(|c| c.category)
-            .collect();
+        let categories: Vec<_> = registry.commands().iter().map(|c| c.category).collect();
 
         assert!(categories.contains(&CommandCategory::Navigation));
         assert!(categories.contains(&CommandCategory::Profile));

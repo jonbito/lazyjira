@@ -26,7 +26,9 @@ pub fn init_theme(theme: Theme) {
 ///
 /// Panics if the theme has not been initialized.
 pub fn theme() -> &'static Theme {
-    THEME.get().expect("Theme not initialized. Call init_theme() first.")
+    THEME
+        .get()
+        .expect("Theme not initialized. Call init_theme() first.")
 }
 
 /// Try to get a reference to the current theme.
@@ -338,7 +340,9 @@ impl Theme {
 
     /// Get style with bold accent.
     pub fn style_accent_bold(&self) -> Style {
-        Style::default().fg(self.accent).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(self.accent)
+            .add_modifier(Modifier::BOLD)
     }
 
     /// Get style for success states.
@@ -383,7 +387,9 @@ impl Theme {
 
     /// Get style for table headers.
     pub fn style_header(&self) -> Style {
-        Style::default().fg(self.header_fg).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(self.header_fg)
+            .add_modifier(Modifier::BOLD)
     }
 
     /// Get style for input text.
@@ -408,7 +414,9 @@ impl Theme {
 
     /// Get style for search matches.
     pub fn style_search_match(&self) -> Style {
-        Style::default().bg(self.search_match_bg).fg(self.search_match_fg)
+        Style::default()
+            .bg(self.search_match_bg)
+            .fg(self.search_match_fg)
     }
 
     /// Get style for status based on its category.
@@ -424,9 +432,9 @@ impl Theme {
     /// Get style for priority.
     pub fn priority_style(&self, priority: Option<&Priority>) -> Style {
         match priority.map(|p| p.name.as_str()) {
-            Some("Highest") | Some("Blocker") => {
-                Style::default().fg(self.priority_highest).add_modifier(Modifier::BOLD)
-            }
+            Some("Highest") | Some("Blocker") => Style::default()
+                .fg(self.priority_highest)
+                .add_modifier(Modifier::BOLD),
             Some("High") | Some("Critical") => Style::default().fg(self.priority_high),
             Some("Medium") => Style::default().fg(self.priority_medium),
             Some("Low") => Style::default().fg(self.priority_low),
@@ -749,7 +757,10 @@ mod tests {
     fn test_parse_color_rgb() {
         assert_eq!(parse_color("rgb(255, 0, 0)"), Some(Color::Rgb(255, 0, 0)));
         assert_eq!(parse_color("rgb(0,255,0)"), Some(Color::Rgb(0, 255, 0)));
-        assert_eq!(parse_color("rgb( 0 , 0 , 255 )"), Some(Color::Rgb(0, 0, 255)));
+        assert_eq!(
+            parse_color("rgb( 0 , 0 , 255 )"),
+            Some(Color::Rgb(0, 0, 255))
+        );
     }
 
     #[test]

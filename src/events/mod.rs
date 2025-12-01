@@ -8,7 +8,7 @@ mod keys;
 pub use handler::EventHandler;
 pub use keys::{
     get_context_hints, get_keybindings, get_keybindings_for_context, get_keybindings_grouped,
-    KeyBindings, Keybinding, KeyContext,
+    KeyBindings, KeyContext, Keybinding,
 };
 
 use crossterm::event::KeyEvent;

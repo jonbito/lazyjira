@@ -69,10 +69,7 @@ fn parse_hints_to_spans(hints: &str) -> Vec<Span<'static>> {
 
     // Flush any remaining text
     if !current.is_empty() {
-        spans.push(Span::styled(
-            current,
-            Style::default().fg(Color::DarkGray),
-        ));
+        spans.push(Span::styled(current, Style::default().fg(Color::DarkGray)));
     }
 
     spans

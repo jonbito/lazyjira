@@ -18,11 +18,11 @@ use crate::api::types::{
     Changelog, FieldUpdates, FilterOptions, FilterState, Issue, IssueUpdateRequest, Priority,
     Transition, User,
 };
+use crate::commands::CommandAction;
 use crate::config::{Config, ConfigError, Profile};
 use crate::error::AppError;
 use crate::events::Event;
 use crate::events::KeyContext;
-use crate::commands::CommandAction;
 use crate::ui::{
     render_context_help, CommandPalette, CommandPaletteAction, ConfirmDialog, DeleteProfileDialog,
     DetailAction, DetailView, ErrorDialog, FilterPanelAction, FilterPanelView, FormField,
@@ -1539,12 +1539,11 @@ impl App {
 
     /// Show the delete link confirmation dialog.
     pub fn show_delete_link_confirmation(&mut self, link_id: String, description: String) {
-        self.delete_link_confirm_dialog.show_destructive(
-            "Delete Link",
-            format!("Delete link to {}?", description),
-        );
+        self.delete_link_confirm_dialog
+            .show_destructive("Delete Link", format!("Delete link to {}?", description));
         // Store the link info for when confirmed (not in pending_delete_link yet)
-        self.pending_confirm_delete_link = Some((link_id, self.selected_issue_key.clone().unwrap_or_default()));
+        self.pending_confirm_delete_link =
+            Some((link_id, self.selected_issue_key.clone().unwrap_or_default()));
     }
 
     /// Check if the delete link confirm dialog is visible.
@@ -2300,10 +2299,7 @@ impl App {
             AppState::Help => {
                 // Help view has its own footer hints
                 let footer = Line::from(vec![
-                    Span::styled(
-                        " Help ",
-                        Style::default().fg(Color::Black).bg(Color::Cyan),
-                    ),
+                    Span::styled(" Help ", Style::default().fg(Color::Black).bg(Color::Cyan)),
                     Span::raw(" "),
                     Span::styled(
                         "[j/k] scroll  [g/G] top/bottom  [?/q/Esc] close",

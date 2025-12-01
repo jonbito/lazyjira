@@ -86,10 +86,25 @@ pub fn get_keybindings() -> Vec<Keybinding> {
         // Global keybindings
         Keybinding::new("?", "help", "Show this help panel", KeyContext::Global),
         Keybinding::new("Ctrl+C", "quit", "Quit application", KeyContext::Global),
-        Keybinding::new("p", "switch_profile", "Switch JIRA profile (quick)", KeyContext::Global),
-        Keybinding::new("P", "manage_profiles", "Manage profiles (CRUD)", KeyContext::Global),
+        Keybinding::new(
+            "p",
+            "switch_profile",
+            "Switch JIRA profile (quick)",
+            KeyContext::Global,
+        ),
+        Keybinding::new(
+            "P",
+            "manage_profiles",
+            "Manage profiles (CRUD)",
+            KeyContext::Global,
+        ),
         Keybinding::new("r", "refresh", "Refresh current view", KeyContext::Global),
-        Keybinding::new("Ctrl+P / Ctrl+K", "command_palette", "Open command palette", KeyContext::Global),
+        Keybinding::new(
+            "Ctrl+P / Ctrl+K",
+            "command_palette",
+            "Open command palette",
+            KeyContext::Global,
+        ),
         // Issue List keybindings
         Keybinding::new("j / ↓", "move_down", "Move down", KeyContext::IssueList),
         Keybinding::new("k / ↑", "move_up", "Move up", KeyContext::IssueList),
@@ -97,12 +112,27 @@ pub fn get_keybindings() -> Vec<Keybinding> {
         Keybinding::new("G", "go_bottom", "Go to last issue", KeyContext::IssueList),
         Keybinding::new("Ctrl+d", "page_down", "Page down", KeyContext::IssueList),
         Keybinding::new("Ctrl+u", "page_up", "Page up", KeyContext::IssueList),
-        Keybinding::new("Enter", "open_issue", "Open issue details", KeyContext::IssueList),
+        Keybinding::new(
+            "Enter",
+            "open_issue",
+            "Open issue details",
+            KeyContext::IssueList,
+        ),
         Keybinding::new("f", "filter", "Open filter panel", KeyContext::IssueList),
-        Keybinding::new(": / /", "jql", "Open JQL query input", KeyContext::IssueList),
+        Keybinding::new(
+            ": / /",
+            "jql",
+            "Open JQL query input",
+            KeyContext::IssueList,
+        ),
         Keybinding::new("q", "quit", "Quit application", KeyContext::IssueList),
         // Issue Detail keybindings
-        Keybinding::new("j / ↓", "scroll_down", "Scroll down", KeyContext::IssueDetail),
+        Keybinding::new(
+            "j / ↓",
+            "scroll_down",
+            "Scroll down",
+            KeyContext::IssueDetail,
+        ),
         Keybinding::new("k / ↑", "scroll_up", "Scroll up", KeyContext::IssueDetail),
         Keybinding::new("g", "go_top", "Go to top", KeyContext::IssueDetail),
         Keybinding::new("G", "go_bottom", "Go to bottom", KeyContext::IssueDetail),
@@ -114,24 +144,69 @@ pub fn get_keybindings() -> Vec<Keybinding> {
         Keybinding::new("a", "assign", "Change assignee", KeyContext::IssueDetail),
         Keybinding::new("y", "priority", "Change priority", KeyContext::IssueDetail),
         Keybinding::new("l", "labels", "Edit labels", KeyContext::IssueDetail),
-        Keybinding::new("o", "components", "Edit components", KeyContext::IssueDetail),
+        Keybinding::new(
+            "o",
+            "components",
+            "Edit components",
+            KeyContext::IssueDetail,
+        ),
         Keybinding::new("L", "link", "Link issue", KeyContext::IssueDetail),
-        Keybinding::new("q / Esc", "back", "Go back to list", KeyContext::IssueDetail),
+        Keybinding::new(
+            "q / Esc",
+            "back",
+            "Go back to list",
+            KeyContext::IssueDetail,
+        ),
         // JQL Input keybindings
         Keybinding::new("Enter", "execute", "Execute query", KeyContext::JqlInput),
         Keybinding::new("↑ / ↓", "history", "Browse history", KeyContext::JqlInput),
         Keybinding::new("Esc", "cancel", "Cancel", KeyContext::JqlInput),
         // Profile Management keybindings
         Keybinding::new("a", "add", "Add new profile", KeyContext::ProfileManagement),
-        Keybinding::new("e", "edit", "Edit selected profile", KeyContext::ProfileManagement),
-        Keybinding::new("d", "delete", "Delete selected profile", KeyContext::ProfileManagement),
-        Keybinding::new("s", "set_default", "Set as default profile", KeyContext::ProfileManagement),
-        Keybinding::new("Space", "switch", "Switch to profile", KeyContext::ProfileManagement),
+        Keybinding::new(
+            "e",
+            "edit",
+            "Edit selected profile",
+            KeyContext::ProfileManagement,
+        ),
+        Keybinding::new(
+            "d",
+            "delete",
+            "Delete selected profile",
+            KeyContext::ProfileManagement,
+        ),
+        Keybinding::new(
+            "s",
+            "set_default",
+            "Set as default profile",
+            KeyContext::ProfileManagement,
+        ),
+        Keybinding::new(
+            "Space",
+            "switch",
+            "Switch to profile",
+            KeyContext::ProfileManagement,
+        ),
         Keybinding::new("q / Esc", "back", "Go back", KeyContext::ProfileManagement),
         // Filter Panel keybindings
-        Keybinding::new("Tab / ← / →", "switch_section", "Switch section", KeyContext::FilterPanel),
-        Keybinding::new("↑ / ↓", "navigate", "Navigate in section", KeyContext::FilterPanel),
-        Keybinding::new("Space", "toggle", "Toggle selection", KeyContext::FilterPanel),
+        Keybinding::new(
+            "Tab / ← / →",
+            "switch_section",
+            "Switch section",
+            KeyContext::FilterPanel,
+        ),
+        Keybinding::new(
+            "↑ / ↓",
+            "navigate",
+            "Navigate in section",
+            KeyContext::FilterPanel,
+        ),
+        Keybinding::new(
+            "Space",
+            "toggle",
+            "Toggle selection",
+            KeyContext::FilterPanel,
+        ),
         Keybinding::new("c", "clear", "Clear all filters", KeyContext::FilterPanel),
         Keybinding::new("Enter", "apply", "Apply filters", KeyContext::FilterPanel),
         Keybinding::new("Esc", "cancel", "Cancel", KeyContext::FilterPanel),
@@ -189,7 +264,9 @@ pub fn get_context_hints(context: KeyContext) -> &'static str {
             "[e] edit  [c] comment  [s] status  [a] assign  [q] back  [?] help"
         }
         KeyContext::ProfileManagement => "[a] add  [e] edit  [d] delete  [s] default  [q] back",
-        KeyContext::FilterPanel => "[Space] toggle  [Tab] section  [Enter] apply  [c] clear  [Esc] close",
+        KeyContext::FilterPanel => {
+            "[Space] toggle  [Tab] section  [Enter] apply  [c] clear  [Esc] close"
+        }
         KeyContext::JqlInput => "[Enter] execute  [↑/↓] history  [Esc] cancel",
         KeyContext::Editor => "[Ctrl+S] save  [Esc] cancel",
     }
@@ -216,7 +293,10 @@ mod tests {
         assert_eq!(KeyContext::Global.display(), "Global");
         assert_eq!(KeyContext::IssueList.display(), "Issue List");
         assert_eq!(KeyContext::IssueDetail.display(), "Issue Detail");
-        assert_eq!(KeyContext::ProfileManagement.display(), "Profile Management");
+        assert_eq!(
+            KeyContext::ProfileManagement.display(),
+            "Profile Management"
+        );
         assert_eq!(KeyContext::FilterPanel.display(), "Filter Panel");
         assert_eq!(KeyContext::Editor.display(), "Editor");
         assert_eq!(KeyContext::JqlInput.display(), "JQL Input");
@@ -242,7 +322,9 @@ mod tests {
     fn test_get_keybindings_for_context() {
         let global_bindings = get_keybindings_for_context(KeyContext::Global);
         assert!(!global_bindings.is_empty());
-        assert!(global_bindings.iter().all(|b| b.context == KeyContext::Global));
+        assert!(global_bindings
+            .iter()
+            .all(|b| b.context == KeyContext::Global));
     }
 
     #[test]

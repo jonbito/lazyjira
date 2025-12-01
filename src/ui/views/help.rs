@@ -13,7 +13,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::events::{get_keybindings_grouped, Keybinding, KeyContext};
+use crate::events::{get_keybindings_grouped, KeyContext, Keybinding};
 use crate::ui::theme::theme;
 
 /// Actions that can be returned from the help view.
@@ -98,7 +98,8 @@ impl HelpView {
             }
 
             // Page down
-            (KeyCode::Char('d'), KeyModifiers::CONTROL) | (KeyCode::PageDown, KeyModifiers::NONE) => {
+            (KeyCode::Char('d'), KeyModifiers::CONTROL)
+            | (KeyCode::PageDown, KeyModifiers::NONE) => {
                 let page_size = self.visible_height.saturating_sub(2);
                 self.scroll = (self.scroll + page_size).min(self.max_scroll());
                 None
@@ -118,7 +119,8 @@ impl HelpView {
             }
 
             // Go to bottom
-            (KeyCode::Char('G'), KeyModifiers::SHIFT) | (KeyCode::Char('G'), KeyModifiers::NONE) => {
+            (KeyCode::Char('G'), KeyModifiers::SHIFT)
+            | (KeyCode::Char('G'), KeyModifiers::NONE) => {
                 self.scroll = self.max_scroll();
                 None
             }
@@ -164,8 +166,7 @@ impl HelpView {
                 .begin_symbol(Some("▲"))
                 .end_symbol(Some("▼"));
 
-            let mut scrollbar_state = ScrollbarState::new(self.max_scroll())
-                .position(self.scroll);
+            let mut scrollbar_state = ScrollbarState::new(self.max_scroll()).position(self.scroll);
 
             // Render scrollbar in the right margin of the help area
             let scrollbar_area = Rect::new(
@@ -188,9 +189,7 @@ impl HelpView {
             // Context header
             lines.push(Line::from(vec![Span::styled(
                 format!("── {} ──", context.display()),
-                Style::default()
-                    .fg(t.warning)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(t.warning).add_modifier(Modifier::BOLD),
             )]));
             lines.push(Line::from(""));
 
@@ -199,9 +198,7 @@ impl HelpView {
                 lines.push(Line::from(vec![
                     Span::styled(
                         format!("{:>14}", binding.key),
-                        Style::default()
-                            .fg(t.success)
-                            .add_modifier(Modifier::BOLD),
+                        Style::default().fg(t.success).add_modifier(Modifier::BOLD),
                     ),
                     Span::raw("  "),
                     Span::raw(binding.description.clone()),
@@ -335,7 +332,7 @@ mod tests {
     fn test_scroll_does_not_exceed_max() {
         let mut view = HelpView::new();
         view.visible_height = 100; // Large visible area
-        // Try to scroll past max
+                                   // Try to scroll past max
         for _ in 0..200 {
             let key = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
             let _ = view.handle_input(key);

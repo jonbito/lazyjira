@@ -158,10 +158,8 @@ impl LinkTypePicker {
             // Select link type
             (KeyCode::Enter, KeyModifiers::NONE) => {
                 if let Some(item) = self.items.get(self.selected) {
-                    let result = LinkTypePickerAction::Select(
-                        item.link_type.clone(),
-                        item.is_outward,
-                    );
+                    let result =
+                        LinkTypePickerAction::Select(item.link_type.clone(), item.is_outward);
                     self.hide();
                     Some(result)
                 } else {
@@ -213,12 +211,10 @@ impl LinkTypePicker {
             .split(inner);
 
         // Render description
-        let desc_text = Line::from(vec![
-            Span::styled(
-                "Choose how this issue relates to the target:",
-                Style::default().fg(Color::DarkGray),
-            ),
-        ]);
+        let desc_text = Line::from(vec![Span::styled(
+            "Choose how this issue relates to the target:",
+            Style::default().fg(Color::DarkGray),
+        )]);
         let desc_paragraph = Paragraph::new(desc_text);
         frame.render_widget(desc_paragraph, chunks[0]);
 
@@ -239,8 +235,7 @@ impl LinkTypePicker {
                 .items
                 .iter()
                 .map(|item| {
-                    ListItem::new(item.display.clone())
-                        .style(Style::default().fg(Color::White))
+                    ListItem::new(item.display.clone()).style(Style::default().fg(Color::White))
                 })
                 .collect();
 
@@ -346,9 +341,12 @@ mod tests {
     #[test]
     fn test_navigation_down() {
         let mut picker = LinkTypePicker::new();
-        let link_types = vec![
-            create_test_link_type("1", "Blocks", "is blocked by", "blocks"),
-        ];
+        let link_types = vec![create_test_link_type(
+            "1",
+            "Blocks",
+            "is blocked by",
+            "blocks",
+        )];
         picker.show(link_types);
 
         // Initial selection is 0
@@ -369,9 +367,12 @@ mod tests {
     #[test]
     fn test_navigation_up() {
         let mut picker = LinkTypePicker::new();
-        let link_types = vec![
-            create_test_link_type("1", "Blocks", "is blocked by", "blocks"),
-        ];
+        let link_types = vec![create_test_link_type(
+            "1",
+            "Blocks",
+            "is blocked by",
+            "blocks",
+        )];
         picker.show(link_types);
         picker.selected = 1;
 
@@ -390,9 +391,12 @@ mod tests {
     #[test]
     fn test_select_outward_link_type() {
         let mut picker = LinkTypePicker::new();
-        let link_types = vec![
-            create_test_link_type("1", "Blocks", "is blocked by", "blocks"),
-        ];
+        let link_types = vec![create_test_link_type(
+            "1",
+            "Blocks",
+            "is blocked by",
+            "blocks",
+        )];
         picker.show(link_types);
 
         // First item is outward ("This issue blocks ...")
@@ -412,9 +416,12 @@ mod tests {
     #[test]
     fn test_select_inward_link_type() {
         let mut picker = LinkTypePicker::new();
-        let link_types = vec![
-            create_test_link_type("1", "Blocks", "is blocked by", "blocks"),
-        ];
+        let link_types = vec![create_test_link_type(
+            "1",
+            "Blocks",
+            "is blocked by",
+            "blocks",
+        )];
         picker.show(link_types);
 
         // Navigate to second item (inward direction)
@@ -435,7 +442,12 @@ mod tests {
     #[test]
     fn test_cancel_with_esc() {
         let mut picker = LinkTypePicker::new();
-        picker.show(vec![create_test_link_type("1", "Blocks", "is blocked by", "blocks")]);
+        picker.show(vec![create_test_link_type(
+            "1",
+            "Blocks",
+            "is blocked by",
+            "blocks",
+        )]);
 
         let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
         let action = picker.handle_input(key);
@@ -447,7 +459,12 @@ mod tests {
     #[test]
     fn test_cancel_with_q() {
         let mut picker = LinkTypePicker::new();
-        picker.show(vec![create_test_link_type("1", "Blocks", "is blocked by", "blocks")]);
+        picker.show(vec![create_test_link_type(
+            "1",
+            "Blocks",
+            "is blocked by",
+            "blocks",
+        )]);
 
         let key = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE);
         let action = picker.handle_input(key);
@@ -459,9 +476,12 @@ mod tests {
     #[test]
     fn test_navigation_with_j_k() {
         let mut picker = LinkTypePicker::new();
-        let link_types = vec![
-            create_test_link_type("1", "Blocks", "is blocked by", "blocks"),
-        ];
+        let link_types = vec![create_test_link_type(
+            "1",
+            "Blocks",
+            "is blocked by",
+            "blocks",
+        )];
         picker.show(link_types);
 
         assert_eq!(picker.selected, 0);

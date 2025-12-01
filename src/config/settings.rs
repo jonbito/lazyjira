@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::ui::theme::CustomThemeConfig;
+
 /// Default theme value.
 fn default_theme() -> String {
     "dark".to_string()
@@ -80,6 +82,12 @@ pub struct Settings {
     /// Defaults to `true`.
     #[serde(default = "default_confirm_discard")]
     pub confirm_discard_changes: bool,
+
+    /// Custom theme color overrides.
+    ///
+    /// Allows customizing individual colors of the selected theme.
+    #[serde(default)]
+    pub custom_theme: Option<CustomThemeConfig>,
 }
 
 impl Default for Settings {
@@ -93,6 +101,7 @@ impl Default for Settings {
             jql_history: Vec::new(),
             confirm_transitions: false,
             confirm_discard_changes: default_confirm_discard(),
+            custom_theme: None,
         }
     }
 }
@@ -130,6 +139,7 @@ mod tests {
         assert!(settings.jql_history.is_empty());
         assert!(!settings.confirm_transitions);
         assert!(settings.confirm_discard_changes);
+        assert!(settings.custom_theme.is_none());
     }
 
     #[test]
@@ -143,6 +153,7 @@ mod tests {
             jql_history: vec!["project = TEST".to_string()],
             confirm_transitions: true,
             confirm_discard_changes: false,
+            custom_theme: None,
         };
 
         let toml_str = toml::to_string(&settings).unwrap();
@@ -232,5 +243,24 @@ confirm_discard_changes = false
         assert_eq!(settings.jql_history.len(), 10);
         // Most recent should be first
         assert_eq!(settings.jql_history[0], "query14");
+    }
+
+    #[test]
+    fn test_custom_theme_config() {
+        let toml_content = r##"
+theme = "dark"
+
+[custom_theme]
+accent = "#ff00ff"
+success = "lightgreen"
+"##;
+
+        let settings: Settings = toml::from_str(toml_content).unwrap();
+        assert_eq!(settings.theme, "dark");
+        assert!(settings.custom_theme.is_some());
+        let custom = settings.custom_theme.unwrap();
+        assert_eq!(custom.accent, Some("#ff00ff".to_string()));
+        assert_eq!(custom.success, Some("lightgreen".to_string()));
+        assert!(custom.error.is_none());
     }
 }

@@ -395,3 +395,59 @@ fn render_header(&self, frame: &mut Frame, area: Rect) {
 - [ ] Colors consistent across app
 - [ ] Custom themes work
 - [ ] No hard-coded colors in views
+
+---
+
+## Implementation Notes
+
+### Completed: 2025-11-30
+
+#### Files Modified/Created
+
+1. **`src/ui/theme.rs`** - Complete rewrite with:
+   - Comprehensive `Theme` struct with 30+ color definitions
+   - Built-in themes: `dark()`, `light()`, `high_contrast()`
+   - Global theme access via `init_theme()`, `theme()`, `try_theme()`
+   - Color parsing for hex (`#ff0000`), RGB (`rgb(255,0,0)`), and named colors
+   - `CustomThemeConfig` for user customization
+   - `load_theme()` helper for loading themes from settings
+   - Style helper methods (`style_normal()`, `style_accent()`, `style_error()`, etc.)
+   - Backward-compatible `status_style()` and `priority_style()` functions
+
+2. **`src/config/settings.rs`** - Added:
+   - `custom_theme: Option<CustomThemeConfig>` field for custom color overrides
+   - Updated tests for new field
+
+3. **`src/config/mod.rs`** - Updated tests to include `custom_theme` field
+
+4. **`src/ui/mod.rs`** - Exported new theme types and made theme module public
+
+5. **`src/main.rs`** - Added theme initialization at startup
+
+#### Key Implementation Decisions
+
+1. **Global Theme Pattern**: Used `OnceLock` for thread-safe, once-initialized global theme access. This allows components to access the theme without passing it through every function.
+
+2. **Backward Compatibility**: The existing `status_style()` and `priority_style()` functions were updated to use the theme when initialized, with fallback to hardcoded colors if not.
+
+3. **Theme Configuration Format**: Custom themes use TOML format with named colors, hex, or RGB values:
+   ```toml
+   theme = "dark"  # or "light", "high-contrast"
+
+   [custom_theme]
+   accent = "#ff00ff"
+   success = "lightgreen"
+   border = "rgb(100, 100, 100)"
+   ```
+
+4. **High Contrast Theme**: Designed for accessibility with:
+   - Maximum contrast (white on black)
+   - No dim/muted colors (all white)
+   - Yellow accent color for visibility
+   - Bright color variants for all status colors
+
+#### Test Coverage
+
+- 631 tests pass
+- Tests for theme creation, color parsing, custom theme application
+- Tests for settings serialization with custom_theme field

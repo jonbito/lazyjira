@@ -316,6 +316,7 @@ mod tests {
                 jql_history: vec!["project = TEST".to_string()],
                 confirm_transitions: false,
                 confirm_discard_changes: true,
+                custom_theme: None,
             },
             profiles: vec![
                 Profile::new(

@@ -21,7 +21,9 @@ use crossterm::{
 use ratatui::prelude::*;
 
 use app::App;
+use config::Config;
 use events::EventHandler;
+use ui::{init_theme, load_theme};
 
 /// Application result type.
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -33,6 +35,14 @@ async fn main() -> Result<()> {
         eprintln!("Warning: Failed to initialize logging: {}", e);
         // Continue without logging rather than failing completely
     }
+
+    // Load configuration and initialize theme before anything else
+    let config = Config::load().unwrap_or_default();
+    let theme = load_theme(
+        &config.settings.theme,
+        config.settings.custom_theme.as_ref(),
+    );
+    init_theme(theme);
 
     // Set up panic hook to restore terminal on crash
     setup_panic_hook();

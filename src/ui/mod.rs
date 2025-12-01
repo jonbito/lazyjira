@@ -4,7 +4,7 @@
 //! screens and reusable UI components.
 
 mod components;
-mod theme;
+pub mod theme;
 mod views;
 
 pub use components::{
@@ -13,7 +13,10 @@ pub use components::{
     ProfilePicker, ProfilePickerAction, SelectItem, SpinnerStyle, Table, TextEditor, TextInput,
     TransitionAction, TransitionPicker,
 };
-pub use theme::{issue_type_prefix, priority_style, status_style, truncate, Theme};
+pub use theme::{
+    init_theme, issue_type_prefix, load_theme, parse_color, priority_style, status_style, theme,
+    truncate, try_theme, CustomThemeConfig, Theme,
+};
 pub use views::{
     DeleteProfileDialog, DetailAction, DetailView, EditField, EditState, FilterPanelAction,
     FilterPanelView, FormField, FormMode, HelpAction, HelpView, ListAction, ListView,

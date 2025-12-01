@@ -93,6 +93,8 @@ pub enum DetailAction {
     DeleteLink(String, String),
     /// Open description in external editor (issue key).
     OpenExternalEditor(String),
+    /// Open the issue in the browser (issue key).
+    OpenInBrowser(String),
 }
 
 /// Which field is currently being edited.
@@ -890,6 +892,14 @@ impl DetailView {
                 }
                 None
             }
+            // Open in browser
+            (KeyCode::Char('o'), KeyModifiers::NONE) => {
+                if let Some(issue) = &self.issue {
+                    Some(DetailAction::OpenInBrowser(issue.key.clone()))
+                } else {
+                    None
+                }
+            }
             // Navigate to linked issue when in linked issues section
             (KeyCode::Enter, KeyModifiers::NONE) if self.linked_issues.is_focused() => {
                 if let Some(action) = self.linked_issues.handle_input(key) {
@@ -1667,7 +1677,7 @@ impl DetailView {
             Span::styled(scroll_info, Style::default().fg(t.dim)),
             Span::raw(" | "),
             Span::styled(
-                "j/k:scroll  q:back  e:edit  E:ext-edit  c:comment  s:status  a:assignee  h:history  l:labels  L:link",
+                "j/k:scroll  q:back  e:edit  E:ext-edit  c:comment  s:status  o:open  a:assignee  h:history  l:labels  L:link",
                 Style::default().fg(t.dim),
             ),
         ]);

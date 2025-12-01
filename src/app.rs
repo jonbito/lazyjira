@@ -525,6 +525,28 @@ impl App {
         Ok(())
     }
 
+    /// Open the given issue in the default web browser.
+    ///
+    /// Constructs the JIRA issue URL from the current profile's base URL
+    /// and opens it using the system's default browser.
+    pub fn open_issue_in_browser(&mut self, issue_key: &str) {
+        if let Some(profile) = &self.current_profile {
+            let base_url = profile.url.trim_end_matches('/');
+            let url = format!("{}/browse/{}", base_url, issue_key);
+            info!(issue_key = %issue_key, url = %url, "Opening issue in browser");
+
+            if let Err(e) = open::that(&url) {
+                warn!(error = %e, "Failed to open browser");
+                self.notify_error(format!("Failed to open browser: {}", e));
+            } else {
+                self.notify_info(format!("Opened {} in browser", issue_key));
+            }
+        } else {
+            warn!("Cannot open issue in browser: no profile configured");
+            self.notify_warning("No profile configured");
+        }
+    }
+
     /// Get the number of configured profiles.
     pub fn profile_count(&self) -> usize {
         self.config.profiles.len()
@@ -1895,6 +1917,9 @@ impl App {
                             self.list_view.pagination_mut().start_loading();
                             // TODO: Trigger async load more
                         }
+                        ListAction::OpenInBrowser(issue_key) => {
+                            self.open_issue_in_browser(&issue_key);
+                        }
                     }
                 }
             }
@@ -2086,6 +2111,9 @@ impl App {
                                 info!(key = %issue_key, "Opening external editor for issue description");
                                 self.pending_external_edit = Some((issue_key, description));
                             }
+                        }
+                        DetailAction::OpenInBrowser(issue_key) => {
+                            self.open_issue_in_browser(&issue_key);
                         }
                     }
                 }

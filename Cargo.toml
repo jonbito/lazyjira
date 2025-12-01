@@ -30,6 +30,7 @@ clap = { version = "4.0", features = ["derive"] }
 base64 = "0.22"
 urlencoding = "2.1"
 walkdir = "2.5"
+open = "5.3"
 
 [dev-dependencies]
 tokio-test = "0.4"

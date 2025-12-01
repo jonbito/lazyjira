@@ -125,6 +125,12 @@ pub fn get_keybindings() -> Vec<Keybinding> {
             "Open JQL query input",
             KeyContext::IssueList,
         ),
+        Keybinding::new(
+            "o",
+            "open_browser",
+            "Open in browser",
+            KeyContext::IssueList,
+        ),
         Keybinding::new("q", "quit", "Quit application", KeyContext::IssueList),
         // Issue Detail keybindings
         Keybinding::new(
@@ -146,8 +152,8 @@ pub fn get_keybindings() -> Vec<Keybinding> {
         Keybinding::new("l", "labels", "Edit labels", KeyContext::IssueDetail),
         Keybinding::new(
             "o",
-            "components",
-            "Edit components",
+            "open_browser",
+            "Open in browser",
             KeyContext::IssueDetail,
         ),
         Keybinding::new("L", "link", "Link issue", KeyContext::IssueDetail),

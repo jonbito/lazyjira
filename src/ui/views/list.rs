@@ -263,6 +263,8 @@ pub enum ListAction {
     SortChanged,
     /// Load more issues (pagination).
     LoadMore,
+    /// Open the selected issue in the browser (issue key).
+    OpenInBrowser(String),
 }
 
 /// The issue list view state.
@@ -565,6 +567,12 @@ impl ListView {
             (KeyCode::Char(':'), KeyModifiers::NONE)
             | (KeyCode::Char(':'), KeyModifiers::SHIFT) => {
                 return Some(ListAction::OpenJqlInput);
+            }
+            // Open in browser
+            (KeyCode::Char('o'), KeyModifiers::NONE) => {
+                if let Some(issue) = self.selected_issue() {
+                    return Some(ListAction::OpenInBrowser(issue.key.clone()));
+                }
             }
             // Clear search with Escape when not in search mode but search has results
             (KeyCode::Esc, _) if !self.search.is_empty() => {
@@ -1002,7 +1010,7 @@ impl ListView {
         } else if !self.search.is_empty() {
             "n/N:next/prev match  /:new search  Esc:clear"
         } else {
-            "j/k:nav  /:search  s:sort  f:filter  :jql  ?:help"
+            "j/k:nav  /:search  s:sort  f:filter  o:open  :jql  ?:help"
         };
         spans.push(Span::styled(help_text, Style::default().fg(t.dim)));
 

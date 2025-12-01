@@ -20,11 +20,13 @@ use crate::api::types::{
 use crate::config::{Config, ConfigError, Profile};
 use crate::error::AppError;
 use crate::events::Event;
+use crate::events::KeyContext;
 use crate::ui::{
-    ConfirmDialog, DeleteProfileDialog, DetailAction, DetailView, ErrorDialog, FilterPanelAction,
-    FilterPanelView, FormField, JqlAction, JqlInput, ListAction, ListView, LoadingIndicator,
-    Notification, NotificationManager, ProfileFormAction, ProfileFormData, ProfileFormView,
-    ProfileListAction, ProfileListView, ProfilePicker, ProfilePickerAction, ProfileSummary,
+    render_context_help, ConfirmDialog, DeleteProfileDialog, DetailAction, DetailView, ErrorDialog,
+    FilterPanelAction, FilterPanelView, FormField, HelpAction, HelpView, JqlAction, JqlInput,
+    ListAction, ListView, LoadingIndicator, Notification, NotificationManager, ProfileFormAction,
+    ProfileFormData, ProfileFormView, ProfileListAction, ProfileListView, ProfilePicker,
+    ProfilePickerAction, ProfileSummary,
 };
 
 /// The current view/screen state of the application.
@@ -129,6 +131,10 @@ pub struct App {
     pending_add_component: Option<(String, String)>,
     /// Pending remove component request (issue key, component name).
     pending_remove_component: Option<(String, String)>,
+    /// Help view.
+    help_view: HelpView,
+    /// Previous state before opening help (to return to).
+    previous_state: Option<AppState>,
 }
 
 impl App {
@@ -194,6 +200,8 @@ impl App {
             pending_fetch_components: None,
             pending_add_component: None,
             pending_remove_component: None,
+            help_view: HelpView::new(),
+            previous_state: None,
         }
     }
 
@@ -254,6 +262,8 @@ impl App {
             pending_fetch_components: None,
             pending_add_component: None,
             pending_remove_component: None,
+            help_view: HelpView::new(),
+            previous_state: None,
         }
     }
 
@@ -1486,6 +1496,8 @@ impl App {
             // Help on '?' (unless in detail view where we handle it there)
             (KeyCode::Char('?'), KeyModifiers::NONE) if self.state != AppState::IssueDetail => {
                 if self.state != AppState::Help {
+                    self.previous_state = Some(self.state);
+                    self.help_view.reset_scroll();
                     self.state = AppState::Help;
                 }
                 return;
@@ -1690,9 +1702,14 @@ impl App {
                 }
             }
             AppState::Help => {
-                // Escape to close help (using Esc only for consistency across dialogs)
-                if key_event.code == KeyCode::Esc {
-                    self.state = AppState::IssueList;
+                if let Some(action) = self.help_view.handle_input(key_event) {
+                    match action {
+                        HelpAction::Close => {
+                            // Return to previous state, defaulting to IssueList
+                            self.state = self.previous_state.unwrap_or(AppState::IssueList);
+                            self.previous_state = None;
+                        }
+                    }
                 }
             }
             AppState::FilterPanel => {
@@ -1866,11 +1883,14 @@ impl App {
                 self.list_view.render(frame, area);
                 self.filter_panel.render(frame, area);
             }
+            AppState::Help => {
+                // Render the help view
+                self.help_view.render(frame, area);
+            }
             _ => {
                 // For other states, use the placeholder rendering
                 let content = match self.state {
                     AppState::ProfileSelect => self.render_profile_select_view(),
-                    AppState::Help => self.render_help_view(),
                     AppState::Exiting => self.render_exiting_view(),
                     _ => vec![],
                 };
@@ -1913,12 +1933,30 @@ impl App {
                 let paragraph = Paragraph::new(footer);
                 frame.render_widget(paragraph, area);
             }
+            AppState::Help => {
+                // Help view has its own footer hints
+                let footer = Line::from(vec![
+                    Span::styled(
+                        " Help ",
+                        Style::default().fg(Color::Black).bg(Color::Cyan),
+                    ),
+                    Span::raw(" "),
+                    Span::styled(
+                        "[j/k] scroll  [g/G] top/bottom  [?/q/Esc] close",
+                        Style::default().fg(Color::DarkGray),
+                    ),
+                ]);
+                let paragraph = Paragraph::new(footer);
+                frame.render_widget(paragraph, area);
+            }
+            AppState::FilterPanel => {
+                // Render contextual help for filter panel
+                render_context_help(frame, area, KeyContext::FilterPanel);
+            }
             _ => {
                 // Default status bar for other states
                 let state_str = match self.state {
                     AppState::ProfileSelect => "Profile Select",
-                    AppState::FilterPanel => "Filter Panel",
-                    AppState::Help => "Help",
                     AppState::Exiting => "Exiting...",
                     _ => "",
                 };
@@ -1949,71 +1987,6 @@ impl App {
             Line::raw(""),
             Line::styled(
                 "No profiles configured yet.",
-                Style::default().fg(Color::DarkGray),
-            ),
-        ]
-    }
-
-    /// Render help view content.
-    fn render_help_view(&self) -> Vec<Line<'static>> {
-        vec![
-            Line::raw(""),
-            Line::styled("Help", Style::default().fg(Color::Cyan)),
-            Line::raw(""),
-            Line::styled("Global:", Style::default().fg(Color::Yellow)),
-            Line::raw("  Ctrl+C  - Quit application"),
-            Line::raw("  ?       - Show this help"),
-            Line::raw("  p       - Switch profile (quick)"),
-            Line::raw("  P       - Manage profiles (CRUD)"),
-            Line::raw(""),
-            Line::styled("Issue List:", Style::default().fg(Color::Yellow)),
-            Line::raw("  j / ↓   - Move down"),
-            Line::raw("  k / ↑   - Move up"),
-            Line::raw("  gg      - Go to first issue"),
-            Line::raw("  G       - Go to last issue"),
-            Line::raw("  Ctrl+d  - Page down"),
-            Line::raw("  Ctrl+u  - Page up"),
-            Line::raw("  Enter   - Open issue details"),
-            Line::raw("  r       - Refresh issues"),
-            Line::raw("  f       - Open filter panel"),
-            Line::raw("  : / /   - Open JQL query input"),
-            Line::raw("  q       - Quit application"),
-            Line::raw(""),
-            Line::styled("JQL Input:", Style::default().fg(Color::Yellow)),
-            Line::raw("  Enter   - Execute query"),
-            Line::raw("  ↑ / ↓   - Browse history"),
-            Line::raw("  Esc     - Cancel"),
-            Line::raw(""),
-            Line::styled("Issue Detail:", Style::default().fg(Color::Yellow)),
-            Line::raw("  j / ↓   - Scroll down"),
-            Line::raw("  k / ↑   - Scroll up"),
-            Line::raw("  g       - Go to top"),
-            Line::raw("  G       - Go to bottom"),
-            Line::raw("  Ctrl+d  - Page down"),
-            Line::raw("  Ctrl+u  - Page up"),
-            Line::raw("  q / Esc - Go back to list"),
-            Line::raw("  e       - Edit issue"),
-            Line::raw("  s       - Change status"),
-            Line::raw("  c       - Add comment (coming soon)"),
-            Line::raw(""),
-            Line::styled("Profile Management:", Style::default().fg(Color::Yellow)),
-            Line::raw("  a       - Add new profile"),
-            Line::raw("  e       - Edit selected profile"),
-            Line::raw("  d       - Delete selected profile"),
-            Line::raw("  s       - Set as default profile"),
-            Line::raw("  Space   - Switch to profile"),
-            Line::raw("  q / Esc - Go back"),
-            Line::raw(""),
-            Line::styled("Filter Panel:", Style::default().fg(Color::Yellow)),
-            Line::raw("  Tab/←/→ - Switch section"),
-            Line::raw("  ↑/↓     - Navigate in section"),
-            Line::raw("  Space   - Toggle selection"),
-            Line::raw("  c       - Clear all filters"),
-            Line::raw("  Enter   - Apply filters"),
-            Line::raw("  Esc     - Cancel"),
-            Line::raw(""),
-            Line::styled(
-                "Press Esc to close this help screen",
                 Style::default().fg(Color::DarkGray),
             ),
         ]

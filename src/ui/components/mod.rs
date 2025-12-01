@@ -2,6 +2,7 @@
 
 mod assignee_picker;
 mod comments;
+mod help_bar;
 mod input;
 mod jql_input;
 mod loading;
@@ -18,6 +19,7 @@ mod transition_picker;
 
 pub use assignee_picker::{AssigneeAction, AssigneePicker};
 pub use comments::{CommentAction, CommentPanelMode, CommentsPanel};
+pub use help_bar::render_context_help;
 pub use input::{InputMode, TextInput};
 pub use jql_input::{JqlAction, JqlInput};
 pub use loading::{InlineLoader, LoadingIndicator, SpinnerStyle};

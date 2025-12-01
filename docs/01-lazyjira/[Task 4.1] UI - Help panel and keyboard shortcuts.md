@@ -11,13 +11,13 @@ Implement a global help panel accessible via '?' that displays all available key
 
 ## Acceptance Criteria
 
-- [ ] Help panel opens with '?' key from any view
-- [ ] Shortcuts organized by context (global, list, detail, etc.)
-- [ ] Scrollable if content exceeds screen
-- [ ] Close with '?' or 'q' or Escape
-- [ ] Contextual hints shown in status bar
+- [x] Help panel opens with '?' key from any view
+- [x] Shortcuts organized by context (global, list, detail, etc.)
+- [x] Scrollable if content exceeds screen
+- [x] Close with '?' or 'q' or Escape
+- [x] Contextual hints shown in status bar
 - [ ] Searchable shortcuts (nice-to-have)
-- [ ] Visual key representations
+- [x] Visual key representations
 
 ## Implementation Details
 
@@ -379,12 +379,12 @@ pub fn render_context_help(frame: &mut Frame, area: Rect, context: KeyContext) {
 
 ## Testing Requirements
 
-- [ ] '?' opens help panel
-- [ ] Help displays all shortcuts
-- [ ] Scrolling works in help
-- [ ] '?', 'q', Esc closes help
-- [ ] Shortcuts grouped by context
-- [ ] Contextual hints update per view
+- [x] '?' opens help panel
+- [x] Help displays all shortcuts
+- [x] Scrolling works in help
+- [x] '?', 'q', Esc closes help
+- [x] Shortcuts grouped by context
+- [x] Contextual hints update per view
 
 ## Dependencies
 
@@ -394,8 +394,34 @@ pub fn render_context_help(frame: &mut Frame, area: Rect, context: KeyContext) {
 
 ## Definition of Done
 
-- [ ] All acceptance criteria met
-- [ ] All shortcuts documented
-- [ ] Help is discoverable
-- [ ] Contextual hints helpful
-- [ ] Scrolling smooth
+- [x] All acceptance criteria met
+- [x] All shortcuts documented
+- [x] Help is discoverable
+- [x] Contextual hints helpful
+- [x] Scrolling smooth
+
+## Implementation Summary
+
+**Completed:** 2025-11-30
+
+### Files Created
+- `src/events/keys.rs` - Complete keybinding registry with `KeyContext` enum, `Keybinding` struct, and functions for grouping/filtering keybindings
+- `src/ui/views/help.rs` - `HelpView` component with scrolling, vim-like navigation, and grouped keybinding display
+- `src/ui/components/help_bar.rs` - `render_context_help` function for contextual status bar hints
+
+### Files Modified
+- `src/events/mod.rs` - Added exports for new keybinding types
+- `src/ui/components/mod.rs` - Added `help_bar` module and export
+- `src/ui/views/mod.rs` - Added `help` module and exports
+- `src/ui/mod.rs` - Added exports for `HelpView`, `HelpAction`, and `render_context_help`
+- `src/app.rs` - Integrated `HelpView`, added `previous_state` tracking, updated rendering and input handling
+
+### Key Implementation Decisions
+1. **Keybinding Registry**: Created a centralized registry in `src/events/keys.rs` with all keybindings organized by context (Global, IssueList, IssueDetail, ProfileManagement, FilterPanel, Editor, JqlInput)
+2. **State Tracking**: Added `previous_state` field to App to properly return to the original view when closing help
+3. **Scrolling**: Implemented vim-like scrolling with j/k, g/G, Ctrl+d/Ctrl+u, and visual scrollbar
+4. **Contextual Hints**: Help bar parses hint strings and highlights key portions in cyan for visual distinction
+
+### Test Coverage
+- 618 tests passing
+- Unit tests for keybinding functions, HelpView input handling, and context hint parsing

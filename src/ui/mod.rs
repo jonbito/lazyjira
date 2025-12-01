@@ -8,14 +8,15 @@ mod theme;
 mod views;
 
 pub use components::{
-    ConfirmDialog, ErrorDialog, InlineLoader, JqlAction, JqlInput, LoadingIndicator, Modal,
-    MultiSelect, Notification, NotificationManager, NotificationType, ProfilePicker,
-    ProfilePickerAction, SelectItem, SpinnerStyle, Table, TextEditor, TextInput, TransitionAction,
-    TransitionPicker,
+    render_context_help, ConfirmDialog, ErrorDialog, InlineLoader, JqlAction, JqlInput,
+    LoadingIndicator, Modal, MultiSelect, Notification, NotificationManager, NotificationType,
+    ProfilePicker, ProfilePickerAction, SelectItem, SpinnerStyle, Table, TextEditor, TextInput,
+    TransitionAction, TransitionPicker,
 };
 pub use theme::{issue_type_prefix, priority_style, status_style, truncate, Theme};
 pub use views::{
     DeleteProfileDialog, DetailAction, DetailView, EditField, EditState, FilterPanelAction,
-    FilterPanelView, FormField, FormMode, ListAction, ListView, ProfileFormAction, ProfileFormData,
-    ProfileFormView, ProfileListAction, ProfileListView, ProfileSummary,
+    FilterPanelView, FormField, FormMode, HelpAction, HelpView, ListAction, ListView,
+    ProfileFormAction, ProfileFormData, ProfileFormView, ProfileListAction, ProfileListView,
+    ProfileSummary,
 };

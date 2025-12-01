@@ -11,10 +11,12 @@ use tracing::{debug, error, info, instrument, warn};
 use super::auth::Auth;
 use super::error::{ApiError, Result};
 use super::types::{
-    AddCommentRequest, BoardsResponse, Changelog, Comment, CommentsResponse, CurrentUser,
-    FieldUpdates, FilterOption, FilterOptions, Issue, IssueUpdateRequest, LabelOperation,
-    LabelsResponse, Priority, Project, SearchResult, SprintsResponse, Status, Transition,
-    TransitionRef, TransitionRequest, TransitionsResponse, UpdateOperations, User,
+    AddCommentRequest, BoardsResponse, Changelog, Comment, CommentsResponse, CreateIssueLinkRequest,
+    CurrentUser, FieldUpdates, FilterOption, FilterOptions, Issue, IssueKeyRef,
+    IssueLinkType, IssueLinkTypeRef, IssueLinkTypesResponse, IssuePickerResponse, IssueSuggestion,
+    IssueUpdateRequest, LabelOperation, LabelsResponse, Priority, Project, SearchResult,
+    SprintsResponse, Status, Transition, TransitionRef, TransitionRequest, TransitionsResponse,
+    UpdateOperations, User,
 };
 use crate::config::Profile;
 
@@ -224,7 +226,11 @@ impl JiraClient {
     pub async fn get_issue(&self, key: &str) -> Result<Issue> {
         debug!("Fetching issue");
 
-        let url = format!("{}/rest/api/3/issue/{}", self.base_url, key);
+        // Request all fields including issuelinks which isn't returned by default
+        let url = format!(
+            "{}/rest/api/3/issue/{}?fields=*all,-comment",
+            self.base_url, key
+        );
         let issue: Issue = self.get(&url).await.map_err(|e| {
             if matches!(e, ApiError::NotFound(_)) {
                 ApiError::NotFound(format!("Issue '{}' not found", key))
@@ -549,6 +555,52 @@ impl JiraClient {
             debug!("Error response body: {}", error_body);
             Err(Self::error_from_response(status, &url, &error_body))
         }
+    }
+
+    /// Perform a DELETE request with authentication and error handling.
+    ///
+    /// Includes retry logic for transient failures (rate limiting, server errors).
+    #[instrument(skip(self), fields(url = %url))]
+    async fn delete(&self, url: &str) -> Result<()> {
+        let mut attempts = 0;
+        let mut last_error: Option<ApiError> = None;
+
+        while attempts < MAX_RETRIES {
+            attempts += 1;
+            debug!("DELETE request attempt {}/{}", attempts, MAX_RETRIES);
+
+            match self.execute_delete(url).await {
+                Ok(()) => return Ok(()),
+                Err(e) => {
+                    if Self::is_retryable(&e) && attempts < MAX_RETRIES {
+                        let delay = Self::calculate_retry_delay(attempts);
+                        warn!(
+                            "Request failed (attempt {}), retrying in {}ms: {}",
+                            attempts, delay, e
+                        );
+                        tokio::time::sleep(Duration::from_millis(delay)).await;
+                        last_error = Some(e);
+                    } else {
+                        return Err(e);
+                    }
+                }
+            }
+        }
+
+        Err(last_error.unwrap_or(ApiError::ServerError("Max retries exceeded".to_string())))
+    }
+
+    /// Execute a single DELETE request.
+    async fn execute_delete(&self, url: &str) -> Result<()> {
+        let response = self
+            .client
+            .delete(url)
+            .header(header::AUTHORIZATION, self.auth.header_value())
+            .header(header::ACCEPT, "application/json")
+            .send()
+            .await?;
+
+        self.handle_empty_response(response).await
     }
 
     /// Check if an error is retryable.
@@ -1130,6 +1182,122 @@ impl JiraClient {
             response.total
         );
         Ok(response)
+    }
+
+    // ========================================================================
+    // Issue Link Operations
+    // ========================================================================
+
+    /// Get available issue link types.
+    ///
+    /// Returns all link types available in the JIRA instance (e.g., "Blocks",
+    /// "Relates", "Duplicates").
+    #[instrument(skip(self))]
+    pub async fn get_issue_link_types(&self) -> Result<Vec<IssueLinkType>> {
+        debug!("Fetching issue link types");
+        let url = format!("{}/rest/api/3/issueLinkType", self.base_url);
+        let response: IssueLinkTypesResponse = self.get(&url).await?;
+        debug!("Found {} issue link types", response.issue_link_types.len());
+        Ok(response.issue_link_types)
+    }
+
+    /// Create a link between two issues.
+    ///
+    /// # Arguments
+    ///
+    /// * `link_type_name` - The name of the link type (e.g., "Blocks", "Relates")
+    /// * `outward_issue_key` - The issue key that is the source (e.g., "PROJ-123 blocks PROJ-456")
+    /// * `inward_issue_key` - The issue key that is the target (e.g., "PROJ-456 is blocked by PROJ-123")
+    ///
+    /// # Note
+    ///
+    /// For a "Blocks" link type where A blocks B:
+    /// - `outward_issue_key` should be A (the blocker)
+    /// - `inward_issue_key` should be B (the blocked issue)
+    #[instrument(skip(self), fields(link_type = %link_type_name, outward = %outward_issue_key, inward = %inward_issue_key))]
+    pub async fn create_issue_link(
+        &self,
+        link_type_name: &str,
+        outward_issue_key: &str,
+        inward_issue_key: &str,
+    ) -> Result<()> {
+        info!(
+            "Creating issue link: {} {} {}",
+            outward_issue_key, link_type_name, inward_issue_key
+        );
+        let url = format!("{}/rest/api/3/issueLink", self.base_url);
+        let request = CreateIssueLinkRequest {
+            link_type: IssueLinkTypeRef {
+                name: link_type_name.to_string(),
+            },
+            outward_issue: IssueKeyRef {
+                key: outward_issue_key.to_string(),
+            },
+            inward_issue: IssueKeyRef {
+                key: inward_issue_key.to_string(),
+            },
+        };
+        self.post_no_content(&url, &request).await?;
+        info!("Successfully created issue link");
+        Ok(())
+    }
+
+    /// Delete an issue link.
+    ///
+    /// # Arguments
+    ///
+    /// * `link_id` - The ID of the link to delete
+    #[instrument(skip(self), fields(link_id = %link_id))]
+    pub async fn delete_issue_link(&self, link_id: &str) -> Result<()> {
+        info!("Deleting issue link {}", link_id);
+        let url = format!("{}/rest/api/3/issueLink/{}", self.base_url, link_id);
+        self.delete(&url).await?;
+        info!("Successfully deleted issue link {}", link_id);
+        Ok(())
+    }
+
+    /// Search for issues using the issue picker endpoint.
+    ///
+    /// This endpoint is optimized for autocomplete/typeahead scenarios and returns
+    /// suggestions based on the query.
+    ///
+    /// # Arguments
+    ///
+    /// * `query` - The search query (can be issue key or text)
+    /// * `current_issue_key` - Optional key of the current issue (to exclude from results)
+    #[instrument(skip(self), fields(query = %query))]
+    pub async fn search_issues_for_picker(
+        &self,
+        query: &str,
+        current_issue_key: Option<&str>,
+    ) -> Result<Vec<IssueSuggestion>> {
+        debug!("Searching issues for picker with query: {}", query);
+        let mut url = format!(
+            "{}/rest/api/3/issue/picker?query={}",
+            self.base_url,
+            urlencoding::encode(query)
+        );
+        if let Some(key) = current_issue_key {
+            url.push_str(&format!("&currentIssueKey={}", key));
+        }
+
+        // Get raw response for debugging
+        let raw_response: serde_json::Value = self.get(&url).await?;
+        debug!("Issue picker raw response: {:?}", raw_response);
+
+        // Parse the response
+        let response: IssuePickerResponse = serde_json::from_value(raw_response)
+            .map_err(|e| ApiError::InvalidResponse(format!("Failed to parse picker response: {}", e)))?;
+
+        // Flatten all sections into a single list
+        let suggestions: Vec<IssueSuggestion> = response
+            .sections
+            .into_iter()
+            .flat_map(|s| s.issues)
+            .collect();
+
+        debug!("Found {} issue suggestions", suggestions.len());
+        Ok(suggestions)
     }
 }
 

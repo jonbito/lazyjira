@@ -279,7 +279,7 @@ pub struct IssueLink {
 }
 
 /// The type of issue link.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct IssueLinkType {
     /// The link type ID.
     pub id: String,
@@ -361,6 +361,88 @@ pub struct ParentIssueFields {
     /// The issue type.
     #[serde(default, rename = "issuetype")]
     pub issue_type: Option<IssueType>,
+}
+
+// ============================================================================
+// Issue Link Management Types
+// ============================================================================
+
+/// Response from the issue link types endpoint.
+#[derive(Debug, Clone, Deserialize)]
+pub struct IssueLinkTypesResponse {
+    /// The available link types.
+    #[serde(rename = "issueLinkTypes")]
+    pub issue_link_types: Vec<IssueLinkType>,
+}
+
+/// Request to create an issue link.
+#[derive(Debug, Clone, Serialize)]
+pub struct CreateIssueLinkRequest {
+    /// The type of link.
+    #[serde(rename = "type")]
+    pub link_type: IssueLinkTypeRef,
+    /// The inward issue (the issue that is affected).
+    #[serde(rename = "inwardIssue")]
+    pub inward_issue: IssueKeyRef,
+    /// The outward issue (the issue that affects).
+    #[serde(rename = "outwardIssue")]
+    pub outward_issue: IssueKeyRef,
+}
+
+/// Reference to an issue link type by name.
+#[derive(Debug, Clone, Serialize)]
+pub struct IssueLinkTypeRef {
+    /// The link type name.
+    pub name: String,
+}
+
+/// Reference to an issue by key.
+#[derive(Debug, Clone, Serialize)]
+pub struct IssueKeyRef {
+    /// The issue key.
+    pub key: String,
+}
+
+/// Issue picker response from JIRA.
+#[derive(Debug, Clone, Deserialize)]
+pub struct IssuePickerResponse {
+    /// Sections containing issue suggestions.
+    pub sections: Vec<IssuePickerSection>,
+}
+
+/// A section in the issue picker response.
+#[derive(Debug, Clone, Deserialize)]
+pub struct IssuePickerSection {
+    /// The section label.
+    pub label: String,
+    /// The issues in this section.
+    pub issues: Vec<IssueSuggestion>,
+}
+
+/// An issue suggestion from the picker.
+#[derive(Debug, Clone, Deserialize)]
+pub struct IssueSuggestion {
+    /// The issue key.
+    pub key: String,
+    /// The issue summary (may contain HTML).
+    #[serde(default, rename = "summaryText")]
+    pub summary_text: Option<String>,
+    /// The issue summary (raw).
+    #[serde(default)]
+    pub summary: Option<String>,
+    /// The issue ID.
+    #[serde(default)]
+    pub id: Option<i64>,
+}
+
+impl IssueSuggestion {
+    /// Get the display summary, preferring summary_text over summary.
+    pub fn display_summary(&self) -> &str {
+        self.summary_text
+            .as_deref()
+            .or(self.summary.as_deref())
+            .unwrap_or("")
+    }
 }
 
 /// Issue status.

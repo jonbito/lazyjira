@@ -19,6 +19,8 @@ use crate::api::types::{IssueLink, ParentIssue, Status, Subtask};
 pub enum LinkedIssuesAction {
     /// Navigate to the selected issue.
     Navigate(String),
+    /// Delete a link (link ID, display description for confirmation).
+    Delete(String, String),
 }
 
 /// Direction of a link relationship.
@@ -33,6 +35,8 @@ pub enum LinkDirection {
 /// A display-ready representation of a linked issue.
 #[derive(Debug, Clone)]
 pub struct DisplayLink {
+    /// The link ID (for deletion).
+    pub link_id: String,
     /// The issue key.
     pub key: String,
     /// The issue summary.
@@ -76,6 +80,7 @@ impl LinkedIssuesSection {
             .filter_map(|link| {
                 if let Some(inward) = &link.inward_issue {
                     Some(DisplayLink {
+                        link_id: link.id.clone(),
                         key: inward.key.clone(),
                         summary: inward.fields.summary.clone(),
                         status: inward.fields.status.clone(),
@@ -84,6 +89,7 @@ impl LinkedIssuesSection {
                     })
                 } else if let Some(outward) = &link.outward_issue {
                     Some(DisplayLink {
+                        link_id: link.id.clone(),
                         key: outward.key.clone(),
                         summary: outward.fields.summary.clone(),
                         status: outward.fields.status.clone(),
@@ -194,6 +200,31 @@ impl LinkedIssuesSection {
         None
     }
 
+    /// Get the currently selected link (if a link is selected, not parent or subtask).
+    ///
+    /// Returns the link's ID and a description for confirmation dialog.
+    pub fn selected_link(&self) -> Option<(String, String)> {
+        let mut index = self.selected;
+
+        // Skip parent
+        if self.parent.is_some() {
+            if index == 0 {
+                return None; // Parent is selected, not a link
+            }
+            index -= 1;
+        }
+
+        // Check if we're in the links range
+        if index < self.links.len() {
+            let link = &self.links[index];
+            let description = format!("{} ({})", link.key, link.link_description);
+            return Some((link.link_id.clone(), description));
+        }
+
+        // Subtasks are not deletable links
+        None
+    }
+
     /// Handle keyboard input.
     ///
     /// Returns an optional action to be handled by the parent view.
@@ -233,6 +264,18 @@ impl LinkedIssuesSection {
             (KeyCode::Tab, KeyModifiers::NONE) => {
                 self.toggle_expand();
                 None
+            }
+            // Delete selected link
+            (KeyCode::Char('d'), KeyModifiers::NONE) => {
+                if self.expanded {
+                    if let Some((link_id, description)) = self.selected_link() {
+                        Some(LinkedIssuesAction::Delete(link_id, description))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
             }
             _ => None,
         }
@@ -475,7 +518,7 @@ mod tests {
 
     fn create_test_link(id: &str, key: &str, summary: &str, link_type: &str) -> IssueLink {
         IssueLink {
-            id: id.to_string(),
+            id: format!("link-{}", id),
             link_type: IssueLinkType {
                 id: "1".to_string(),
                 name: link_type.to_string(),
@@ -734,5 +777,100 @@ mod tests {
     fn test_default_impl() {
         let section = LinkedIssuesSection::default();
         assert!(section.is_empty());
+    }
+
+    #[test]
+    fn test_selected_link_on_link() {
+        let links = vec![create_test_link("1", "PROJ-200", "Linked", "Blocks")];
+        let section = LinkedIssuesSection::new(&links, &[], None);
+
+        // First item is the link
+        let result = section.selected_link();
+        assert!(result.is_some());
+        let (link_id, description) = result.unwrap();
+        assert_eq!(link_id, "link-1");
+        assert!(description.contains("PROJ-200"));
+        assert!(description.contains("blocks"));
+    }
+
+    #[test]
+    fn test_selected_link_on_parent() {
+        let parent = create_test_parent("PROJ-100", "Parent");
+        let links = vec![create_test_link("1", "PROJ-200", "Linked", "Blocks")];
+        let section = LinkedIssuesSection::new(&links, &[], Some(parent));
+
+        // First item is parent, not a link
+        let result = section.selected_link();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_selected_link_on_subtask() {
+        let links = vec![create_test_link("1", "PROJ-200", "Linked", "Blocks")];
+        let subtasks = vec![create_test_subtask("1", "PROJ-101", "Subtask", false)];
+        let mut section = LinkedIssuesSection::new(&links, &subtasks, None);
+
+        // Move to subtask (past the link)
+        section.select_next();
+
+        // Subtask is not a deletable link
+        let result = section.selected_link();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_delete_key_on_link() {
+        let links = vec![create_test_link("1", "PROJ-200", "Linked", "Blocks")];
+        let mut section = LinkedIssuesSection::new(&links, &[], None);
+        section.set_focused(true);
+
+        let key = KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE);
+        let action = section.handle_input(key);
+
+        match action {
+            Some(LinkedIssuesAction::Delete(link_id, _)) => {
+                assert_eq!(link_id, "link-1");
+            }
+            _ => panic!("Expected Delete action"),
+        }
+    }
+
+    #[test]
+    fn test_delete_key_on_parent_does_nothing() {
+        let parent = create_test_parent("PROJ-100", "Parent");
+        let links = vec![create_test_link("1", "PROJ-200", "Linked", "Blocks")];
+        let mut section = LinkedIssuesSection::new(&links, &[], Some(parent));
+        section.set_focused(true);
+
+        // Focused on parent
+        let key = KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE);
+        let action = section.handle_input(key);
+
+        assert!(action.is_none());
+    }
+
+    #[test]
+    fn test_delete_key_on_subtask_does_nothing() {
+        let subtasks = vec![create_test_subtask("1", "PROJ-101", "Subtask", false)];
+        let mut section = LinkedIssuesSection::new(&[], &subtasks, None);
+        section.set_focused(true);
+
+        let key = KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE);
+        let action = section.handle_input(key);
+
+        assert!(action.is_none());
+    }
+
+    #[test]
+    fn test_delete_ignored_when_collapsed() {
+        let links = vec![create_test_link("1", "PROJ-200", "Linked", "Blocks")];
+        let mut section = LinkedIssuesSection::new(&links, &[], None);
+        section.set_focused(true);
+        section.toggle_expand(); // Collapse
+
+        let key = KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE);
+        let action = section.handle_input(key);
+
+        assert!(action.is_none());
     }
 }

@@ -14,11 +14,12 @@ use ratatui::{
 };
 
 use crate::api::types::{
-    AtlassianDoc, Changelog, Comment, FieldUpdates, Issue, IssueUpdateRequest, Priority,
-    Transition, User,
+    AtlassianDoc, Changelog, Comment, FieldUpdates, Issue, IssueLinkType, IssueSuggestion,
+    IssueUpdateRequest, Priority, Transition, User,
 };
 use crate::ui::components::{
-    AssigneeAction, AssigneePicker, CommentAction, CommentsPanel, LinkedIssuesAction,
+    AssigneeAction, AssigneePicker, CommentAction, CommentsPanel, IssueSearchPicker,
+    IssueSearchPickerAction, LinkTypePicker, LinkTypePickerAction, LinkedIssuesAction,
     LinkedIssuesSection, PriorityAction, PriorityPicker, TagAction, TagEditor, TextEditor,
     TextInput, TransitionAction, TransitionPicker,
 };
@@ -78,6 +79,18 @@ pub enum DetailAction {
     LoadMoreChangelog(String),
     /// Navigate to a linked issue (issue key).
     NavigateToIssue(String),
+    /// Start create link workflow.
+    StartCreateLink,
+    /// Fetch available link types for the create link workflow (issue key).
+    FetchLinkTypes(String),
+    /// Search for issues to link (issue key, query).
+    SearchIssuesForLink(String, String),
+    /// Create a link between issues (current issue key, target issue key, link type name, is_outward).
+    CreateLink(String, String, String, bool),
+    /// Confirm deletion of a link (link ID, description for confirmation).
+    ConfirmDeleteLink(String, String),
+    /// Delete a link (link ID, issue key to refresh).
+    DeleteLink(String, String),
 }
 
 /// Which field is currently being edited.
@@ -136,6 +149,12 @@ pub struct DetailView {
     component_editor: TagEditor,
     /// Linked issues section for displaying related issues.
     linked_issues: LinkedIssuesSection,
+    /// Link type picker for creating new links.
+    link_type_picker: LinkTypePicker,
+    /// Issue search picker for selecting target issue when linking.
+    issue_search_picker: IssueSearchPicker,
+    /// The selected link type when creating a link.
+    pending_link_type: Option<(IssueLinkType, bool)>,
 }
 
 impl DetailView {
@@ -157,6 +176,9 @@ impl DetailView {
             history_view: HistoryView::new(),
             component_editor: TagEditor::for_components(),
             linked_issues: LinkedIssuesSection::empty(),
+            link_type_picker: LinkTypePicker::new(),
+            issue_search_picker: IssueSearchPicker::new(),
+            pending_link_type: None,
         }
     }
 
@@ -547,6 +569,36 @@ impl DetailView {
         self.history_view.hide();
     }
 
+    /// Get the current issue key.
+    pub fn issue_key(&self) -> &str {
+        self.issue.as_ref().map(|i| i.key.as_str()).unwrap_or("")
+    }
+
+    /// Show the link type picker with available link types.
+    pub fn show_link_type_picker(&mut self, link_types: Vec<IssueLinkType>) {
+        self.link_type_picker.show(link_types);
+    }
+
+    /// Show the link type picker in loading state.
+    pub fn show_link_type_picker_loading(&mut self) {
+        self.link_type_picker.show_loading();
+    }
+
+    /// Set the issue search suggestions.
+    pub fn set_issue_search_suggestions(&mut self, suggestions: Vec<IssueSuggestion>) {
+        self.issue_search_picker.set_suggestions(suggestions);
+    }
+
+    /// Check if the link type picker is visible.
+    pub fn is_link_type_picker_visible(&self) -> bool {
+        self.link_type_picker.is_visible()
+    }
+
+    /// Check if the issue search picker is visible.
+    pub fn is_issue_search_picker_visible(&self) -> bool {
+        self.issue_search_picker.is_visible()
+    }
+
     /// Enter edit mode for the current issue.
     pub fn enter_edit_mode(&mut self) {
         if let Some(issue) = &self.issue {
@@ -656,6 +708,16 @@ impl DetailView {
         // Handle component editor (blocks other input when visible)
         if self.component_editor.is_visible() {
             return self.handle_component_editor_input(key);
+        }
+
+        // Handle link type picker (blocks other input when visible)
+        if self.link_type_picker.is_visible() {
+            return self.handle_link_type_picker_input(key);
+        }
+
+        // Handle issue search picker (blocks other input when visible)
+        if self.issue_search_picker.is_visible() {
+            return self.handle_issue_search_picker_input(key);
         }
 
         // If in edit mode, handle edit-specific input
@@ -774,6 +836,16 @@ impl DetailView {
                     None
                 }
             }
+            // Create link (open link type picker)
+            (KeyCode::Char('L'), KeyModifiers::SHIFT) => {
+                if let Some(issue) = &self.issue {
+                    let issue_key = issue.key.clone();
+                    self.show_link_type_picker_loading();
+                    Some(DetailAction::FetchLinkTypes(issue_key))
+                } else {
+                    None
+                }
+            }
             // Focus linked issues section
             (KeyCode::Char('r'), KeyModifiers::NONE) => {
                 if !self.linked_issues.is_empty() {
@@ -788,6 +860,9 @@ impl DetailView {
                         LinkedIssuesAction::Navigate(key) => {
                             self.linked_issues.set_focused(false);
                             Some(DetailAction::NavigateToIssue(key))
+                        }
+                        LinkedIssuesAction::Delete(link_id, description) => {
+                            Some(DetailAction::ConfirmDeleteLink(link_id, description))
                         }
                     }
                 } else {
@@ -809,6 +884,9 @@ impl DetailView {
                                 LinkedIssuesAction::Navigate(issue_key) => {
                                     self.linked_issues.set_focused(false);
                                     Some(DetailAction::NavigateToIssue(issue_key))
+                                }
+                                LinkedIssuesAction::Delete(link_id, description) => {
+                                    Some(DetailAction::ConfirmDeleteLink(link_id, description))
                                 }
                             }
                         } else {
@@ -956,6 +1034,68 @@ impl DetailView {
                     }
                 }
                 TagAction::Cancel => None,
+            }
+        } else {
+            None
+        }
+    }
+
+    /// Handle keyboard input for the link type picker.
+    fn handle_link_type_picker_input(&mut self, key: KeyEvent) -> Option<DetailAction> {
+        if let Some(action) = self.link_type_picker.handle_input(key) {
+            match action {
+                LinkTypePickerAction::Select(link_type, is_outward) => {
+                    // Store the selected link type and direction
+                    self.pending_link_type = Some((link_type, is_outward));
+                    // Show the issue search picker
+                    if let Some(issue) = &self.issue {
+                        self.issue_search_picker.show(Some(issue.key.clone()));
+                    } else {
+                        self.issue_search_picker.show(None);
+                    }
+                    None
+                }
+                LinkTypePickerAction::Cancel => None,
+            }
+        } else {
+            None
+        }
+    }
+
+    /// Handle keyboard input for the issue search picker.
+    fn handle_issue_search_picker_input(&mut self, key: KeyEvent) -> Option<DetailAction> {
+        if let Some(action) = self.issue_search_picker.handle_input(key) {
+            match action {
+                IssueSearchPickerAction::Select(target_key) => {
+                    // Create the link with the selected target
+                    if let (Some(issue), Some((link_type, is_outward))) =
+                        (&self.issue, self.pending_link_type.take())
+                    {
+                        let current_key = issue.key.clone();
+                        Some(DetailAction::CreateLink(
+                            current_key,
+                            target_key,
+                            link_type.name,
+                            is_outward,
+                        ))
+                    } else {
+                        self.pending_link_type = None;
+                        None
+                    }
+                }
+                IssueSearchPickerAction::Search(query) => {
+                    // Trigger search
+                    if let Some(issue) = &self.issue {
+                        let issue_key = issue.key.clone();
+                        Some(DetailAction::SearchIssuesForLink(issue_key, query))
+                    } else {
+                        None
+                    }
+                }
+                IssueSearchPickerAction::Cancel => {
+                    self.pending_link_type = None;
+                    None
+                }
             }
         } else {
             None
@@ -1156,6 +1296,8 @@ impl DetailView {
         self.priority_picker.render(frame, area);
         self.label_editor.render(frame, area);
         self.component_editor.render(frame, area);
+        self.link_type_picker.render(frame, area);
+        self.issue_search_picker.render(frame, area);
         self.comments_panel.render(frame, area);
         self.history_view.render(frame, area);
     }
@@ -1500,7 +1642,7 @@ impl DetailView {
             Span::styled(scroll_info, Style::default().fg(t.dim)),
             Span::raw(" | "),
             Span::styled(
-                "j/k:scroll  q:back  e:edit  c:comment  s:status  a:assignee  h:history  l:labels",
+                "j/k:scroll  q:back  e:edit  c:comment  s:status  a:assignee  h:history  l:labels  L:link",
                 Style::default().fg(t.dim),
             ),
         ]);

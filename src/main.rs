@@ -761,6 +761,102 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
             }
         }
 
+        // Handle fetch link types request
+        if let Some(_issue_key) = app.take_pending_fetch_link_types() {
+            if let Some(ref c) = client {
+                debug!("Fetching link types");
+                match c.get_issue_link_types().await {
+                    Ok(link_types) => {
+                        info!("Loaded {} link types", link_types.len());
+                        app.handle_link_types_success(link_types);
+                    }
+                    Err(e) => {
+                        error!("Failed to load link types: {}", e);
+                        app.handle_link_types_failure(&e.to_string());
+                    }
+                }
+            } else {
+                app.handle_link_types_failure("No JIRA connection");
+            }
+        }
+
+        // Handle search issues for linking request
+        if let Some((issue_key, query)) = app.take_pending_search_issues_for_link() {
+            if let Some(ref c) = client {
+                debug!("Searching issues for linking: {}", query);
+                match c.search_issues_for_picker(&query, Some(&issue_key)).await {
+                    Ok(suggestions) => {
+                        info!("Found {} issue suggestions", suggestions.len());
+                        app.handle_issue_search_success(suggestions);
+                    }
+                    Err(e) => {
+                        error!("Failed to search issues: {}", e);
+                        app.handle_issue_search_failure(&e.to_string());
+                    }
+                }
+            } else {
+                app.handle_issue_search_failure("No JIRA connection");
+            }
+        }
+
+        // Handle create link request
+        if let Some((current_key, target_key, link_type_name, is_outward)) =
+            app.take_pending_create_link()
+        {
+            if let Some(ref c) = client {
+                debug!(
+                    "Creating link: {} -> {} (type: {}, outward: {})",
+                    current_key, target_key, link_type_name, is_outward
+                );
+                // When is_outward is true, current issue is the outward issue
+                // e.g., "current blocks target" means current is outward
+                let (outward_key, inward_key) = if is_outward {
+                    (current_key.clone(), target_key)
+                } else {
+                    (target_key, current_key.clone())
+                };
+                match c
+                    .create_issue_link(&link_type_name, &outward_key, &inward_key)
+                    .await
+                {
+                    Ok(()) => {
+                        info!("Link created successfully");
+                        app.handle_create_link_success(&current_key);
+                    }
+                    Err(e) => {
+                        error!("Failed to create link: {}", e);
+                        app.handle_create_link_failure(&e.to_string());
+                    }
+                }
+            } else {
+                app.handle_create_link_failure("No JIRA connection");
+            }
+        }
+
+        // Handle confirm delete link request (show dialog)
+        if let Some((link_id, description)) = app.take_pending_confirm_delete_link() {
+            app.show_delete_link_confirmation(link_id, description);
+        }
+
+        // Handle delete link request (after confirmation)
+        if let Some((link_id, issue_key)) = app.take_pending_delete_link() {
+            if let Some(ref c) = client {
+                debug!("Deleting link: {}", link_id);
+                match c.delete_issue_link(&link_id).await {
+                    Ok(()) => {
+                        info!("Link deleted successfully");
+                        app.handle_delete_link_success(&issue_key);
+                    }
+                    Err(e) => {
+                        error!("Failed to delete link: {}", e);
+                        app.handle_delete_link_failure(&e.to_string());
+                    }
+                }
+            } else {
+                app.handle_delete_link_failure("No JIRA connection");
+            }
+        }
+
         // Check if we should quit
         if app.should_quit() {
             break;

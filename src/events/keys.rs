@@ -115,6 +115,7 @@ pub fn get_keybindings() -> Vec<Keybinding> {
         Keybinding::new("y", "priority", "Change priority", KeyContext::IssueDetail),
         Keybinding::new("l", "labels", "Edit labels", KeyContext::IssueDetail),
         Keybinding::new("o", "components", "Edit components", KeyContext::IssueDetail),
+        Keybinding::new("L", "link", "Link issue", KeyContext::IssueDetail),
         Keybinding::new("q / Esc", "back", "Go back to list", KeyContext::IssueDetail),
         // JQL Input keybindings
         Keybinding::new("Enter", "execute", "Execute query", KeyContext::JqlInput),

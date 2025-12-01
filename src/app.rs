@@ -137,6 +137,18 @@ pub struct App {
     pending_fetch_changelog: Option<(String, u32)>,
     /// Pending navigation to a linked issue (issue key).
     pending_navigate_to_issue: Option<String>,
+    /// Pending fetch link types request (issue key).
+    pending_fetch_link_types: Option<String>,
+    /// Pending search issues for linking request (issue key, query).
+    pending_search_issues_for_link: Option<(String, String)>,
+    /// Pending create link request (current issue key, target issue key, link type name, is_outward).
+    pending_create_link: Option<(String, String, String, bool)>,
+    /// Pending confirm delete link (link ID, description).
+    pending_confirm_delete_link: Option<(String, String)>,
+    /// Pending delete link request (link ID, issue key to refresh).
+    pending_delete_link: Option<(String, String)>,
+    /// Delete link confirmation dialog.
+    delete_link_confirm_dialog: ConfirmDialog,
     /// Help view.
     help_view: HelpView,
     /// Previous state before opening help (to return to).
@@ -210,6 +222,12 @@ impl App {
             pending_remove_component: None,
             pending_fetch_changelog: None,
             pending_navigate_to_issue: None,
+            pending_fetch_link_types: None,
+            pending_search_issues_for_link: None,
+            pending_create_link: None,
+            pending_confirm_delete_link: None,
+            pending_delete_link: None,
+            delete_link_confirm_dialog: ConfirmDialog::new(),
             help_view: HelpView::new(),
             previous_state: None,
             command_palette: CommandPalette::new(),
@@ -275,6 +293,12 @@ impl App {
             pending_remove_component: None,
             pending_fetch_changelog: None,
             pending_navigate_to_issue: None,
+            pending_fetch_link_types: None,
+            pending_search_issues_for_link: None,
+            pending_create_link: None,
+            pending_confirm_delete_link: None,
+            pending_delete_link: None,
+            delete_link_confirm_dialog: ConfirmDialog::new(),
             help_view: HelpView::new(),
             previous_state: None,
             command_palette: CommandPalette::new(),
@@ -1450,6 +1474,105 @@ impl App {
         self.notify_error(format!("Failed to load issue: {}", error));
     }
 
+    /// Take the pending fetch link types request.
+    pub fn take_pending_fetch_link_types(&mut self) -> Option<String> {
+        self.pending_fetch_link_types.take()
+    }
+
+    /// Handle successful link types fetch.
+    pub fn handle_link_types_success(&mut self, link_types: Vec<crate::api::types::IssueLinkType>) {
+        info!(count = %link_types.len(), "Fetched link types");
+        self.detail_view.show_link_type_picker(link_types);
+    }
+
+    /// Handle failure to fetch link types.
+    pub fn handle_link_types_failure(&mut self, error: &str) {
+        warn!(error = %error, "Failed to fetch link types");
+        self.notify_error(format!("Failed to load link types: {}", error));
+    }
+
+    /// Take the pending search issues for link request.
+    pub fn take_pending_search_issues_for_link(&mut self) -> Option<(String, String)> {
+        self.pending_search_issues_for_link.take()
+    }
+
+    /// Handle successful issue search for linking.
+    pub fn handle_issue_search_success(
+        &mut self,
+        suggestions: Vec<crate::api::types::IssueSuggestion>,
+    ) {
+        info!(count = %suggestions.len(), "Fetched issue suggestions");
+        self.detail_view.set_issue_search_suggestions(suggestions);
+    }
+
+    /// Handle failure to search issues.
+    pub fn handle_issue_search_failure(&mut self, error: &str) {
+        warn!(error = %error, "Failed to search issues");
+        self.notify_error(format!("Failed to search issues: {}", error));
+    }
+
+    /// Take the pending create link request.
+    pub fn take_pending_create_link(&mut self) -> Option<(String, String, String, bool)> {
+        self.pending_create_link.take()
+    }
+
+    /// Handle successful link creation.
+    pub fn handle_create_link_success(&mut self, issue_key: &str) {
+        info!(key = %issue_key, "Link created successfully");
+        self.stop_loading();
+        self.notify_success("Link created successfully");
+        // Set up to refresh the issue details
+        self.pending_navigate_to_issue = Some(issue_key.to_string());
+    }
+
+    /// Handle failure to create link.
+    pub fn handle_create_link_failure(&mut self, error: &str) {
+        warn!(error = %error, "Failed to create link");
+        self.stop_loading();
+        self.notify_error(format!("Failed to create link: {}", error));
+    }
+
+    /// Take the pending confirm delete link request.
+    pub fn take_pending_confirm_delete_link(&mut self) -> Option<(String, String)> {
+        self.pending_confirm_delete_link.take()
+    }
+
+    /// Show the delete link confirmation dialog.
+    pub fn show_delete_link_confirmation(&mut self, link_id: String, description: String) {
+        self.delete_link_confirm_dialog.show_destructive(
+            "Delete Link",
+            format!("Delete link to {}?", description),
+        );
+        // Store the link info for when confirmed (not in pending_delete_link yet)
+        self.pending_confirm_delete_link = Some((link_id, self.selected_issue_key.clone().unwrap_or_default()));
+    }
+
+    /// Check if the delete link confirm dialog is visible.
+    pub fn is_delete_link_confirm_visible(&self) -> bool {
+        self.delete_link_confirm_dialog.is_visible()
+    }
+
+    /// Take the pending delete link request.
+    pub fn take_pending_delete_link(&mut self) -> Option<(String, String)> {
+        self.pending_delete_link.take()
+    }
+
+    /// Handle successful link deletion.
+    pub fn handle_delete_link_success(&mut self, issue_key: &str) {
+        info!(key = %issue_key, "Link deleted successfully");
+        self.stop_loading();
+        self.notify_success("Link deleted successfully");
+        // Set up to refresh the issue details
+        self.pending_navigate_to_issue = Some(issue_key.to_string());
+    }
+
+    /// Handle failure to delete link.
+    pub fn handle_delete_link_failure(&mut self, error: &str) {
+        warn!(error = %error, "Failed to delete link");
+        self.stop_loading();
+        self.notify_error(format!("Failed to delete link: {}", error));
+    }
+
     /// Returns whether the application should quit.
     pub fn should_quit(&self) -> bool {
         self.should_quit
@@ -1541,6 +1664,24 @@ impl App {
                 } else {
                     debug!("Transition cancelled");
                     self.cancel_transition_confirm();
+                }
+            }
+            return;
+        }
+
+        // Handle delete link confirmation dialog (blocks other input)
+        if self.delete_link_confirm_dialog.is_visible() {
+            if let Some(confirmed) = self.delete_link_confirm_dialog.handle_input(key_event) {
+                if confirmed {
+                    debug!("Delete link confirmed");
+                    // Move from pending_confirm to pending_delete to trigger the actual deletion
+                    if let Some((link_id, issue_key)) = self.pending_confirm_delete_link.take() {
+                        self.pending_delete_link = Some((link_id, issue_key));
+                        self.start_loading("Deleting link...".to_string());
+                    }
+                } else {
+                    debug!("Delete link cancelled");
+                    self.pending_confirm_delete_link = None;
                 }
             }
             return;
@@ -1871,6 +2012,50 @@ impl App {
                             // The runner will fetch the issue details
                             self.start_loading(format!("Loading issue {}...", issue_key));
                         }
+                        DetailAction::StartCreateLink => {
+                            info!("Starting create link workflow");
+                            // Fetch link types first
+                            let issue_key = self.detail_view.issue_key().to_string();
+                            self.pending_fetch_link_types = Some(issue_key);
+                        }
+                        DetailAction::FetchLinkTypes(issue_key) => {
+                            info!(key = %issue_key, "Fetching link types");
+                            self.pending_fetch_link_types = Some(issue_key);
+                        }
+                        DetailAction::SearchIssuesForLink(issue_key, query) => {
+                            info!(key = %issue_key, query = %query, "Searching issues for linking");
+                            self.pending_search_issues_for_link = Some((issue_key, query));
+                        }
+                        DetailAction::CreateLink(
+                            current_issue_key,
+                            target_issue_key,
+                            link_type_name,
+                            is_outward,
+                        ) => {
+                            info!(
+                                current = %current_issue_key,
+                                target = %target_issue_key,
+                                link_type = %link_type_name,
+                                outward = %is_outward,
+                                "Creating issue link"
+                            );
+                            self.pending_create_link = Some((
+                                current_issue_key,
+                                target_issue_key,
+                                link_type_name,
+                                is_outward,
+                            ));
+                            self.start_loading("Creating link...".to_string());
+                        }
+                        DetailAction::ConfirmDeleteLink(link_id, description) => {
+                            info!(link_id = %link_id, "Confirming link deletion");
+                            self.pending_confirm_delete_link = Some((link_id, description));
+                        }
+                        DetailAction::DeleteLink(link_id, issue_key) => {
+                            info!(link_id = %link_id, key = %issue_key, "Deleting issue link");
+                            self.pending_delete_link = Some((link_id, issue_key));
+                            self.start_loading("Deleting link...".to_string());
+                        }
                     }
                 }
             }
@@ -2021,6 +2206,9 @@ impl App {
 
         // Render transition confirmation dialog
         self.transition_confirm_dialog.render(frame, area);
+
+        // Render delete link confirmation dialog
+        self.delete_link_confirm_dialog.render(frame, area);
 
         // Render error dialog (on top of everything)
         self.error_dialog.render(frame, area);

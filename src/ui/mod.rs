@@ -16,6 +16,6 @@ pub use components::{
 pub use theme::{issue_type_prefix, priority_style, status_style, truncate, Theme};
 pub use views::{
     DeleteProfileDialog, DetailAction, DetailView, EditField, EditState, FilterPanelAction,
-    FilterPanelView, FormField, FormMode, ListAction, ListView, ProfileFormAction,
-    ProfileFormData, ProfileFormView, ProfileListAction, ProfileListView, ProfileSummary,
+    FilterPanelView, FormField, FormMode, ListAction, ListView, ProfileFormAction, ProfileFormData,
+    ProfileFormView, ProfileListAction, ProfileListView, ProfileSummary,
 };

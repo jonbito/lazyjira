@@ -59,25 +59,24 @@ pub fn init() -> anyhow::Result<()> {
 
     let file_appender = RollingFileAppender::new(Rotation::DAILY, &log_dir, "lazyjira.log");
 
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(DEFAULT_LOG_FILTER));
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(DEFAULT_LOG_FILTER));
 
-    let subscriber = tracing_subscriber::registry().with(
-        fmt::layer()
-            .with_writer(file_appender)
-            .with_ansi(false)
-            .with_target(true)
-            .with_thread_ids(true)
-            .with_file(true)
-            .with_line_number(true),
-    ).with(filter);
+    let subscriber = tracing_subscriber::registry()
+        .with(
+            fmt::layer()
+                .with_writer(file_appender)
+                .with_ansi(false)
+                .with_target(true)
+                .with_thread_ids(true)
+                .with_file(true)
+                .with_line_number(true),
+        )
+        .with(filter);
 
     tracing::subscriber::set_global_default(subscriber)?;
 
-    tracing::info!(
-        version = env!("CARGO_PKG_VERSION"),
-        "LazyJira starting up"
-    );
+    tracing::info!(version = env!("CARGO_PKG_VERSION"), "LazyJira starting up");
     tracing::debug!(log_dir = %log_dir.display(), "Log directory");
 
     Ok(())

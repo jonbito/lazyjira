@@ -526,7 +526,8 @@ impl ListView {
                 // Wait for second 'g'
                 self.pending_g = true;
             }
-            (KeyCode::Char('G'), KeyModifiers::SHIFT) | (KeyCode::Char('G'), KeyModifiers::NONE) => {
+            (KeyCode::Char('G'), KeyModifiers::SHIFT)
+            | (KeyCode::Char('G'), KeyModifiers::NONE) => {
                 self.move_to_end();
                 return self.check_load_more();
             }
@@ -702,11 +703,7 @@ impl ListView {
         // If search is active or has a query, reserve a line for the search bar
         let show_search_bar = self.search.is_active() || !self.search.is_empty();
         let (table_area, search_area) = if show_search_bar && area.height > 2 {
-            let chunks = Layout::vertical([
-                Constraint::Min(1),
-                Constraint::Length(1),
-            ])
-            .split(area);
+            let chunks = Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).split(area);
             (chunks[0], Some(chunks[1]))
         } else {
             (area, None)
@@ -918,10 +915,7 @@ impl ListView {
 
     /// Render the status bar.
     pub fn render_status_bar(&self, frame: &mut Frame, area: Rect) {
-        let profile_text = self
-            .profile_name
-            .as_deref()
-            .unwrap_or("No profile");
+        let profile_text = self.profile_name.as_deref().unwrap_or("No profile");
 
         // Use pagination display if we have pagination info, otherwise fall back to issue count
         let issue_count_text = if self.loading || self.pagination.loading {
@@ -972,7 +966,11 @@ impl ListView {
         if !self.search.is_empty() {
             spans.push(Span::raw(" "));
             spans.push(Span::styled(
-                format!("[Search: {} - {}]", self.search.query(), self.search.match_info()),
+                format!(
+                    "[Search: {} - {}]",
+                    self.search.query(),
+                    self.search.match_info()
+                ),
                 Style::default().fg(Color::Magenta),
             ));
         }
@@ -1003,7 +1001,10 @@ impl ListView {
         } else {
             "j/k:nav  /:search  s:sort  f:filter  :jql  ?:help"
         };
-        spans.push(Span::styled(help_text, Style::default().fg(Color::DarkGray)));
+        spans.push(Span::styled(
+            help_text,
+            Style::default().fg(Color::DarkGray),
+        ));
 
         let status_line = Line::from(spans);
         let paragraph = Paragraph::new(status_line);
@@ -1722,9 +1723,7 @@ mod tests {
     #[test]
     fn test_search_escape_clears() {
         let mut view = ListView::new();
-        view.set_issues(vec![
-            create_test_issue("TEST-1", "First issue"),
-        ]);
+        view.set_issues(vec![create_test_issue("TEST-1", "First issue")]);
 
         // Activate search and type
         view.search.activate();
@@ -1806,9 +1805,7 @@ mod tests {
     #[test]
     fn test_search_backspace() {
         let mut view = ListView::new();
-        view.set_issues(vec![
-            create_test_issue("TEST-1", "First"),
-        ]);
+        view.set_issues(vec![create_test_issue("TEST-1", "First")]);
 
         // Activate search and type
         view.search.activate();
@@ -1826,9 +1823,7 @@ mod tests {
     #[test]
     fn test_escape_clears_inactive_search() {
         let mut view = ListView::new();
-        view.set_issues(vec![
-            create_test_issue("TEST-1", "First"),
-        ]);
+        view.set_issues(vec![create_test_issue("TEST-1", "First")]);
 
         // Setup search with matches, then close input
         view.search.push_char('T');

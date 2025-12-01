@@ -8,12 +8,14 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap},
+    widgets::{
+        Block, Borders, Clear, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap,
+    },
     Frame,
 };
 
-use crate::api::types::Comment;
 use super::TextEditor;
+use crate::api::types::Comment;
 
 /// Action resulting from comments panel input.
 #[derive(Debug, Clone, PartialEq)]
@@ -293,8 +295,12 @@ impl CommentsPanel {
         }
 
         // Calculate dialog size (larger panel for comments)
-        let dialog_width = (area.width * 8 / 10).max(60).min(area.width.saturating_sub(4));
-        let dialog_height = (area.height * 8 / 10).max(20).min(area.height.saturating_sub(4));
+        let dialog_width = (area.width * 8 / 10)
+            .max(60)
+            .min(area.width.saturating_sub(4));
+        let dialog_height = (area.height * 8 / 10)
+            .max(20)
+            .min(area.height.saturating_sub(4));
 
         let dialog_area = centered_rect(dialog_width, dialog_height, area);
 
@@ -396,10 +402,7 @@ impl CommentsPanel {
                         .fg(Color::Cyan)
                         .add_modifier(Modifier::BOLD),
                 ),
-                Span::styled(
-                    format!("  {}", date),
-                    Style::default().fg(Color::DarkGray),
-                ),
+                Span::styled(format!("  {}", date), Style::default().fg(Color::DarkGray)),
             ]));
 
             // Comment body
@@ -432,13 +435,9 @@ impl CommentsPanel {
             let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
                 .begin_symbol(Some("▲"))
                 .end_symbol(Some("▼"));
-            let mut scrollbar_state = ScrollbarState::new(self.max_scroll)
-                .position(self.scroll_offset);
-            frame.render_stateful_widget(
-                scrollbar,
-                area,
-                &mut scrollbar_state,
-            );
+            let mut scrollbar_state =
+                ScrollbarState::new(self.max_scroll).position(self.scroll_offset);
+            frame.render_stateful_widget(scrollbar, area, &mut scrollbar_state);
         }
     }
 
@@ -465,7 +464,12 @@ impl CommentsPanel {
                 );
             frame.render_widget(submitting_text, chunks[0]);
         } else {
-            self.editor.render(frame, chunks[0], true, Some(" New Comment (Ctrl+S to submit) "));
+            self.editor.render(
+                frame,
+                chunks[0],
+                true,
+                Some(" New Comment (Ctrl+S to submit) "),
+            );
         }
 
         // Render help text

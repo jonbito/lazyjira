@@ -136,7 +136,10 @@ mod tests {
 
         let result = profile.validate();
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("name cannot be empty"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("name cannot be empty"));
     }
 
     #[test]
@@ -149,7 +152,10 @@ mod tests {
 
         let result = profile.validate();
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("cannot contain whitespace"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("cannot contain whitespace"));
     }
 
     #[test]
@@ -162,7 +168,10 @@ mod tests {
 
         let result = profile.validate();
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("URL cannot be empty"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("URL cannot be empty"));
     }
 
     #[test]
@@ -175,7 +184,10 @@ mod tests {
 
         let result = profile.validate();
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("must start with http"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("must start with http"));
     }
 
     #[test]
@@ -199,7 +211,10 @@ mod tests {
 
         let result = profile.validate();
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("email cannot be empty"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("email cannot be empty"));
     }
 
     #[test]

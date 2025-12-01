@@ -161,16 +161,27 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
             debug!("Fetching issues with JQL: {}", jql_query);
 
             // Try cache first
-            let cached_result = cache_manager.as_ref().and_then(|cm| cm.get_search_results(jql_query));
+            let cached_result = cache_manager
+                .as_ref()
+                .and_then(|cm| cm.get_search_results(jql_query));
 
             if let Some(cached) = cached_result {
                 // Use cached data
-                info!("Loaded {} issues from cache (total: {})", cached.results.issues.len(), cached.results.total);
+                info!(
+                    "Loaded {} issues from cache (total: {})",
+                    cached.results.issues.len(),
+                    cached.results.total
+                );
                 let issues_count = cached.results.issues.len() as u32;
                 app.list_view_mut().set_issues(cached.results.issues);
                 app.list_view_mut().set_loading(false);
-                app.list_view_mut().pagination_mut().update_from_response(0, issues_count, cached.results.total);
-                app.list_view_mut().set_cache_status(Some(CacheStatus::FromCache));
+                app.list_view_mut().pagination_mut().update_from_response(
+                    0,
+                    issues_count,
+                    cached.results.total,
+                );
+                app.list_view_mut()
+                    .set_cache_status(Some(CacheStatus::FromCache));
 
                 // Also fetch fresh data in the background (if client available)
                 if let Some(ref c) = client {
@@ -185,8 +196,13 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
                             // Update display with fresh data
                             let issues_count = result.issues.len() as u32;
                             app.list_view_mut().set_issues(result.issues);
-                            app.list_view_mut().pagination_mut().update_from_response(0, issues_count, result.total);
-                            app.list_view_mut().set_cache_status(Some(CacheStatus::Fresh));
+                            app.list_view_mut().pagination_mut().update_from_response(
+                                0,
+                                issues_count,
+                                result.total,
+                            );
+                            app.list_view_mut()
+                                .set_cache_status(Some(CacheStatus::Fresh));
                         }
                         Err(e) => {
                             // Cache data is still valid, just show a warning
@@ -198,7 +214,11 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
                 // No cache, fetch from API
                 match c.search_issues(jql_query, 0, 50).await {
                     Ok(result) => {
-                        info!("Loaded {} issues from API (total: {})", result.issues.len(), result.total);
+                        info!(
+                            "Loaded {} issues from API (total: {})",
+                            result.issues.len(),
+                            result.total
+                        );
                         // Store in cache
                         if let Some(ref cm) = cache_manager {
                             if let Err(e) = cm.set_search_results(jql_query, &result) {
@@ -208,8 +228,13 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
                         let issues_count = result.issues.len() as u32;
                         app.list_view_mut().set_issues(result.issues);
                         app.list_view_mut().set_loading(false);
-                        app.list_view_mut().pagination_mut().update_from_response(0, issues_count, result.total);
-                        app.list_view_mut().set_cache_status(Some(CacheStatus::Fresh));
+                        app.list_view_mut().pagination_mut().update_from_response(
+                            0,
+                            issues_count,
+                            result.total,
+                        );
+                        app.list_view_mut()
+                            .set_cache_status(Some(CacheStatus::Fresh));
                     }
                     Err(e) => {
                         error!("Failed to fetch issues: {}", e);
@@ -221,7 +246,8 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
             } else {
                 // No client available
                 app.list_view_mut().set_loading(false);
-                app.list_view_mut().set_cache_status(Some(CacheStatus::Offline));
+                app.list_view_mut()
+                    .set_cache_status(Some(CacheStatus::Offline));
             }
         }
 
@@ -323,19 +349,27 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
         // Handle pending transition execution
         if let Some((issue_key, transition_id, fields)) = app.take_pending_transition() {
             if let Some(ref c) = client {
-                debug!("Executing transition {} on issue {}", transition_id, issue_key);
+                debug!(
+                    "Executing transition {} on issue {}",
+                    transition_id, issue_key
+                );
                 match c.transition_issue(&issue_key, &transition_id, fields).await {
                     Ok(()) => {
                         // Fetch the updated issue to get the new status
                         match c.get_issue(&issue_key).await {
                             Ok(updated_issue) => {
-                                info!("Transition successful, issue {} now has status: {}",
-                                    issue_key, updated_issue.fields.status.name);
+                                info!(
+                                    "Transition successful, issue {} now has status: {}",
+                                    issue_key, updated_issue.fields.status.name
+                                );
                                 app.handle_transition_success(updated_issue);
                             }
                             Err(e) => {
                                 // Transition succeeded but we couldn't fetch the updated issue
-                                warn!("Transition succeeded but failed to fetch updated issue: {}", e);
+                                warn!(
+                                    "Transition succeeded but failed to fetch updated issue: {}",
+                                    e
+                                );
                                 app.notify_success(format!("Issue {} status changed", issue_key));
                             }
                         }
@@ -372,7 +406,10 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
         // Handle pending assignee change
         if let Some((issue_key, account_id)) = app.take_pending_assignee_change() {
             if let Some(ref c) = client {
-                debug!("Changing assignee on issue {} to {:?}", issue_key, account_id);
+                debug!(
+                    "Changing assignee on issue {} to {:?}",
+                    issue_key, account_id
+                );
                 match c.update_assignee(&issue_key, account_id.as_deref()).await {
                     Ok(()) => {
                         // Fetch the updated issue to get the new assignee
@@ -419,7 +456,10 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
         // Handle pending priority change
         if let Some((issue_key, priority_id)) = app.take_pending_priority_change() {
             if let Some(ref c) = client {
-                debug!("Changing priority on issue {} to {}", issue_key, priority_id);
+                debug!(
+                    "Changing priority on issue {} to {}",
+                    issue_key, priority_id
+                );
                 match c.update_priority(&issue_key, &priority_id).await {
                     Ok(()) => {
                         // Fetch the updated issue to get the new priority
@@ -610,7 +650,10 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
         if let Some((issue_key, component)) = app.take_pending_remove_component() {
             if let Some(ref c) = client {
                 debug!("Removing component {} from issue {}", component, issue_key);
-                match c.remove_components(&issue_key, vec![component.clone()]).await {
+                match c
+                    .remove_components(&issue_key, vec![component.clone()])
+                    .await
+                {
                     Ok(()) => {
                         // Fetch the updated issue
                         match c.get_issue(&issue_key).await {

@@ -234,7 +234,9 @@ impl AssigneePicker {
                 None
             }
             // Character input - add to search (includes j/k/q)
-            (KeyCode::Char(c), KeyModifiers::NONE | KeyModifiers::SHIFT) if c.is_alphabetic() || c.is_whitespace() => {
+            (KeyCode::Char(c), KeyModifiers::NONE | KeyModifiers::SHIFT)
+                if c.is_alphabetic() || c.is_whitespace() =>
+            {
                 self.search_query.push(c);
                 self.update_filtered_indices();
                 None
@@ -322,7 +324,12 @@ impl AssigneePicker {
             InputMode::Insert => {
                 // Show "/" prompt when in search mode
                 Line::from(vec![
-                    Span::styled("/", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        "/",
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                     Span::styled(&self.search_query, Style::default().fg(Color::White)),
                     Span::styled("▏", Style::default().fg(Color::Yellow)), // Cursor
                 ])
@@ -360,10 +367,7 @@ impl AssigneePicker {
             let mut items: Vec<ListItem> = Vec::with_capacity(1 + self.filtered_indices.len());
 
             // Add "Unassigned" option
-            items.push(
-                ListItem::new("  Unassigned")
-                    .style(Style::default().fg(Color::DarkGray)),
-            );
+            items.push(ListItem::new("  Unassigned").style(Style::default().fg(Color::DarkGray)));
 
             // Add filtered users
             for &idx in &self.filtered_indices {
@@ -401,7 +405,12 @@ impl AssigneePicker {
                 Span::raw(": cancel"),
             ]),
             InputMode::Insert => Line::from(vec![
-                Span::styled("-- SEARCH --", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "-- SEARCH --",
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::raw("  type to filter  "),
                 Span::styled("Enter/Esc", Style::default().fg(Color::Yellow)),
                 Span::raw(": done"),

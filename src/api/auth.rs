@@ -108,12 +108,10 @@ pub fn store_token(profile_name: &str, token: &str) -> Result<()> {
     let entry = keyring::Entry::new(KEYRING_SERVICE, profile_name)
         .map_err(|e| ApiError::Keyring(format!("failed to create keyring entry: {}", e)))?;
 
-    entry
-        .set_password(token)
-        .map_err(|e| {
-            warn!("Failed to store token in keyring");
-            ApiError::Keyring(format!("failed to store token: {}", e))
-        })?;
+    entry.set_password(token).map_err(|e| {
+        warn!("Failed to store token in keyring");
+        ApiError::Keyring(format!("failed to store token: {}", e))
+    })?;
 
     info!("Token stored successfully");
     Ok(())
@@ -135,12 +133,10 @@ pub fn get_token(profile_name: &str) -> Result<String> {
     let entry = keyring::Entry::new(KEYRING_SERVICE, profile_name)
         .map_err(|e| ApiError::Keyring(format!("failed to access keyring: {}", e)))?;
 
-    entry
-        .get_password()
-        .map_err(|e| {
-            warn!("Failed to retrieve token from keyring");
-            ApiError::Keyring(format!("failed to retrieve token: {}", e))
-        })
+    entry.get_password().map_err(|e| {
+        warn!("Failed to retrieve token from keyring");
+        ApiError::Keyring(format!("failed to retrieve token: {}", e))
+    })
 }
 
 /// Delete an API token from the OS keyring.
@@ -159,12 +155,10 @@ pub fn delete_token(profile_name: &str) -> Result<()> {
     let entry = keyring::Entry::new(KEYRING_SERVICE, profile_name)
         .map_err(|e| ApiError::Keyring(format!("failed to access keyring: {}", e)))?;
 
-    entry
-        .delete_password()
-        .map_err(|e| {
-            warn!("Failed to delete token from keyring");
-            ApiError::Keyring(format!("failed to delete token: {}", e))
-        })?;
+    entry.delete_password().map_err(|e| {
+        warn!("Failed to delete token from keyring");
+        ApiError::Keyring(format!("failed to delete token: {}", e))
+    })?;
 
     info!("Token deleted successfully");
     Ok(())

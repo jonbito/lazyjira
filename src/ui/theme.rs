@@ -46,9 +46,7 @@ impl Theme {
 
     /// Get style for table headers.
     pub fn header_style(&self) -> Style {
-        Style::default()
-            .fg(self.fg)
-            .add_modifier(Modifier::BOLD)
+        Style::default().fg(self.fg).add_modifier(Modifier::BOLD)
     }
 
     /// Get style for selected row.

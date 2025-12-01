@@ -35,7 +35,10 @@ pub enum JqlAction {
 const JQL_HINTS: &[(&str, &str)] = &[
     ("project = ", "Filter by project key"),
     ("status = ", "Filter by status name"),
-    ("assignee = ", "Filter by assignee (use currentUser() for self)"),
+    (
+        "assignee = ",
+        "Filter by assignee (use currentUser() for self)",
+    ),
     ("reporter = ", "Filter by reporter"),
     ("priority = ", "Filter by priority"),
     ("labels = ", "Filter by label"),
@@ -318,10 +321,7 @@ impl JqlInput {
                     Style::default().fg(Color::DarkGray),
                 ),
                 Span::raw(" "),
-                Span::styled(
-                    "↑↓:history",
-                    Style::default().fg(Color::Cyan),
-                ),
+                Span::styled("↑↓:history", Style::default().fg(Color::Cyan)),
             ])
         };
 
@@ -350,10 +350,7 @@ mod tests {
 
     #[test]
     fn test_with_history() {
-        let history = vec![
-            "project = TEST".to_string(),
-            "status = Open".to_string(),
-        ];
+        let history = vec!["project = TEST".to_string(), "status = Open".to_string()];
         let input = JqlInput::with_history(history.clone());
         assert_eq!(input.history(), history);
     }
@@ -413,7 +410,10 @@ mod tests {
         }
 
         let action = input.handle_input(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-        assert_eq!(action, Some(JqlAction::Execute("project = TEST".to_string())));
+        assert_eq!(
+            action,
+            Some(JqlAction::Execute("project = TEST".to_string()))
+        );
         assert!(!input.is_visible());
     }
 
@@ -493,15 +493,15 @@ mod tests {
 
     #[test]
     fn test_history_deduplication() {
-        let mut input = JqlInput::with_history(vec![
-            "query1".to_string(),
-            "query2".to_string(),
-        ]);
+        let mut input = JqlInput::with_history(vec!["query1".to_string(), "query2".to_string()]);
 
         // Add query1 again - it should move to front
         input.add_to_history("query1".to_string());
 
-        assert_eq!(input.history(), vec!["query1".to_string(), "query2".to_string()]);
+        assert_eq!(
+            input.history(),
+            vec!["query1".to_string(), "query2".to_string()]
+        );
     }
 
     #[test]
@@ -549,16 +549,31 @@ mod tests {
     #[test]
     fn test_get_hint_for_input() {
         // Test partial matches at the end - the hint triggers when you finish typing the prefix
-        assert_eq!(get_hint_for_input("project ="), Some("Filter by project key"));
-        assert_eq!(get_hint_for_input("status ="), Some("Filter by status name"));
-        assert_eq!(get_hint_for_input("assignee ="), Some("Filter by assignee (use currentUser() for self)"));
+        assert_eq!(
+            get_hint_for_input("project ="),
+            Some("Filter by project key")
+        );
+        assert_eq!(
+            get_hint_for_input("status ="),
+            Some("Filter by status name")
+        );
+        assert_eq!(
+            get_hint_for_input("assignee ="),
+            Some("Filter by assignee (use currentUser() for self)")
+        );
         assert_eq!(get_hint_for_input("ORDER BY"), Some("Sort results"));
 
         // Case insensitive
-        assert_eq!(get_hint_for_input("PROJECT ="), Some("Filter by project key"));
+        assert_eq!(
+            get_hint_for_input("PROJECT ="),
+            Some("Filter by project key")
+        );
 
         // After space should still match since we trim the prefix
-        assert_eq!(get_hint_for_input("project = "), Some("Filter by project key"));
+        assert_eq!(
+            get_hint_for_input("project = "),
+            Some("Filter by project key")
+        );
 
         // No match for unrelated text
         assert!(get_hint_for_input("random text").is_none());
@@ -566,10 +581,7 @@ mod tests {
 
     #[test]
     fn test_history_at_oldest() {
-        let mut input = JqlInput::with_history(vec![
-            "query1".to_string(),
-            "query2".to_string(),
-        ]);
+        let mut input = JqlInput::with_history(vec!["query1".to_string(), "query2".to_string()]);
         input.show();
 
         // Navigate to oldest

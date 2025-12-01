@@ -233,12 +233,10 @@ impl ProfileListView {
             .profiles
             .iter()
             .map(|profile| {
-                let mut spans = vec![
-                    Span::styled(
-                        &profile.name,
-                        Style::default().add_modifier(Modifier::BOLD),
-                    ),
-                ];
+                let mut spans = vec![Span::styled(
+                    &profile.name,
+                    Style::default().add_modifier(Modifier::BOLD),
+                )];
 
                 if profile.is_default {
                     spans.push(Span::styled(
@@ -248,10 +246,7 @@ impl ProfileListView {
                 }
 
                 if !profile.has_token {
-                    spans.push(Span::styled(
-                        " [no token]",
-                        Style::default().fg(Color::Red),
-                    ));
+                    spans.push(Span::styled(" [no token]", Style::default().fg(Color::Red)));
                 }
 
                 let line1 = Line::from(spans);
@@ -693,18 +688,10 @@ impl ProfileFormView {
             .split(inner);
 
         // Render fields
-        self.name_input.render_with_label(
-            frame,
-            chunks[0],
-            "Name",
-            self.focus == FormField::Name,
-        );
-        self.url_input.render_with_label(
-            frame,
-            chunks[1],
-            "URL",
-            self.focus == FormField::Url,
-        );
+        self.name_input
+            .render_with_label(frame, chunks[0], "Name", self.focus == FormField::Name);
+        self.url_input
+            .render_with_label(frame, chunks[1], "URL", self.focus == FormField::Url);
         self.email_input.render_with_label(
             frame,
             chunks[2],
@@ -754,8 +741,8 @@ impl ProfileFormView {
             }
         };
 
-        let button = Paragraph::new(Span::styled(button_text, button_style))
-            .alignment(Alignment::Center);
+        let button =
+            Paragraph::new(Span::styled(button_text, button_style)).alignment(Alignment::Center);
         frame.render_widget(button, chunks[5]);
     }
 }
@@ -857,9 +844,7 @@ impl DeleteProfileDialog {
         let block = Block::default()
             .title(Span::styled(
                 " Delete Profile ",
-                Style::default()
-                    .fg(Color::Red)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
             ))
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::Red));

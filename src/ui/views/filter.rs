@@ -205,7 +205,8 @@ impl FilterPanelView {
         self.components_select.set_items(component_items);
 
         // Add "Current Sprint" as a special option
-        let mut sprint_items: Vec<SelectItem> = vec![SelectItem::new("__current__", "Current Sprint")];
+        let mut sprint_items: Vec<SelectItem> =
+            vec![SelectItem::new("__current__", "Current Sprint")];
         sprint_items.extend(
             options
                 .sprints

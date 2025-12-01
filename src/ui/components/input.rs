@@ -256,9 +256,11 @@ impl TextInput {
             Style::default().fg(Color::DarkGray)
         };
 
-        let input = Paragraph::new(display)
-            .style(style)
-            .block(Block::default().borders(Borders::ALL).border_style(border_style));
+        let input = Paragraph::new(display).style(style).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(border_style),
+        );
 
         frame.render_widget(input, area);
 

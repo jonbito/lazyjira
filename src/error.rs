@@ -181,7 +181,10 @@ mod tests {
     fn test_app_error_from_config_error() {
         let config_err = ConfigError::NoConfigDir;
         let app_err: AppError = config_err.into();
-        assert!(matches!(app_err, AppError::Config(ConfigError::NoConfigDir)));
+        assert!(matches!(
+            app_err,
+            AppError::Config(ConfigError::NoConfigDir)
+        ));
     }
 
     #[test]
@@ -217,7 +220,9 @@ mod tests {
 
     #[test]
     fn test_user_message_config_validation() {
-        let err = AppError::Config(ConfigError::ValidationError("duplicate profile".to_string()));
+        let err = AppError::Config(ConfigError::ValidationError(
+            "duplicate profile".to_string(),
+        ));
         let msg = err.user_message();
         assert!(msg.contains("duplicate profile"));
     }

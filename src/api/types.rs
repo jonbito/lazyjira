@@ -139,12 +139,18 @@ impl Issue {
 
     /// Get the assignee display name, if assigned.
     pub fn assignee(&self) -> Option<&str> {
-        self.fields.assignee.as_ref().map(|a| a.display_name.as_str())
+        self.fields
+            .assignee
+            .as_ref()
+            .map(|a| a.display_name.as_str())
     }
 
     /// Get the reporter display name, if set.
     pub fn reporter(&self) -> Option<&str> {
-        self.fields.reporter.as_ref().map(|r| r.display_name.as_str())
+        self.fields
+            .reporter
+            .as_ref()
+            .map(|r| r.display_name.as_str())
     }
 
     /// Get the assignee display name, or "Unassigned" if not set.
@@ -554,8 +560,7 @@ impl AtlassianDoc {
                     }
                     Some("emoji") => {
                         if let Some(attrs) = obj.get("attrs") {
-                            if let Some(shortname) =
-                                attrs.get("shortName").and_then(|s| s.as_str())
+                            if let Some(shortname) = attrs.get("shortName").and_then(|s| s.as_str())
                             {
                                 result.push_str(shortname);
                             }
@@ -2225,7 +2230,15 @@ mod tests {
         assert_eq!(response.transitions[0].id, "11");
         assert_eq!(response.transitions[0].name, "Start Progress");
         assert_eq!(response.transitions[0].to.name, "In Progress");
-        assert_eq!(response.transitions[1].to.status_category.as_ref().unwrap().key, "done");
+        assert_eq!(
+            response.transitions[1]
+                .to
+                .status_category
+                .as_ref()
+                .unwrap()
+                .key,
+            "done"
+        );
     }
 
     #[test]

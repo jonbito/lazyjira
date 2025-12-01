@@ -220,7 +220,9 @@ impl TagEditor {
         match (key.code, key.modifiers) {
             // Navigation down with j or arrow
             (KeyCode::Char('j'), KeyModifiers::NONE) | (KeyCode::Down, _) => {
-                if self.focused_count() > 0 && self.selected < self.focused_count().saturating_sub(1) {
+                if self.focused_count() > 0
+                    && self.selected < self.focused_count().saturating_sub(1)
+                {
                     self.selected += 1;
                 }
                 None
@@ -274,7 +276,9 @@ impl TagEditor {
             }
             // Arrow keys still work for navigation in search mode
             (KeyCode::Down, _) => {
-                if self.focused_count() > 0 && self.selected < self.focused_count().saturating_sub(1) {
+                if self.focused_count() > 0
+                    && self.selected < self.focused_count().saturating_sub(1)
+                {
                     self.selected += 1;
                 }
                 None
@@ -419,8 +423,8 @@ impl TagEditor {
         frame.render_widget(block, area);
 
         if self.current_tags.is_empty() {
-            let empty_text = Paragraph::new("No tags assigned")
-                .style(Style::default().fg(Color::DarkGray));
+            let empty_text =
+                Paragraph::new("No tags assigned").style(Style::default().fg(Color::DarkGray));
             frame.render_widget(empty_text, inner);
         } else if self.focus_on_current {
             // When focused, show as a list for selection
@@ -479,7 +483,12 @@ impl TagEditor {
                 InputMode::Insert => {
                     // Show "/" prompt when in search mode
                     Line::from(vec![
-                        Span::styled("/", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                        Span::styled(
+                            "/",
+                            Style::default()
+                                .fg(Color::Yellow)
+                                .add_modifier(Modifier::BOLD),
+                        ),
                         Span::styled(&self.search_query, Style::default().fg(Color::White)),
                         Span::styled("▏", Style::default().fg(Color::Yellow)), // Cursor
                     ])
@@ -531,8 +540,7 @@ impl TagEditor {
             } else {
                 "No matching options"
             };
-            let paragraph = Paragraph::new(empty_text)
-                .style(Style::default().fg(Color::DarkGray));
+            let paragraph = Paragraph::new(empty_text).style(Style::default().fg(Color::DarkGray));
             frame.render_widget(paragraph, inner);
         } else {
             let items: Vec<ListItem> = self
@@ -604,16 +612,18 @@ impl TagEditor {
                 }
             }
             InputMode::Insert => Line::from(vec![
-                Span::styled("-- SEARCH --", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "-- SEARCH --",
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::raw("  type to filter  "),
                 Span::styled("Enter/Esc", Style::default().fg(Color::Yellow)),
                 Span::raw(": done"),
             ]),
         };
-        frame.render_widget(
-            Paragraph::new(help_text).alignment(Alignment::Center),
-            area,
-        );
+        frame.render_widget(Paragraph::new(help_text).alignment(Alignment::Center), area);
     }
 }
 

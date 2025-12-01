@@ -64,11 +64,7 @@ impl ProfilePicker {
         self.current_profile = current.to_string();
 
         // Find the index of the current profile
-        self.selected = self
-            .profiles
-            .iter()
-            .position(|n| n == current)
-            .unwrap_or(0);
+        self.selected = self.profiles.iter().position(|n| n == current).unwrap_or(0);
 
         self.list_state.select(Some(self.selected));
         self.visible = true;
@@ -155,7 +151,8 @@ impl ProfilePicker {
         let max_visible_items = 10u16;
         let item_count = self.profiles.len() as u16;
         // Height: title (1) + border (2) + items + hint (1) + margin (1)
-        let dialog_height = (item_count.min(max_visible_items) + 5).min(area.height.saturating_sub(4));
+        let dialog_height =
+            (item_count.min(max_visible_items) + 5).min(area.height.saturating_sub(4));
 
         let dialog_area = centered_rect(area, dialog_width, dialog_height);
 
@@ -288,10 +285,7 @@ mod tests {
     #[test]
     fn test_navigation_down() {
         let mut picker = ProfilePicker::new();
-        picker.show(
-            vec!["a".to_string(), "b".to_string(), "c".to_string()],
-            "a",
-        );
+        picker.show(vec!["a".to_string(), "b".to_string(), "c".to_string()], "a");
 
         assert_eq!(picker.selected, 0);
 
@@ -312,10 +306,7 @@ mod tests {
     #[test]
     fn test_navigation_up() {
         let mut picker = ProfilePicker::new();
-        picker.show(
-            vec!["a".to_string(), "b".to_string(), "c".to_string()],
-            "c",
-        );
+        picker.show(vec!["a".to_string(), "b".to_string(), "c".to_string()], "c");
         assert_eq!(picker.selected, 2);
 
         // Move up with Up arrow
@@ -395,10 +386,7 @@ mod tests {
     #[test]
     fn test_navigation_with_j_k() {
         let mut picker = ProfilePicker::new();
-        picker.show(
-            vec!["a".to_string(), "b".to_string(), "c".to_string()],
-            "a",
-        );
+        picker.show(vec!["a".to_string(), "b".to_string(), "c".to_string()], "a");
 
         assert_eq!(picker.selected, 0);
 

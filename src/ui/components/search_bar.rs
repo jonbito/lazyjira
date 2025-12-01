@@ -101,7 +101,12 @@ impl QuickSearch {
             .filter(|(_, issue)| {
                 issue.key.to_lowercase().contains(&query_lower)
                     || issue.fields.summary.to_lowercase().contains(&query_lower)
-                    || issue.fields.status.name.to_lowercase().contains(&query_lower)
+                    || issue
+                        .fields
+                        .status
+                        .name
+                        .to_lowercase()
+                        .contains(&query_lower)
             })
             .map(|(i, _)| i)
             .collect();

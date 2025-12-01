@@ -123,9 +123,10 @@ impl JiraClient {
             error!("Connection validation failed: {}", e);
             match e {
                 ApiError::Unauthorized => e,
-                ApiError::Network(ref _err) => {
-                    ApiError::ConnectionFailed(format!("Cannot connect to {}: {}", self.base_url, e))
-                }
+                ApiError::Network(ref _err) => ApiError::ConnectionFailed(format!(
+                    "Cannot connect to {}: {}",
+                    self.base_url, e
+                )),
                 _ => ApiError::ConnectionFailed(e.to_string()),
             }
         })?;
@@ -183,7 +184,11 @@ impl JiraClient {
         max_results: u32,
         next_page_token: Option<&str>,
     ) -> Result<SearchResult> {
-        debug!("Searching issues: maxResults={}, has_token={}", max_results, next_page_token.is_some());
+        debug!(
+            "Searching issues: maxResults={}, has_token={}",
+            max_results,
+            next_page_token.is_some()
+        );
 
         let url = format!("{}/rest/api/3/search/jql", self.base_url);
 
@@ -198,7 +203,11 @@ impl JiraClient {
         }
 
         let result: SearchResult = self.post(&url, &body).await?;
-        debug!("Found {} issues (total: {})", result.issues.len(), result.total);
+        debug!(
+            "Found {} issues (total: {})",
+            result.issues.len(),
+            result.total
+        );
         Ok(result)
     }
 
@@ -344,10 +353,17 @@ impl JiraClient {
                 ApiError::InvalidResponse(format!("Failed to read response body: {}", e))
             })?;
 
-            debug!("Response body (first 500 chars): {}", &body_text.chars().take(500).collect::<String>());
+            debug!(
+                "Response body (first 500 chars): {}",
+                &body_text.chars().take(500).collect::<String>()
+            );
 
             serde_json::from_str::<T>(&body_text).map_err(|e| {
-                error!("Failed to parse JSON. Error: {}. Body preview: {}", e, &body_text.chars().take(1000).collect::<String>());
+                error!(
+                    "Failed to parse JSON. Error: {}. Body preview: {}",
+                    e,
+                    &body_text.chars().take(1000).collect::<String>()
+                );
                 ApiError::InvalidResponse(format!("Failed to parse response: {}", e))
             })
         } else {
@@ -402,10 +418,8 @@ impl JiraClient {
                 }
                 if let Some(errors) = json.get("errors") {
                     if let Some(obj) = errors.as_object() {
-                        let error_strings: Vec<String> = obj
-                            .iter()
-                            .map(|(k, v)| format!("{}: {}", k, v))
-                            .collect();
+                        let error_strings: Vec<String> =
+                            obj.iter().map(|(k, v)| format!("{}: {}", k, v)).collect();
                         if !error_strings.is_empty() {
                             return ApiError::from_status(status, &error_strings.join(", "));
                         }
@@ -422,11 +436,7 @@ impl JiraClient {
     ///
     /// Includes retry logic for transient failures (rate limiting, server errors).
     #[instrument(skip(self, body), fields(url = %url))]
-    async fn put<B: serde::Serialize + std::fmt::Debug>(
-        &self,
-        url: &str,
-        body: &B,
-    ) -> Result<()> {
+    async fn put<B: serde::Serialize + std::fmt::Debug>(&self, url: &str, body: &B) -> Result<()> {
         let mut attempts = 0;
         let mut last_error: Option<ApiError> = None;
 
@@ -482,7 +492,10 @@ impl JiraClient {
 
         while attempts < MAX_RETRIES {
             attempts += 1;
-            debug!("POST (no content) request attempt {}/{}", attempts, MAX_RETRIES);
+            debug!(
+                "POST (no content) request attempt {}/{}",
+                attempts, MAX_RETRIES
+            );
 
             match self.execute_post_no_content(url, body).await {
                 Ok(()) => return Ok(()),
@@ -506,7 +519,11 @@ impl JiraClient {
     }
 
     /// Execute a single POST request that returns no body.
-    async fn execute_post_no_content<B: serde::Serialize>(&self, url: &str, body: &B) -> Result<()> {
+    async fn execute_post_no_content<B: serde::Serialize>(
+        &self,
+        url: &str,
+        body: &B,
+    ) -> Result<()> {
         let response = self
             .client
             .post(url)
@@ -796,7 +813,10 @@ impl JiraClient {
         fields: Option<FieldUpdates>,
     ) -> Result<()> {
         let url = format!("{}/rest/api/3/issue/{}/transitions", self.base_url, key);
-        info!("Transitioning issue {} via transition {}", key, transition_id);
+        info!(
+            "Transitioning issue {} via transition {}",
+            key, transition_id
+        );
 
         let request = TransitionRequest {
             transition: TransitionRef::new(transition_id),
@@ -901,8 +921,7 @@ impl JiraClient {
     /// * `labels` - The labels to add
     #[instrument(skip(self, labels), fields(issue_key = %key))]
     pub async fn add_labels(&self, key: &str, labels: Vec<String>) -> Result<()> {
-        let operations: Vec<LabelOperation> =
-            labels.into_iter().map(LabelOperation::Add).collect();
+        let operations: Vec<LabelOperation> = labels.into_iter().map(LabelOperation::Add).collect();
 
         let update = IssueUpdateRequest {
             fields: None,
@@ -1067,8 +1086,9 @@ impl JiraClient {
         info!("Adding comment to issue {}", key);
         let url = format!("{}/rest/api/3/issue/{}/comment", self.base_url, key);
         let request = AddCommentRequest::from_text(body);
-        let json_value = serde_json::to_value(request)
-            .map_err(|e| ApiError::InvalidResponse(format!("Failed to serialize comment: {}", e)))?;
+        let json_value = serde_json::to_value(request).map_err(|e| {
+            ApiError::InvalidResponse(format!("Failed to serialize comment: {}", e))
+        })?;
         let comment: Comment = self.post(&url, &json_value).await?;
         info!("Successfully added comment {} to issue {}", comment.id, key);
         Ok(comment)
@@ -1081,7 +1101,10 @@ fn normalize_base_url(url: &str) -> String {
 
     // Warn if not HTTPS (but don't enforce for localhost/testing)
     if !url.starts_with("https://") && !url.contains("localhost") {
-        warn!("URL does not use HTTPS: {}. This is insecure for production use.", url);
+        warn!(
+            "URL does not use HTTPS: {}. This is insecure for production use.",
+            url
+        );
     }
 
     url.to_string()

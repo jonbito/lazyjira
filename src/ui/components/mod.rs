@@ -3,6 +3,7 @@
 mod assignee_picker;
 mod command_palette;
 mod comments;
+mod external_editor;
 mod help_bar;
 mod input;
 mod issue_search_picker;
@@ -24,6 +25,7 @@ mod transition_picker;
 pub use assignee_picker::{AssigneeAction, AssigneePicker};
 pub use command_palette::{CommandPalette, CommandPaletteAction};
 pub use comments::{CommentAction, CommentPanelMode, CommentsPanel};
+pub use external_editor::{ExternalEditResult, ExternalEditor, ExternalEditorError};
 pub use help_bar::render_context_help;
 pub use input::{InputMode, TextInput};
 pub use issue_search_picker::{IssueSearchPicker, IssueSearchPickerAction};

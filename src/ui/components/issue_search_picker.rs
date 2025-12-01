@@ -335,7 +335,7 @@ mod tests {
             key: key.to_string(),
             summary_text: Some(summary.to_string()),
             summary: None,
-            id: Some("123".to_string()),
+            id: Some(123),
         }
     }
 

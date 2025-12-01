@@ -917,6 +917,9 @@ impl App {
     pub fn handle_issue_update_success(&mut self, updated_issue: Issue) {
         info!(key = %updated_issue.key, "Issue updated successfully");
 
+        // Clear saving state
+        self.detail_view.set_saving(false);
+
         // Update the detail view with the updated issue
         self.detail_view.set_issue(updated_issue.clone());
 

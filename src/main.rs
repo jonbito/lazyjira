@@ -533,6 +533,36 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
             }
         }
 
+        // Handle issue update request (summary/description edits)
+        if let Some((issue_key, update_request)) = app.take_pending_issue_update() {
+            if let Some(ref c) = client {
+                debug!("Updating issue {}", issue_key);
+                match c.update_issue(&issue_key, update_request).await {
+                    Ok(()) => {
+                        // Fetch the updated issue to refresh the view
+                        match c.get_issue(&issue_key).await {
+                            Ok(updated_issue) => {
+                                info!("Issue {} updated successfully", issue_key);
+                                app.handle_issue_update_success(updated_issue);
+                            }
+                            Err(e) => {
+                                // Update succeeded but fetch failed - still notify success
+                                warn!("Issue updated but failed to fetch: {}", e);
+                                app.detail_view_mut().set_saving(false);
+                                app.notify_success(format!("Issue {} updated", issue_key));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to update issue: {}", e);
+                        app.handle_issue_update_failure(&e.to_string());
+                    }
+                }
+            } else {
+                app.handle_issue_update_failure("No JIRA connection");
+            }
+        }
+
         // Handle fetch labels request
         if let Some(_issue_key) = app.take_pending_fetch_labels() {
             if let Some(ref c) = client {

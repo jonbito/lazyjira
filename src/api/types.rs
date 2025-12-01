@@ -1039,9 +1039,10 @@ pub struct FieldUpdates {
     /// Update the issue description (in Atlassian Document Format).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<AtlassianDoc>,
-    /// Update the assignee.
+    /// Update the assignee. Use `NullableUserRef::unassign()` to unassign,
+    /// or `NullableUserRef::assign(id)` to assign.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub assignee: Option<UserRef>,
+    pub assignee: Option<NullableUserRef>,
     /// Update the priority.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub priority: Option<PriorityRef>,
@@ -1072,6 +1073,40 @@ impl UserRef {
     /// Create an "unassigned" user reference (null assignee).
     pub fn unassigned() -> Option<Self> {
         None
+    }
+}
+
+/// Nullable user reference that explicitly serializes as `null` when unassigning.
+///
+/// This is needed because Jira API requires `"assignee": null` to unassign,
+/// but serde's `skip_serializing_if` would omit the field entirely.
+///
+/// - `NullableUserRef(None)` serializes as `null` (unassign)
+/// - `NullableUserRef(Some(ref))` serializes as the user ref (assign)
+#[derive(Debug, Clone, PartialEq)]
+pub struct NullableUserRef(pub Option<UserRef>);
+
+impl NullableUserRef {
+    /// Create a nullable reference for assigning to a user.
+    pub fn assign(account_id: impl Into<String>) -> Self {
+        Self(Some(UserRef::new(account_id)))
+    }
+
+    /// Create a nullable reference for unassigning (serializes as null).
+    pub fn unassign() -> Self {
+        Self(None)
+    }
+}
+
+impl serde::Serialize for NullableUserRef {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match &self.0 {
+            Some(user_ref) => user_ref.serialize(serializer),
+            None => serializer.serialize_none(),
+        }
     }
 }
 
@@ -2253,7 +2288,7 @@ mod tests {
         let update = IssueUpdateRequest {
             fields: Some(FieldUpdates {
                 summary: Some("New title".to_string()),
-                assignee: Some(UserRef::new("user123")),
+                assignee: Some(NullableUserRef::assign("user123")),
                 priority: Some(PriorityRef::new("2")),
                 story_points: Some(3.0),
                 ..Default::default()
@@ -2273,5 +2308,38 @@ mod tests {
         assert!(json.contains("\"customfield_10016\":3.0"));
         assert!(json.contains(r#"{"add":"urgent"}"#));
         assert!(json.contains(r#"{"add":{"name":"API"}}"#));
+    }
+
+    #[test]
+    fn test_nullable_user_ref_assign_serialization() {
+        // Assigning to a user should serialize the account ID
+        let assign = NullableUserRef::assign("user456");
+        let json = serde_json::to_string(&assign).unwrap();
+        assert_eq!(json, r#"{"accountId":"user456"}"#);
+    }
+
+    #[test]
+    fn test_nullable_user_ref_unassign_serialization() {
+        // Unassigning should serialize as null
+        let unassign = NullableUserRef::unassign();
+        let json = serde_json::to_string(&unassign).unwrap();
+        assert_eq!(json, "null");
+    }
+
+    #[test]
+    fn test_unassign_issue_request_serialization() {
+        // Full request to unassign should include "assignee": null
+        let update = IssueUpdateRequest {
+            fields: Some(FieldUpdates {
+                assignee: Some(NullableUserRef::unassign()),
+                ..Default::default()
+            }),
+            update: None,
+        };
+
+        let json = serde_json::to_string(&update).unwrap();
+        assert!(json.contains(r#""assignee":null"#));
+        // The full JSON should be: {"fields":{"assignee":null}}
+        assert_eq!(json, r#"{"fields":{"assignee":null}}"#);
     }
 }

@@ -18,7 +18,7 @@ mod transition_picker;
 
 pub use assignee_picker::{AssigneeAction, AssigneePicker};
 pub use comments::{CommentAction, CommentPanelMode, CommentsPanel};
-pub use input::TextInput;
+pub use input::{InputMode, TextInput};
 pub use jql_input::{JqlAction, JqlInput};
 pub use loading::{InlineLoader, LoadingIndicator, SpinnerStyle};
 pub use modal::{ConfirmDialog, ErrorDialog, Modal};

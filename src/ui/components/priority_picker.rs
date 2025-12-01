@@ -125,14 +125,14 @@ impl PriorityPicker {
         }
 
         match (key.code, key.modifiers) {
-            // Navigation down
+            // Navigation down with j or arrow
             (KeyCode::Char('j'), KeyModifiers::NONE) | (KeyCode::Down, _) => {
                 if !self.priorities.is_empty() && self.selected < self.priorities.len() - 1 {
                     self.selected += 1;
                 }
                 None
             }
-            // Navigation up
+            // Navigation up with k or arrow
             (KeyCode::Char('k'), KeyModifiers::NONE) | (KeyCode::Up, _) => {
                 if self.selected > 0 {
                     self.selected -= 1;
@@ -149,7 +149,7 @@ impl PriorityPicker {
                     None
                 }
             }
-            // Cancel
+            // Cancel with q or Esc
             (KeyCode::Esc, KeyModifiers::NONE) | (KeyCode::Char('q'), KeyModifiers::NONE) => {
                 self.hide();
                 Some(PriorityAction::Cancel)
@@ -237,6 +237,7 @@ impl PriorityPicker {
             let list = List::new(items)
                 .highlight_style(
                     Style::default()
+                        .fg(Color::White)
                         .bg(Color::DarkGray)
                         .add_modifier(Modifier::BOLD),
                 )
@@ -254,7 +255,7 @@ impl PriorityPicker {
             Span::raw(": navigate  "),
             Span::styled("Enter", Style::default().fg(Color::Green)),
             Span::raw(": select  "),
-            Span::styled("Esc", Style::default().fg(Color::Red)),
+            Span::styled("q/Esc", Style::default().fg(Color::Red)),
             Span::raw(": cancel"),
         ]);
         frame.render_widget(
@@ -385,8 +386,8 @@ mod tests {
         // Initial selection is 0 (Highest)
         assert_eq!(picker.selected, 0);
 
-        // Navigate down
-        let key = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
+        // Navigate down with arrow key
+        let key = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
         let action = picker.handle_input(key);
         assert!(action.is_none());
         assert_eq!(picker.selected, 1);
@@ -410,8 +411,8 @@ mod tests {
         // Preselected to Lowest (index 4)
         assert_eq!(picker.selected, 4);
 
-        // Navigate up
-        let key = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE);
+        // Navigate up with arrow key
+        let key = KeyEvent::new(KeyCode::Up, KeyModifiers::NONE);
         let action = picker.handle_input(key);
         assert!(action.is_none());
         assert_eq!(picker.selected, 3);
@@ -433,8 +434,8 @@ mod tests {
         let mut picker = PriorityPicker::new();
         picker.show(create_standard_priorities(), "Highest");
 
-        // Navigate to "High"
-        let down = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
+        // Navigate to "High" with arrow key
+        let down = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
         picker.handle_input(down);
         assert_eq!(picker.selected, 1);
 
@@ -466,11 +467,30 @@ mod tests {
         let mut picker = PriorityPicker::new();
         picker.show(create_standard_priorities(), "High");
 
+        // 'q' should cancel (vim-style)
         let key = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE);
         let action = picker.handle_input(key);
 
         assert_eq!(action, Some(PriorityAction::Cancel));
         assert!(!picker.is_visible());
+    }
+
+    #[test]
+    fn test_navigation_with_j_k() {
+        let mut picker = PriorityPicker::new();
+        picker.show(create_standard_priorities(), "Highest");
+
+        assert_eq!(picker.selected, 0);
+
+        // Move down with j
+        let key = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
+        picker.handle_input(key);
+        assert_eq!(picker.selected, 1);
+
+        // Move up with k
+        let key = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE);
+        picker.handle_input(key);
+        assert_eq!(picker.selected, 0);
     }
 
     #[test]

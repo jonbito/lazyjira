@@ -118,7 +118,7 @@ impl ProfilePicker {
     /// Returns an optional action when the user makes a selection or cancels.
     pub fn handle_input(&mut self, key: KeyEvent) -> Option<ProfilePickerAction> {
         match (key.code, key.modifiers) {
-            // Navigation
+            // Navigation with j/k or arrow keys
             (KeyCode::Char('j'), KeyModifiers::NONE) | (KeyCode::Down, _) => {
                 self.move_down();
                 None
@@ -135,7 +135,7 @@ impl ProfilePicker {
                     .cloned()
                     .map(ProfilePickerAction::Select)
             }
-            // Cancel
+            // Cancel with q or Esc
             (KeyCode::Esc, _) | (KeyCode::Char('q'), KeyModifiers::NONE) => {
                 self.visible = false;
                 Some(ProfilePickerAction::Cancel)
@@ -214,6 +214,7 @@ impl ProfilePicker {
         let list = List::new(items)
             .highlight_style(
                 Style::default()
+                    .fg(Color::White)
                     .bg(Color::DarkGray)
                     .add_modifier(Modifier::BOLD),
             )
@@ -223,7 +224,7 @@ impl ProfilePicker {
 
         // Render hint
         let hint = ratatui::widgets::Paragraph::new(Span::styled(
-            "j/k:navigate  Enter:select  Esc:cancel",
+            "j/k:navigate  Enter:select  q/Esc:cancel",
             Style::default().fg(Color::DarkGray),
         ))
         .alignment(ratatui::layout::Alignment::Center);
@@ -294,13 +295,12 @@ mod tests {
 
         assert_eq!(picker.selected, 0);
 
-        // Move down with 'j'
-        let key = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
+        // Move down with Down arrow
+        let key = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
         picker.handle_input(key);
         assert_eq!(picker.selected, 1);
 
-        // Move down with Down arrow
-        let key = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
+        // Move down again
         picker.handle_input(key);
         assert_eq!(picker.selected, 2);
 
@@ -318,13 +318,12 @@ mod tests {
         );
         assert_eq!(picker.selected, 2);
 
-        // Move up with 'k'
-        let key = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE);
+        // Move up with Up arrow
+        let key = KeyEvent::new(KeyCode::Up, KeyModifiers::NONE);
         picker.handle_input(key);
         assert_eq!(picker.selected, 1);
 
-        // Move up with Up arrow
-        let key = KeyEvent::new(KeyCode::Up, KeyModifiers::NONE);
+        // Move up again
         picker.handle_input(key);
         assert_eq!(picker.selected, 0);
 
@@ -338,8 +337,8 @@ mod tests {
         let mut picker = ProfilePicker::new();
         picker.show(vec!["work".to_string(), "personal".to_string()], "work");
 
-        // Navigate to second item
-        let key = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
+        // Navigate to second item with arrow key
+        let key = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
         picker.handle_input(key);
 
         // Press Enter
@@ -370,6 +369,7 @@ mod tests {
         let mut picker = ProfilePicker::new();
         picker.show(vec!["work".to_string()], "work");
 
+        // 'q' should cancel (vim-style)
         let key = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE);
         let action = picker.handle_input(key);
 
@@ -387,7 +387,28 @@ mod tests {
         assert!(picker.selected_profile().is_none());
 
         // Navigation should not panic
+        let key = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
+        picker.handle_input(key);
+        assert_eq!(picker.selected, 0);
+    }
+
+    #[test]
+    fn test_navigation_with_j_k() {
+        let mut picker = ProfilePicker::new();
+        picker.show(
+            vec!["a".to_string(), "b".to_string(), "c".to_string()],
+            "a",
+        );
+
+        assert_eq!(picker.selected, 0);
+
+        // Move down with j
         let key = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
+        picker.handle_input(key);
+        assert_eq!(picker.selected, 1);
+
+        // Move up with k
+        let key = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE);
         picker.handle_input(key);
         assert_eq!(picker.selected, 0);
     }

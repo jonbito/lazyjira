@@ -252,8 +252,8 @@ impl CommentsPanel {
                 self.start_composing();
                 None
             }
-            // Close panel
-            (KeyCode::Esc, KeyModifiers::NONE) | (KeyCode::Char('q'), KeyModifiers::NONE) => {
+            // Close panel (Esc only for consistency with other dialogs)
+            (KeyCode::Esc, KeyModifiers::NONE) => {
                 self.hide();
                 Some(CommentAction::Cancel)
             }
@@ -363,7 +363,7 @@ impl CommentsPanel {
             Span::raw(": scroll  "),
             Span::styled("a/c", Style::default().fg(Color::Green)),
             Span::raw(": add comment  "),
-            Span::styled("q/Esc", Style::default().fg(Color::Red)),
+            Span::styled("Esc", Style::default().fg(Color::Red)),
             Span::raw(": close"),
         ]);
         let help_paragraph = Paragraph::new(help_text).alignment(Alignment::Center);
@@ -689,16 +689,17 @@ mod tests {
     }
 
     #[test]
-    fn test_cancel_with_q() {
+    fn test_q_is_unhandled() {
         let mut panel = CommentsPanel::new();
         panel.show("TEST-123");
         panel.set_comments(vec![], 0);
 
+        // 'q' should not cancel anymore (only Esc cancels)
         let key = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE);
         let action = panel.handle_input(key);
 
-        assert_eq!(action, Some(CommentAction::Cancel));
-        assert!(!panel.is_visible());
+        assert!(action.is_none());
+        assert!(panel.is_visible());
     }
 
     #[test]

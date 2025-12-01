@@ -174,11 +174,12 @@ impl MultiSelect {
     /// Returns true if the input was handled.
     pub fn handle_input(&mut self, key: KeyEvent) -> bool {
         match (key.code, key.modifiers) {
-            (KeyCode::Char('j'), KeyModifiers::NONE) | (KeyCode::Down, _) => {
+            // Navigation (arrow keys only to allow typing in text inputs)
+            (KeyCode::Down, _) => {
                 self.move_down();
                 true
             }
-            (KeyCode::Char('k'), KeyModifiers::NONE) | (KeyCode::Up, _) => {
+            (KeyCode::Up, _) => {
                 self.move_up();
                 true
             }
@@ -190,11 +191,11 @@ impl MultiSelect {
                 self.select_all();
                 true
             }
-            (KeyCode::Char('g'), KeyModifiers::NONE) => {
+            (KeyCode::Home, _) => {
                 self.move_to_start();
                 true
             }
-            (KeyCode::Char('G'), KeyModifiers::SHIFT) | (KeyCode::Char('G'), KeyModifiers::NONE) => {
+            (KeyCode::End, _) => {
                 self.move_to_end();
                 true
             }
@@ -258,10 +259,11 @@ impl MultiSelect {
 
         let highlight_style = if focused {
             Style::default()
+                .fg(Color::White)
                 .bg(Color::DarkGray)
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().bg(Color::DarkGray)
+            Style::default().fg(Color::White).bg(Color::DarkGray)
         };
 
         let list = List::new(items)
@@ -383,13 +385,13 @@ mod tests {
         let mut ms = MultiSelect::new("Test");
         ms.set_items(create_test_items());
 
-        // j moves down
-        let handled = ms.handle_input(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
+        // Down arrow moves down
+        let handled = ms.handle_input(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
         assert!(handled);
         assert_eq!(ms.cursor, 1);
 
-        // k moves up
-        let handled = ms.handle_input(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE));
+        // Up arrow moves up
+        let handled = ms.handle_input(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
         assert!(handled);
         assert_eq!(ms.cursor, 0);
 
@@ -398,8 +400,8 @@ mod tests {
         assert!(handled);
         assert!(ms.is_selected("1"));
 
-        // Unhandled key
-        let handled = ms.handle_input(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE));
+        // Character keys are unhandled (allow typing)
+        let handled = ms.handle_input(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
         assert!(!handled);
     }
 

@@ -5,8 +5,31 @@
 //! - Cursor movement (left/right, home/end)
 //! - Password masking for sensitive fields
 //! - Visual focus indication
+//!
+//! ## Input Mode
+//!
+//! The `InputMode` enum indicates whether a component is in navigation
+//! mode (where keys like j/k control movement) or insert mode (where
+//! all character keys are sent to the text input).
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+/// Input mode for components that support both navigation and text input.
+///
+/// This enum helps standardize behavior across the application:
+/// - In `Normal` mode, keys like j/k can be used for navigation
+/// - In `Insert` mode, all character keys go to the focused text input
+///
+/// Components should switch to `Insert` mode when a text field gains focus,
+/// and back to `Normal` mode when the user presses Esc or the field loses focus.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum InputMode {
+    /// Normal/navigation mode - j/k/q and other keys work as shortcuts.
+    #[default]
+    Normal,
+    /// Insert/editing mode - all character keys go to text input.
+    Insert,
+}
 use ratatui::{
     layout::{Position, Rect},
     style::{Color, Modifier, Style},

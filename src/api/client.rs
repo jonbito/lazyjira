@@ -14,7 +14,7 @@ use super::types::{
     AddCommentRequest, BoardsResponse, Comment, CommentsResponse, CurrentUser, FieldUpdates,
     FilterOption, FilterOptions, Issue, IssueUpdateRequest, LabelOperation, LabelsResponse,
     Priority, Project, SearchResult, SprintsResponse, Status, Transition, TransitionRef,
-    TransitionRequest, TransitionsResponse, UpdateOperations, User, UserRef,
+    TransitionRequest, TransitionsResponse, UpdateOperations, User,
 };
 use crate::config::Profile;
 
@@ -858,9 +858,16 @@ impl JiraClient {
     /// * `account_id` - The account ID of the new assignee, or None to unassign
     #[instrument(skip(self), fields(issue_key = %key))]
     pub async fn update_assignee(&self, key: &str, account_id: Option<&str>) -> Result<()> {
+        use super::types::NullableUserRef;
+
+        let assignee = match account_id {
+            Some(id) => NullableUserRef::assign(id),
+            None => NullableUserRef::unassign(), // Explicitly serializes as null
+        };
+
         let update = IssueUpdateRequest {
             fields: Some(FieldUpdates {
-                assignee: account_id.map(|id| UserRef::new(id)),
+                assignee: Some(assignee),
                 ..Default::default()
             }),
             update: None,

@@ -813,12 +813,12 @@ impl DeleteProfileDialog {
     /// Returns Some(true) if confirmed, Some(false) if cancelled, None otherwise.
     pub fn handle_input(&mut self, key: KeyEvent) -> Option<bool> {
         match (key.code, key.modifiers) {
-            // Confirm
+            // Confirm with Y shortcut
             (KeyCode::Char('y'), KeyModifiers::NONE) | (KeyCode::Char('Y'), _) => {
                 self.hide();
                 Some(true)
             }
-            // Cancel
+            // Cancel with N shortcut or Esc
             (KeyCode::Char('n'), KeyModifiers::NONE)
             | (KeyCode::Char('N'), _)
             | (KeyCode::Esc, _) => {
@@ -830,12 +830,8 @@ impl DeleteProfileDialog {
                 self.hide();
                 Some(self.selected_confirm)
             }
-            // Tab/Arrow to toggle
-            (KeyCode::Tab, _)
-            | (KeyCode::Left, _)
-            | (KeyCode::Right, _)
-            | (KeyCode::Char('h'), KeyModifiers::NONE)
-            | (KeyCode::Char('l'), KeyModifiers::NONE) => {
+            // Tab/Arrow to toggle (no h/l to allow typing those chars in text inputs)
+            (KeyCode::Tab, _) | (KeyCode::Left, _) | (KeyCode::Right, _) => {
                 self.toggle_selection();
                 None
             }

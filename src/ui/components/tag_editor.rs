@@ -12,6 +12,8 @@ use ratatui::{
     Frame,
 };
 
+use super::InputMode;
+
 /// Action resulting from tag editor input.
 #[derive(Debug, Clone, PartialEq)]
 pub enum TagAction {
@@ -62,6 +64,10 @@ impl TagEditorConfig {
 ///
 /// Shows current tags as chips and allows adding/removing from available options.
 /// Supports search filtering and keyboard navigation.
+///
+/// Supports two modes (vim-style):
+/// - Normal mode: j/k navigate, Tab switches sections, / starts search, Enter/Space selects, q/Esc cancels
+/// - Search mode: type to filter, Enter/Space selects, Esc returns to Normal mode
 #[derive(Debug)]
 pub struct TagEditor {
     /// Configuration for the editor.
@@ -82,6 +88,8 @@ pub struct TagEditor {
     search_query: String,
     /// Filtered available tags indices.
     filtered_indices: Vec<usize>,
+    /// Current input mode (Normal for navigation, Insert for typing).
+    input_mode: InputMode,
 }
 
 impl TagEditor {
@@ -97,6 +105,7 @@ impl TagEditor {
             loading: false,
             search_query: String::new(),
             filtered_indices: Vec::new(),
+            input_mode: InputMode::Normal,
         }
     }
 
@@ -149,6 +158,7 @@ impl TagEditor {
         self.visible = false;
         self.loading = false;
         self.search_query.clear();
+        self.input_mode = InputMode::Normal;
     }
 
     /// Update filtered indices based on search query.
@@ -181,6 +191,10 @@ impl TagEditor {
     /// Handle keyboard input.
     ///
     /// Returns an optional action to be handled by the parent view.
+    ///
+    /// Two modes (vim-style):
+    /// - Normal mode: j/k navigate, Tab switches sections, / starts search, Enter/Space selects, q/Esc cancel
+    /// - Search mode: type to filter, Enter/Space selects, Esc returns to Normal mode
     pub fn handle_input(&mut self, key: KeyEvent) -> Option<TagAction> {
         if !self.visible {
             return None;
@@ -195,15 +209,23 @@ impl TagEditor {
             return None;
         }
 
+        match self.input_mode {
+            InputMode::Normal => self.handle_normal_input(key),
+            InputMode::Insert => self.handle_insert_input(key),
+        }
+    }
+
+    /// Handle input in Normal mode (navigation).
+    fn handle_normal_input(&mut self, key: KeyEvent) -> Option<TagAction> {
         match (key.code, key.modifiers) {
-            // Navigation down
+            // Navigation down with j or arrow
             (KeyCode::Char('j'), KeyModifiers::NONE) | (KeyCode::Down, _) => {
                 if self.focused_count() > 0 && self.selected < self.focused_count().saturating_sub(1) {
                     self.selected += 1;
                 }
                 None
             }
-            // Navigation up
+            // Navigation up with k or arrow
             (KeyCode::Char('k'), KeyModifiers::NONE) | (KeyCode::Up, _) => {
                 if self.selected > 0 {
                     self.selected -= 1;
@@ -214,50 +236,73 @@ impl TagEditor {
             (KeyCode::Tab, KeyModifiers::NONE) | (KeyCode::BackTab, KeyModifiers::SHIFT) => {
                 self.focus_on_current = !self.focus_on_current;
                 self.selected = 0;
+                // Reset to Normal mode when switching sections
+                self.input_mode = InputMode::Normal;
                 None
             }
-            // Select - add or remove depending on focused section
-            (KeyCode::Enter, KeyModifiers::NONE) | (KeyCode::Char(' '), KeyModifiers::NONE) => {
-                if self.focus_on_current {
-                    // Remove the selected current tag
-                    if let Some(tag) = self.current_tags.get(self.selected).cloned() {
-                        self.current_tags.remove(self.selected);
-                        // Adjust selection if needed
-                        if self.selected >= self.current_tags.len() && self.selected > 0 {
-                            self.selected -= 1;
-                        }
-                        return Some(TagAction::Remove(tag));
-                    }
-                } else {
-                    // Add the selected available tag
-                    if let Some(&idx) = self.filtered_indices.get(self.selected) {
-                        if let Some(tag) = self.available_tags.get(idx).cloned() {
-                            // Only add if not already in current
-                            if !self.current_tags.contains(&tag) {
-                                self.current_tags.push(tag.clone());
-                                return Some(TagAction::Add(tag));
-                            }
-                        }
-                    }
+            // '/' - enter search mode (vim-style, only on available section)
+            (KeyCode::Char('/'), KeyModifiers::NONE) => {
+                if !self.focus_on_current {
+                    self.input_mode = InputMode::Insert;
                 }
                 None
             }
-            // Cancel
+            // Enter or Space - add/remove current item
+            (KeyCode::Enter, KeyModifiers::NONE) | (KeyCode::Char(' '), KeyModifiers::NONE) => {
+                if self.focus_on_current {
+                    self.remove_current_tag()
+                } else {
+                    self.add_current_tag()
+                }
+            }
+            // Cancel with q or Esc
             (KeyCode::Esc, KeyModifiers::NONE) | (KeyCode::Char('q'), KeyModifiers::NONE) => {
                 self.hide();
                 Some(TagAction::Cancel)
             }
-            // Search input (backspace)
+            _ => None,
+        }
+    }
+
+    /// Handle input in Insert mode (typing to search).
+    fn handle_insert_input(&mut self, key: KeyEvent) -> Option<TagAction> {
+        match (key.code, key.modifiers) {
+            // Enter or Esc - complete search and return to Normal mode
+            (KeyCode::Enter, KeyModifiers::NONE) | (KeyCode::Esc, KeyModifiers::NONE) => {
+                self.input_mode = InputMode::Normal;
+                None
+            }
+            // Arrow keys still work for navigation in search mode
+            (KeyCode::Down, _) => {
+                if self.focused_count() > 0 && self.selected < self.focused_count().saturating_sub(1) {
+                    self.selected += 1;
+                }
+                None
+            }
+            (KeyCode::Up, _) => {
+                if self.selected > 0 {
+                    self.selected -= 1;
+                }
+                None
+            }
+            // Tab switches sections (and returns to Normal mode)
+            (KeyCode::Tab, KeyModifiers::NONE) | (KeyCode::BackTab, KeyModifiers::SHIFT) => {
+                self.focus_on_current = !self.focus_on_current;
+                self.selected = 0;
+                self.input_mode = InputMode::Normal;
+                None
+            }
+            // Backspace - delete from search
             (KeyCode::Backspace, KeyModifiers::NONE) => {
-                if !self.search_query.is_empty() && !self.focus_on_current {
+                if !self.search_query.is_empty() {
                     self.search_query.pop();
                     self.update_filtered_indices();
                 }
                 None
             }
-            // Search input (character) - only when focused on available
+            // Character input - add to search (includes j/k/q)
             (KeyCode::Char(c), KeyModifiers::NONE | KeyModifiers::SHIFT)
-                if !self.focus_on_current && (c.is_alphanumeric() || c == '-' || c == '_' || c.is_whitespace()) =>
+                if c.is_alphanumeric() || c == '-' || c == '_' || c.is_whitespace() =>
             {
                 self.search_query.push(c);
                 self.update_filtered_indices();
@@ -265,6 +310,34 @@ impl TagEditor {
             }
             _ => None,
         }
+    }
+
+    /// Remove the currently selected tag from current tags.
+    fn remove_current_tag(&mut self) -> Option<TagAction> {
+        if let Some(tag) = self.current_tags.get(self.selected).cloned() {
+            self.current_tags.remove(self.selected);
+            // Adjust selection if needed
+            if self.selected >= self.current_tags.len() && self.selected > 0 {
+                self.selected -= 1;
+            }
+            Some(TagAction::Remove(tag))
+        } else {
+            None
+        }
+    }
+
+    /// Add the currently selected available tag.
+    fn add_current_tag(&mut self) -> Option<TagAction> {
+        if let Some(&idx) = self.filtered_indices.get(self.selected) {
+            if let Some(tag) = self.available_tags.get(idx).cloned() {
+                // Only add if not already in current
+                if !self.current_tags.contains(&tag) {
+                    self.current_tags.push(tag.clone());
+                    return Some(TagAction::Add(tag));
+                }
+            }
+        }
+        None
     }
 
     /// Render the tag editor.
@@ -395,24 +468,38 @@ impl TagEditor {
 
     /// Render the search bar.
     fn render_search_bar(&self, frame: &mut Frame, area: Rect) {
-        let search_style = if self.focus_on_current {
-            Style::default().fg(Color::DarkGray)
-        } else if !self.search_query.is_empty() {
-            Style::default().fg(Color::White)
+        let search_line = if self.focus_on_current {
+            // When focused on current tags, show dimmed search hint
+            Line::from(Span::styled(
+                "Press / to search available options...",
+                Style::default().fg(Color::DarkGray),
+            ))
         } else {
-            Style::default().fg(Color::DarkGray)
+            match self.input_mode {
+                InputMode::Insert => {
+                    // Show "/" prompt when in search mode
+                    Line::from(vec![
+                        Span::styled("/", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                        Span::styled(&self.search_query, Style::default().fg(Color::White)),
+                        Span::styled("▏", Style::default().fg(Color::Yellow)), // Cursor
+                    ])
+                }
+                InputMode::Normal => {
+                    if self.search_query.is_empty() {
+                        Line::from(Span::styled(
+                            "Press / to search...",
+                            Style::default().fg(Color::DarkGray),
+                        ))
+                    } else {
+                        // Show current filter
+                        Line::from(vec![
+                            Span::styled("/", Style::default().fg(Color::DarkGray)),
+                            Span::styled(&self.search_query, Style::default().fg(Color::Cyan)),
+                        ])
+                    }
+                }
+            }
         };
-
-        let search_text = if self.search_query.is_empty() {
-            "Type to filter available options...".to_string()
-        } else {
-            self.search_query.clone()
-        };
-
-        let search_line = Line::from(vec![
-            Span::styled("Search: ", Style::default().fg(Color::Cyan)),
-            Span::styled(search_text, search_style),
-        ]);
         frame.render_widget(Paragraph::new(search_line), area);
     }
 
@@ -472,6 +559,7 @@ impl TagEditor {
                 let list = list
                     .highlight_style(
                         Style::default()
+                            .fg(Color::White)
                             .bg(Color::DarkGray)
                             .add_modifier(Modifier::BOLD),
                     )
@@ -487,16 +575,41 @@ impl TagEditor {
 
     /// Render the help text.
     fn render_help(&self, frame: &mut Frame, area: Rect) {
-        let help_text = Line::from(vec![
-            Span::styled("Tab", Style::default().fg(Color::Yellow)),
-            Span::raw(": switch  "),
-            Span::styled("j/k", Style::default().fg(Color::Yellow)),
-            Span::raw(": navigate  "),
-            Span::styled("Enter/Space", Style::default().fg(Color::Green)),
-            Span::raw(": add/remove  "),
-            Span::styled("Esc", Style::default().fg(Color::Red)),
-            Span::raw(": close"),
-        ]);
+        let help_text = match self.input_mode {
+            InputMode::Normal => {
+                if self.focus_on_current {
+                    Line::from(vec![
+                        Span::styled("j/k", Style::default().fg(Color::Yellow)),
+                        Span::raw(": navigate  "),
+                        Span::styled("Tab", Style::default().fg(Color::Cyan)),
+                        Span::raw(": switch  "),
+                        Span::styled("Enter", Style::default().fg(Color::Green)),
+                        Span::raw(": remove  "),
+                        Span::styled("q", Style::default().fg(Color::Red)),
+                        Span::raw(": close"),
+                    ])
+                } else {
+                    Line::from(vec![
+                        Span::styled("j/k", Style::default().fg(Color::Yellow)),
+                        Span::raw(": navigate  "),
+                        Span::styled("Tab", Style::default().fg(Color::Cyan)),
+                        Span::raw(": switch  "),
+                        Span::styled("/", Style::default().fg(Color::Cyan)),
+                        Span::raw(": search  "),
+                        Span::styled("Enter", Style::default().fg(Color::Green)),
+                        Span::raw(": add  "),
+                        Span::styled("q", Style::default().fg(Color::Red)),
+                        Span::raw(": close"),
+                    ])
+                }
+            }
+            InputMode::Insert => Line::from(vec![
+                Span::styled("-- SEARCH --", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::raw("  type to filter  "),
+                Span::styled("Enter/Esc", Style::default().fg(Color::Yellow)),
+                Span::raw(": done"),
+            ]),
+        };
         frame.render_widget(
             Paragraph::new(help_text).alignment(Alignment::Center),
             area,
@@ -566,7 +679,8 @@ mod tests {
 
         assert_eq!(editor.selected, 0);
 
-        let key = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
+        // Navigate down with arrow key
+        let key = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
         let action = editor.handle_input(key);
         assert!(action.is_none());
         assert_eq!(editor.selected, 1);
@@ -587,7 +701,8 @@ mod tests {
         editor.show(current, available);
         editor.selected = 1;
 
-        let key = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE);
+        // Navigate up with arrow key
+        let key = KeyEvent::new(KeyCode::Up, KeyModifiers::NONE);
         let action = editor.handle_input(key);
         assert!(action.is_none());
         assert_eq!(editor.selected, 0);
@@ -616,18 +731,48 @@ mod tests {
     }
 
     #[test]
-    fn test_add_tag() {
+    fn test_add_tag_with_enter() {
         let mut editor = TagEditor::for_labels();
         let current = vec![];
         let available = vec!["bug".to_string(), "feature".to_string()];
         editor.show(current, available);
 
-        // Select "bug" and press Enter
+        // Select "bug" with Enter
         let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
         let action = editor.handle_input(key);
 
         assert_eq!(action, Some(TagAction::Add("bug".to_string())));
         assert!(editor.current_tags.contains(&"bug".to_string()));
+    }
+
+    #[test]
+    fn test_add_tag_with_space() {
+        let mut editor = TagEditor::for_labels();
+        let current = vec![];
+        let available = vec!["bug".to_string(), "feature".to_string()];
+        editor.show(current, available);
+
+        // Select "bug" with Space
+        let key = KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE);
+        let action = editor.handle_input(key);
+
+        assert_eq!(action, Some(TagAction::Add("bug".to_string())));
+        assert!(editor.current_tags.contains(&"bug".to_string()));
+    }
+
+    #[test]
+    fn test_slash_enters_search_mode() {
+        let mut editor = TagEditor::for_labels();
+        let current = vec![];
+        let available = vec!["bug".to_string(), "feature".to_string()];
+        editor.show(current, available);
+
+        // '/' in Normal mode on available section enters search mode
+        let key = KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE);
+        let action = editor.handle_input(key);
+
+        assert!(action.is_none());
+        assert_eq!(editor.input_mode, InputMode::Insert);
     }
 
     #[test]
@@ -637,8 +782,8 @@ mod tests {
         let available = vec!["bug".to_string(), "feature".to_string()];
         editor.show(current, available);
 
-        // Try to add "bug" again - should not produce an action
-        let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        // Try to add "bug" again with Space - should not produce an action
+        let key = KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE);
         let action = editor.handle_input(key);
 
         assert!(action.is_none());
@@ -678,15 +823,35 @@ mod tests {
     }
 
     #[test]
-    fn test_cancel_with_q() {
+    fn test_q_cancels_in_normal_mode() {
         let mut editor = TagEditor::for_labels();
         editor.show(vec![], vec!["a".to_string()]);
 
+        // 'q' in Normal mode should cancel
         let key = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE);
         let action = editor.handle_input(key);
 
         assert_eq!(action, Some(TagAction::Cancel));
         assert!(!editor.is_visible());
+    }
+
+    #[test]
+    fn test_q_adds_to_search_in_insert_mode() {
+        let mut editor = TagEditor::for_labels();
+        editor.show(vec![], vec!["a".to_string()]);
+
+        // Enter search mode with '/'
+        let slash = KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE);
+        editor.handle_input(slash);
+        assert_eq!(editor.input_mode, InputMode::Insert);
+
+        // 'q' in search mode should add to search query
+        let key = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE);
+        let action = editor.handle_input(key);
+
+        assert!(action.is_none()); // No action, character added to search
+        assert!(editor.is_visible()); // Still visible
+        assert_eq!(editor.search_query, "q");
     }
 
     #[test]
@@ -737,6 +902,10 @@ mod tests {
 
         assert_eq!(editor.filtered_indices.len(), 4);
 
+        // Enter search mode with '/'
+        let slash = KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE);
+        editor.handle_input(slash);
+
         // Type 'b' to filter
         let key = KeyEvent::new(KeyCode::Char('b'), KeyModifiers::NONE);
         editor.handle_input(key);
@@ -758,11 +927,11 @@ mod tests {
         let available = vec!["bug".to_string(), "feature".to_string()];
         editor.show(current, available);
 
-        // Switch to current tags
+        // Switch to current tags (in Normal mode, search is not available here)
         let tab = KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE);
         editor.handle_input(tab);
 
-        // Try to type - should not affect search
+        // Try to type - should not affect search (x is not handled in current section)
         let key = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE);
         editor.handle_input(key);
 

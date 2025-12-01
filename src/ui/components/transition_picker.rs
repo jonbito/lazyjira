@@ -122,14 +122,14 @@ impl TransitionPicker {
         }
 
         match (key.code, key.modifiers) {
-            // Navigation down
+            // Navigation down with j or arrow
             (KeyCode::Char('j'), KeyModifiers::NONE) | (KeyCode::Down, _) => {
                 if !self.transitions.is_empty() && self.selected < self.transitions.len() - 1 {
                     self.selected += 1;
                 }
                 None
             }
-            // Navigation up
+            // Navigation up with k or arrow
             (KeyCode::Char('k'), KeyModifiers::NONE) | (KeyCode::Up, _) => {
                 if self.selected > 0 {
                     self.selected -= 1;
@@ -159,7 +159,7 @@ impl TransitionPicker {
                     None
                 }
             }
-            // Cancel
+            // Cancel with q or Esc
             (KeyCode::Esc, KeyModifiers::NONE) | (KeyCode::Char('q'), KeyModifiers::NONE) => {
                 self.hide();
                 Some(TransitionAction::Cancel)
@@ -242,6 +242,7 @@ impl TransitionPicker {
             let list = List::new(items)
                 .highlight_style(
                     Style::default()
+                        .fg(Color::White)
                         .bg(Color::DarkGray)
                         .add_modifier(Modifier::BOLD),
                 )
@@ -259,7 +260,7 @@ impl TransitionPicker {
             Span::raw(": navigate  "),
             Span::styled("Enter", Style::default().fg(Color::Green)),
             Span::raw(": select  "),
-            Span::styled("Esc", Style::default().fg(Color::Red)),
+            Span::styled("q/Esc", Style::default().fg(Color::Red)),
             Span::raw(": cancel"),
         ]);
         let help_paragraph = Paragraph::new(help_text).alignment(Alignment::Center);
@@ -402,8 +403,8 @@ mod tests {
         // Initial selection is 0
         assert_eq!(picker.selected, 0);
 
-        // Navigate down
-        let key = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
+        // Navigate down with arrow key
+        let key = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
         let action = picker.handle_input(key);
         assert!(action.is_none());
         assert_eq!(picker.selected, 1);
@@ -424,8 +425,8 @@ mod tests {
         picker.show(transitions, "Open");
         picker.selected = 1;
 
-        // Navigate up
-        let key = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE);
+        // Navigate up with arrow key
+        let key = KeyEvent::new(KeyCode::Up, KeyModifiers::NONE);
         let action = picker.handle_input(key);
         assert!(action.is_none());
         assert_eq!(picker.selected, 0);
@@ -485,11 +486,34 @@ mod tests {
         let mut picker = TransitionPicker::new();
         picker.show(vec![create_test_transition("11", "Start", "In Progress")], "Open");
 
+        // 'q' should cancel (vim-style)
         let key = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE);
         let action = picker.handle_input(key);
 
         assert_eq!(action, Some(TransitionAction::Cancel));
         assert!(!picker.is_visible());
+    }
+
+    #[test]
+    fn test_navigation_with_j_k() {
+        let mut picker = TransitionPicker::new();
+        let transitions = vec![
+            create_test_transition("11", "Start Progress", "In Progress"),
+            create_test_transition("21", "Done", "Done"),
+        ];
+        picker.show(transitions, "Open");
+
+        assert_eq!(picker.selected, 0);
+
+        // Move down with j
+        let key = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
+        picker.handle_input(key);
+        assert_eq!(picker.selected, 1);
+
+        // Move up with k
+        let key = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE);
+        picker.handle_input(key);
+        assert_eq!(picker.selected, 0);
     }
 
     #[test]

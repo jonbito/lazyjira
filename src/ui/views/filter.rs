@@ -324,8 +324,8 @@ impl FilterPanelView {
                 self.hide();
                 return Some(FilterPanelAction::Apply(state));
             }
-            // Cancel
-            (KeyCode::Esc, KeyModifiers::NONE) | (KeyCode::Char('q'), KeyModifiers::NONE) => {
+            // Cancel (Esc only for consistency)
+            (KeyCode::Esc, KeyModifiers::NONE) => {
                 self.hide();
                 return Some(FilterPanelAction::Cancel);
             }
@@ -333,11 +333,11 @@ impl FilterPanelView {
             (KeyCode::Char('c'), KeyModifiers::NONE) => {
                 self.clear_all();
             }
-            // Switch sections with Tab
-            (KeyCode::Tab, KeyModifiers::NONE) | (KeyCode::Char('l'), KeyModifiers::NONE) => {
+            // Switch sections with Tab or arrow keys (no h/l to allow typing)
+            (KeyCode::Tab, KeyModifiers::NONE) | (KeyCode::Right, _) => {
                 self.next_section();
             }
-            (KeyCode::BackTab, KeyModifiers::SHIFT) | (KeyCode::Char('h'), KeyModifiers::NONE) => {
+            (KeyCode::BackTab, KeyModifiers::SHIFT) | (KeyCode::Left, _) => {
                 self.prev_section();
             }
             // Delegate to focused multi-select
@@ -410,9 +410,9 @@ impl FilterPanelView {
 
         // Render footer with help
         let help_text = Line::from(vec![
-            Span::styled("Tab/h/l", Style::default().fg(Color::Yellow)),
+            Span::styled("Tab/←→", Style::default().fg(Color::Yellow)),
             Span::raw(": switch section  "),
-            Span::styled("j/k", Style::default().fg(Color::Yellow)),
+            Span::styled("↑↓", Style::default().fg(Color::Yellow)),
             Span::raw(": navigate  "),
             Span::styled("Space", Style::default().fg(Color::Yellow)),
             Span::raw(": toggle  "),

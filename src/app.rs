@@ -1612,11 +1612,8 @@ impl App {
                 }
             }
             AppState::Help => {
-                // Escape or 'q' to close help
-                if key_event.code == KeyCode::Esc
-                    || (key_event.code == KeyCode::Char('q')
-                        && key_event.modifiers == KeyModifiers::NONE)
-                {
+                // Escape to close help (using Esc only for consistency across dialogs)
+                if key_event.code == KeyCode::Esc {
                     self.state = AppState::IssueList;
                 }
             }
@@ -1927,15 +1924,15 @@ impl App {
             Line::raw("  q / Esc - Go back"),
             Line::raw(""),
             Line::styled("Filter Panel:", Style::default().fg(Color::Yellow)),
-            Line::raw("  Tab/h/l - Switch section"),
-            Line::raw("  j/k     - Navigate in section"),
+            Line::raw("  Tab/←/→ - Switch section"),
+            Line::raw("  ↑/↓     - Navigate in section"),
             Line::raw("  Space   - Toggle selection"),
             Line::raw("  c       - Clear all filters"),
             Line::raw("  Enter   - Apply filters"),
             Line::raw("  Esc     - Cancel"),
             Line::raw(""),
             Line::styled(
-                "Press Esc or q to close this help screen",
+                "Press Esc to close this help screen",
                 Style::default().fg(Color::DarkGray),
             ),
         ]
@@ -2550,8 +2547,8 @@ mod tests {
         app.show_profile_picker();
         assert!(app.is_profile_picker_visible());
 
-        // Navigate down (from work to personal)
-        let key = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
+        // Navigate down (from work to personal) using arrow key
+        let key = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
         app.update(Event::Key(key));
 
         // Select
@@ -2595,15 +2592,32 @@ mod tests {
         // Open profile picker
         app.show_profile_picker();
 
-        // Try to quit - should be blocked
+        // Try to press 'r' (refresh) - should be ignored by the picker
+        let key = KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE);
+        app.update(Event::Key(key));
+
+        // Picker should still be visible (r is not handled by picker)
+        assert!(app.is_profile_picker_visible());
+        // Profile should NOT have changed
+        assert_eq!(app.current_profile_name(), Some("work"));
+    }
+
+    #[test]
+    fn test_profile_picker_q_cancels() {
+        let config = create_test_config_with_profiles();
+        let mut app = App::with_config(config);
+        app.update(Event::Tick); // Transition to IssueList
+
+        // Open profile picker
+        app.show_profile_picker();
+        assert!(app.is_profile_picker_visible());
+
+        // Press 'q' - should cancel the picker (vim-style)
         let key = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE);
         app.update(Event::Key(key));
 
-        // Should not quit (q cancels picker instead)
-        // Picker is hidden due to q being cancel
+        // Picker should be hidden
         assert!(!app.is_profile_picker_visible());
-        // But we should not have quit
-        assert_eq!(app.current_profile_name(), Some("work"));
     }
 
     #[test]

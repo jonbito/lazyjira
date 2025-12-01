@@ -260,17 +260,17 @@ impl ConfirmDialog {
                 self.hide();
                 Some(self.selected_confirm)
             }
-            // Escape cancels
-            KeyCode::Esc | KeyCode::Char('q') => {
+            // Escape cancels (use Esc only, not 'q', to allow typing 'q' in text inputs)
+            KeyCode::Esc => {
                 self.hide();
                 Some(false)
             }
-            // Tab or arrow keys toggle selection
-            KeyCode::Tab | KeyCode::Left | KeyCode::Right | KeyCode::Char('h') | KeyCode::Char('l') => {
+            // Tab or arrow keys toggle selection (no h/l to allow typing those chars)
+            KeyCode::Tab | KeyCode::Left | KeyCode::Right => {
                 self.toggle_selection();
                 None
             }
-            // Y/N shortcuts
+            // Y/N shortcuts (only in dialogs without text input)
             KeyCode::Char('y') | KeyCode::Char('Y') => {
                 self.hide();
                 Some(true)

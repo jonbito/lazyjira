@@ -688,6 +688,30 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
             }
         }
 
+        // Handle fetch changelog request
+        if let Some((issue_key, start_at)) = app.take_pending_fetch_changelog() {
+            if let Some(ref c) = client {
+                debug!("Fetching changelog for issue {} (start_at: {})", issue_key, start_at);
+                match c.get_changelog(&issue_key, start_at, 50).await {
+                    Ok(changelog) => {
+                        debug!(
+                            "Loaded {} history entries (total: {})",
+                            changelog.histories.len(),
+                            changelog.total
+                        );
+                        // If start_at > 0, we're appending to existing history
+                        app.handle_changelog_fetched(changelog, start_at > 0);
+                    }
+                    Err(e) => {
+                        error!("Failed to fetch changelog: {}", e);
+                        app.handle_fetch_changelog_failure(&e.to_string());
+                    }
+                }
+            } else {
+                app.handle_fetch_changelog_failure("No JIRA connection");
+            }
+        }
+
         // Check if we should quit
         if app.should_quit() {
             break;

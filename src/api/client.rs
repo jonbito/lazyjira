@@ -11,10 +11,10 @@ use tracing::{debug, error, info, instrument, warn};
 use super::auth::Auth;
 use super::error::{ApiError, Result};
 use super::types::{
-    AddCommentRequest, BoardsResponse, Comment, CommentsResponse, CurrentUser, FieldUpdates,
-    FilterOption, FilterOptions, Issue, IssueUpdateRequest, LabelOperation, LabelsResponse,
-    Priority, Project, SearchResult, SprintsResponse, Status, Transition, TransitionRef,
-    TransitionRequest, TransitionsResponse, UpdateOperations, User,
+    AddCommentRequest, BoardsResponse, Changelog, Comment, CommentsResponse, CurrentUser,
+    FieldUpdates, FilterOption, FilterOptions, Issue, IssueUpdateRequest, LabelOperation,
+    LabelsResponse, Priority, Project, SearchResult, SprintsResponse, Status, Transition,
+    TransitionRef, TransitionRequest, TransitionsResponse, UpdateOperations, User,
 };
 use crate::config::Profile;
 
@@ -1092,6 +1092,44 @@ impl JiraClient {
         let comment: Comment = self.post(&url, &json_value).await?;
         info!("Successfully added comment {} to issue {}", comment.id, key);
         Ok(comment)
+    }
+
+    // ========================================================================
+    // Changelog Operations
+    // ========================================================================
+
+    /// Get the changelog (history) for an issue.
+    ///
+    /// Returns a paginated list of changes made to the issue, including field
+    /// changes, status transitions, and user actions.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The issue key (e.g., "PROJ-123")
+    /// * `start_at` - Starting index for pagination (0-based)
+    /// * `max_results` - Maximum number of history entries to return (default 50, max 100)
+    #[instrument(skip(self), fields(issue_key = %key))]
+    pub async fn get_changelog(
+        &self,
+        key: &str,
+        start_at: u32,
+        max_results: u32,
+    ) -> Result<Changelog> {
+        debug!("Fetching changelog for issue {}", key);
+        let url = format!(
+            "{}/rest/api/3/issue/{}/changelog?startAt={}&maxResults={}",
+            self.base_url,
+            key,
+            start_at,
+            max_results.min(100)
+        );
+        let response: Changelog = self.get(&url).await?;
+        debug!(
+            "Found {} history entries (total: {})",
+            response.histories.len(),
+            response.total
+        );
+        Ok(response)
     }
 }
 

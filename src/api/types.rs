@@ -1233,6 +1233,170 @@ impl TransitionRef {
     }
 }
 
+// ============================================================================
+// Changelog Types
+// ============================================================================
+
+/// Paginated changelog response from JIRA API.
+///
+/// Returned by `GET /rest/api/3/issue/{issueKey}/changelog`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Changelog {
+    /// The list of history entries.
+    #[serde(default, rename = "values")]
+    pub histories: Vec<ChangeHistory>,
+    /// Starting index for pagination.
+    #[serde(default)]
+    pub start_at: u32,
+    /// Maximum results per page.
+    #[serde(default)]
+    pub max_results: u32,
+    /// Total number of history entries.
+    #[serde(default)]
+    pub total: u32,
+    /// Whether this is the last page.
+    #[serde(default)]
+    pub is_last: bool,
+}
+
+impl Changelog {
+    /// Check if there are more pages of results.
+    pub fn has_more(&self) -> bool {
+        if self.is_last {
+            return false;
+        }
+        self.start_at + (self.histories.len() as u32) < self.total
+    }
+
+    /// Get the starting index for the next page.
+    pub fn next_start(&self) -> u32 {
+        self.start_at + self.histories.len() as u32
+    }
+}
+
+/// A single history entry representing a set of changes made at one time.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ChangeHistory {
+    /// The history entry ID.
+    pub id: String,
+    /// The user who made the changes.
+    pub author: User,
+    /// When the changes were made (ISO 8601 format).
+    pub created: String,
+    /// The list of individual field changes.
+    pub items: Vec<ChangeItem>,
+}
+
+/// A single field change within a history entry.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChangeItem {
+    /// The field that was changed.
+    pub field: String,
+    /// The type of field (jira, custom, etc.).
+    #[serde(default)]
+    pub field_type: Option<String>,
+    /// The internal "from" value.
+    #[serde(rename = "from")]
+    pub from_value: Option<String>,
+    /// The display "from" value.
+    #[serde(rename = "fromString")]
+    pub from_string: Option<String>,
+    /// The internal "to" value.
+    #[serde(rename = "to")]
+    pub to_value: Option<String>,
+    /// The display "to" value.
+    #[serde(rename = "toString")]
+    pub to_string: Option<String>,
+}
+
+impl ChangeItem {
+    /// Get the display value for "from" (prefers fromString over from).
+    pub fn display_from(&self) -> &str {
+        self.from_string
+            .as_deref()
+            .or(self.from_value.as_deref())
+            .unwrap_or("(none)")
+    }
+
+    /// Get the display value for "to" (prefers toString over to).
+    pub fn display_to(&self) -> &str {
+        self.to_string
+            .as_deref()
+            .or(self.to_value.as_deref())
+            .unwrap_or("(none)")
+    }
+
+    /// Get the category of change based on the field name.
+    pub fn change_type(&self) -> ChangeType {
+        match self.field.to_lowercase().as_str() {
+            "status" => ChangeType::Status,
+            "assignee" => ChangeType::Assignee,
+            "priority" => ChangeType::Priority,
+            "summary" | "description" => ChangeType::Content,
+            "labels" | "label" => ChangeType::Tags,
+            "component" | "components" => ChangeType::Tags,
+            "sprint" => ChangeType::Sprint,
+            "fix version" | "fixversions" => ChangeType::Version,
+            "resolution" => ChangeType::Resolution,
+            "link" | "issuelinks" => ChangeType::Link,
+            "attachment" => ChangeType::Attachment,
+            "comment" => ChangeType::Comment,
+            _ => ChangeType::Other,
+        }
+    }
+}
+
+/// Categories of changes for visual styling.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChangeType {
+    /// Status/workflow changes.
+    Status,
+    /// Assignee changes.
+    Assignee,
+    /// Priority changes.
+    Priority,
+    /// Content changes (summary, description).
+    Content,
+    /// Tag changes (labels, components).
+    Tags,
+    /// Sprint changes.
+    Sprint,
+    /// Version changes.
+    Version,
+    /// Resolution changes.
+    Resolution,
+    /// Link changes.
+    Link,
+    /// Attachment changes.
+    Attachment,
+    /// Comment changes.
+    Comment,
+    /// Other field changes.
+    Other,
+}
+
+impl ChangeType {
+    /// Get an icon for this change type.
+    pub fn icon(&self) -> &'static str {
+        match self {
+            Self::Status => "->",
+            Self::Assignee => "@",
+            Self::Priority => "!",
+            Self::Content => "#",
+            Self::Tags => "*",
+            Self::Sprint => "~",
+            Self::Version => "v",
+            Self::Resolution => "x",
+            Self::Link => "+",
+            Self::Attachment => "^",
+            Self::Comment => ">",
+            Self::Other => "-",
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2354,5 +2518,218 @@ mod tests {
         assert!(json.contains(r#""assignee":null"#));
         // The full JSON should be: {"fields":{"assignee":null}}
         assert_eq!(json, r#"{"fields":{"assignee":null}}"#);
+    }
+
+    // ========================================================================
+    // Changelog Types tests
+    // ========================================================================
+
+    #[test]
+    fn test_parse_changelog() {
+        let json = r#"{
+            "startAt": 0,
+            "maxResults": 50,
+            "total": 2,
+            "isLast": true,
+            "values": [
+                {
+                    "id": "10001",
+                    "author": {
+                        "accountId": "abc123",
+                        "displayName": "John Doe",
+                        "active": true
+                    },
+                    "created": "2024-01-15T10:00:00.000+0000",
+                    "items": [
+                        {
+                            "field": "status",
+                            "fieldtype": "jira",
+                            "from": "1",
+                            "fromString": "Open",
+                            "to": "2",
+                            "toString": "In Progress"
+                        }
+                    ]
+                },
+                {
+                    "id": "10002",
+                    "author": {
+                        "accountId": "def456",
+                        "displayName": "Jane Smith",
+                        "active": true
+                    },
+                    "created": "2024-01-16T14:30:00.000+0000",
+                    "items": [
+                        {
+                            "field": "assignee",
+                            "fieldtype": "jira",
+                            "from": null,
+                            "fromString": null,
+                            "to": "abc123",
+                            "toString": "John Doe"
+                        }
+                    ]
+                }
+            ]
+        }"#;
+
+        let changelog: Changelog = serde_json::from_str(json).unwrap();
+        assert_eq!(changelog.start_at, 0);
+        assert_eq!(changelog.max_results, 50);
+        assert_eq!(changelog.total, 2);
+        assert!(changelog.is_last);
+        assert_eq!(changelog.histories.len(), 2);
+        assert!(!changelog.has_more());
+    }
+
+    #[test]
+    fn test_changelog_has_more() {
+        // First page with more to come
+        let changelog = Changelog {
+            histories: vec![],
+            start_at: 0,
+            max_results: 50,
+            total: 100,
+            is_last: false,
+        };
+        assert!(changelog.has_more());
+
+        // Last page
+        let changelog = Changelog {
+            histories: vec![],
+            start_at: 50,
+            max_results: 50,
+            total: 100,
+            is_last: true,
+        };
+        assert!(!changelog.has_more());
+    }
+
+    #[test]
+    fn test_changelog_next_start() {
+        fn create_test_history(id: &str) -> ChangeHistory {
+            ChangeHistory {
+                id: id.to_string(),
+                author: User {
+                    account_id: "test".to_string(),
+                    display_name: "Test".to_string(),
+                    email_address: None,
+                    active: true,
+                    avatar_urls: None,
+                },
+                created: "2024-01-15T10:00:00.000+0000".to_string(),
+                items: vec![],
+            }
+        }
+
+        let changelog = Changelog {
+            histories: vec![
+                create_test_history("1"),
+                create_test_history("2"),
+                create_test_history("3"),
+            ],
+            start_at: 0,
+            max_results: 50,
+            total: 10,
+            is_last: false,
+        };
+        assert_eq!(changelog.next_start(), 3);
+    }
+
+    #[test]
+    fn test_change_item_display() {
+        let item = ChangeItem {
+            field: "status".to_string(),
+            field_type: Some("jira".to_string()),
+            from_value: Some("1".to_string()),
+            from_string: Some("Open".to_string()),
+            to_value: Some("2".to_string()),
+            to_string: Some("In Progress".to_string()),
+        };
+
+        assert_eq!(item.display_from(), "Open");
+        assert_eq!(item.display_to(), "In Progress");
+    }
+
+    #[test]
+    fn test_change_item_display_fallback() {
+        // When toString/fromString is missing, fall back to to/from
+        let item = ChangeItem {
+            field: "customfield_123".to_string(),
+            field_type: Some("custom".to_string()),
+            from_value: Some("old_value".to_string()),
+            from_string: None,
+            to_value: Some("new_value".to_string()),
+            to_string: None,
+        };
+
+        assert_eq!(item.display_from(), "old_value");
+        assert_eq!(item.display_to(), "new_value");
+    }
+
+    #[test]
+    fn test_change_item_display_none() {
+        // When all values are None
+        let item = ChangeItem {
+            field: "test".to_string(),
+            field_type: None,
+            from_value: None,
+            from_string: None,
+            to_value: None,
+            to_string: None,
+        };
+
+        assert_eq!(item.display_from(), "(none)");
+        assert_eq!(item.display_to(), "(none)");
+    }
+
+    #[test]
+    fn test_change_type_categorization() {
+        let test_cases = vec![
+            ("status", ChangeType::Status),
+            ("Status", ChangeType::Status),
+            ("assignee", ChangeType::Assignee),
+            ("priority", ChangeType::Priority),
+            ("summary", ChangeType::Content),
+            ("description", ChangeType::Content),
+            ("labels", ChangeType::Tags),
+            ("component", ChangeType::Tags),
+            ("sprint", ChangeType::Sprint),
+            ("Fix Version", ChangeType::Version),
+            ("resolution", ChangeType::Resolution),
+            ("Link", ChangeType::Link),
+            ("attachment", ChangeType::Attachment),
+            ("comment", ChangeType::Comment),
+            ("unknownfield", ChangeType::Other),
+        ];
+
+        for (field, expected_type) in test_cases {
+            let item = ChangeItem {
+                field: field.to_string(),
+                field_type: None,
+                from_value: None,
+                from_string: None,
+                to_value: None,
+                to_string: None,
+            };
+            assert_eq!(
+                item.change_type(),
+                expected_type,
+                "Field '{}' should be {:?}",
+                field,
+                expected_type
+            );
+        }
+    }
+
+    #[test]
+    fn test_change_type_icons() {
+        assert_eq!(ChangeType::Status.icon(), "->");
+        assert_eq!(ChangeType::Assignee.icon(), "@");
+        assert_eq!(ChangeType::Priority.icon(), "!");
+        assert_eq!(ChangeType::Content.icon(), "#");
+        assert_eq!(ChangeType::Tags.icon(), "*");
+        assert_eq!(ChangeType::Sprint.icon(), "~");
+        assert_eq!(ChangeType::Other.icon(), "-");
     }
 }

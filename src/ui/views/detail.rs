@@ -14,13 +14,15 @@ use ratatui::{
 };
 
 use crate::api::types::{
-    AtlassianDoc, Comment, FieldUpdates, Issue, IssueUpdateRequest, Priority, Transition, User,
+    AtlassianDoc, Changelog, Comment, FieldUpdates, Issue, IssueUpdateRequest, Priority,
+    Transition, User,
 };
 use crate::ui::components::{
     AssigneeAction, AssigneePicker, CommentAction, CommentsPanel, PriorityAction, PriorityPicker,
     TagAction, TagEditor, TextEditor, TextInput, TransitionAction, TransitionPicker,
 };
 use crate::ui::theme::{issue_type_prefix, priority_style, status_style, theme};
+use crate::ui::views::history::{HistoryAction, HistoryView};
 
 /// Action that can be triggered from the detail view.
 #[derive(Debug, Clone, PartialEq)]
@@ -67,6 +69,12 @@ pub enum DetailAction {
     AddComponent(String, String),
     /// Remove a component from the issue (issue key, component name).
     RemoveComponent(String, String),
+    /// Open the history panel (issue key).
+    OpenHistory(String),
+    /// Request changelog from the API (issue key).
+    FetchChangelog(String),
+    /// Load more changelog entries (issue key).
+    LoadMoreChangelog(String),
 }
 
 /// Which field is currently being edited.
@@ -119,6 +127,8 @@ pub struct DetailView {
     comments_panel: CommentsPanel,
     /// Label editor for adding/removing labels.
     label_editor: TagEditor,
+    /// History panel for viewing issue changelog.
+    history_view: HistoryView,
     /// Component editor for adding/removing components.
     component_editor: TagEditor,
 }
@@ -139,6 +149,7 @@ impl DetailView {
             priority_picker: PriorityPicker::new(),
             comments_panel: CommentsPanel::new(),
             label_editor: TagEditor::for_labels(),
+            history_view: HistoryView::new(),
             component_editor: TagEditor::for_components(),
         }
     }
@@ -155,6 +166,7 @@ impl DetailView {
         self.priority_picker.hide();
         self.comments_panel.hide();
         self.label_editor.hide();
+        self.history_view.hide();
         self.component_editor.hide();
     }
 
@@ -170,6 +182,7 @@ impl DetailView {
         self.priority_picker.hide();
         self.comments_panel.hide();
         self.label_editor.hide();
+        self.history_view.hide();
         self.component_editor.hide();
     }
 
@@ -480,6 +493,47 @@ impl DetailView {
         self.comments_panel.hide();
     }
 
+    // ========================================================================
+    // History view methods
+    // ========================================================================
+
+    /// Check if the history view is visible.
+    pub fn is_history_visible(&self) -> bool {
+        self.history_view.is_visible()
+    }
+
+    /// Check if history is loading.
+    pub fn is_history_loading(&self) -> bool {
+        self.history_view.is_loading()
+    }
+
+    /// Show the history view for the current issue.
+    pub fn show_history(&mut self) {
+        if let Some(issue) = &self.issue {
+            self.history_view.show(&issue.key);
+        }
+    }
+
+    /// Set the changelog data.
+    pub fn set_changelog(&mut self, changelog: Changelog) {
+        self.history_view.set_changelog(changelog);
+    }
+
+    /// Append more changelog data.
+    pub fn append_changelog(&mut self, changelog: Changelog) {
+        self.history_view.append_changelog(changelog);
+    }
+
+    /// Get the next starting position for loading more history.
+    pub fn history_next_start(&self) -> u32 {
+        self.history_view.next_start()
+    }
+
+    /// Hide the history view.
+    pub fn hide_history(&mut self) {
+        self.history_view.hide();
+    }
+
     /// Enter edit mode for the current issue.
     pub fn enter_edit_mode(&mut self) {
         if let Some(issue) = &self.issue {
@@ -556,12 +610,17 @@ impl DetailView {
     ///
     /// Returns an optional action to be handled by the application.
     pub fn handle_input(&mut self, key: KeyEvent) -> Option<DetailAction> {
-        // Handle comments panel first (blocks other input when visible)
+        // Handle history view first (blocks other input when visible)
+        if self.history_view.is_visible() {
+            return self.handle_history_input(key);
+        }
+
+        // Handle comments panel (blocks other input when visible)
         if self.comments_panel.is_visible() {
             return self.handle_comments_panel_input(key);
         }
 
-        // Handle transition picker first (blocks other input when visible)
+        // Handle transition picker (blocks other input when visible)
         if self.transition_picker.is_visible() {
             return self.handle_transition_picker_input(key);
         }
@@ -692,7 +751,31 @@ impl DetailView {
                     None
                 }
             }
+            // View history (open history panel)
+            (KeyCode::Char('h'), KeyModifiers::NONE) => {
+                if let Some(issue) = &self.issue {
+                    let issue_key = issue.key.clone();
+                    self.show_history();
+                    Some(DetailAction::FetchChangelog(issue_key))
+                } else {
+                    None
+                }
+            }
             _ => None,
+        }
+    }
+
+    /// Handle keyboard input for the history view.
+    fn handle_history_input(&mut self, key: KeyEvent) -> Option<DetailAction> {
+        if let Some(action) = self.history_view.handle_input(key) {
+            match action {
+                HistoryAction::Close => None,
+                HistoryAction::LoadMore(issue_key) => {
+                    Some(DetailAction::LoadMoreChangelog(issue_key))
+                }
+            }
+        } else {
+            None
         }
     }
 
@@ -995,6 +1078,7 @@ impl DetailView {
         self.label_editor.render(frame, area);
         self.component_editor.render(frame, area);
         self.comments_panel.render(frame, area);
+        self.history_view.render(frame, area);
     }
 
     /// Render the edit mode interface.
@@ -1337,7 +1421,7 @@ impl DetailView {
             Span::styled(scroll_info, Style::default().fg(t.dim)),
             Span::raw(" | "),
             Span::styled(
-                "j/k:scroll  q:back  e:edit  c:comment  s:status  a:assignee  P:priority  l:labels  C:components",
+                "j/k:scroll  q:back  e:edit  c:comment  s:status  a:assignee  h:history  l:labels",
                 Style::default().fg(t.dim),
             ),
         ]);

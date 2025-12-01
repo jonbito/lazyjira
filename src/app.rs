@@ -15,7 +15,8 @@ use ratatui::{
 
 use crate::api::auth;
 use crate::api::types::{
-    FieldUpdates, FilterOptions, FilterState, Issue, IssueUpdateRequest, Priority, Transition, User,
+    Changelog, FieldUpdates, FilterOptions, FilterState, Issue, IssueUpdateRequest, Priority,
+    Transition, User,
 };
 use crate::config::{Config, ConfigError, Profile};
 use crate::error::AppError;
@@ -132,6 +133,8 @@ pub struct App {
     pending_add_component: Option<(String, String)>,
     /// Pending remove component request (issue key, component name).
     pending_remove_component: Option<(String, String)>,
+    /// Pending fetch changelog request (issue key, start_at).
+    pending_fetch_changelog: Option<(String, u32)>,
     /// Help view.
     help_view: HelpView,
     /// Previous state before opening help (to return to).
@@ -203,6 +206,7 @@ impl App {
             pending_fetch_components: None,
             pending_add_component: None,
             pending_remove_component: None,
+            pending_fetch_changelog: None,
             help_view: HelpView::new(),
             previous_state: None,
             command_palette: CommandPalette::new(),
@@ -266,6 +270,7 @@ impl App {
             pending_fetch_components: None,
             pending_add_component: None,
             pending_remove_component: None,
+            pending_fetch_changelog: None,
             help_view: HelpView::new(),
             previous_state: None,
             command_palette: CommandPalette::new(),
@@ -1379,6 +1384,41 @@ impl App {
         self.notify_error(format!("Failed to update components: {}", error));
     }
 
+    // ========================================================================
+    // Changelog methods
+    // ========================================================================
+
+    /// Take the pending fetch changelog request (issue_key, start_at).
+    pub fn take_pending_fetch_changelog(&mut self) -> Option<(String, u32)> {
+        self.pending_fetch_changelog.take()
+    }
+
+    /// Check if there is a pending fetch changelog request.
+    pub fn has_pending_fetch_changelog(&self) -> bool {
+        self.pending_fetch_changelog.is_some()
+    }
+
+    /// Handle successful changelog fetch.
+    pub fn handle_changelog_fetched(&mut self, changelog: Changelog, append: bool) {
+        debug!(
+            "Changelog fetched: {} entries (total: {})",
+            changelog.histories.len(),
+            changelog.total
+        );
+        if append {
+            self.detail_view.append_changelog(changelog);
+        } else {
+            self.detail_view.set_changelog(changelog);
+        }
+    }
+
+    /// Handle failure to fetch changelog.
+    pub fn handle_fetch_changelog_failure(&mut self, error: &str) {
+        warn!(error = %error, "Failed to fetch changelog");
+        self.detail_view.hide_history();
+        self.notify_error(format!("Failed to load history: {}", error));
+    }
+
     /// Returns whether the application should quit.
     pub fn should_quit(&self) -> bool {
         self.should_quit
@@ -1777,6 +1817,21 @@ impl App {
                             debug!(key = %issue_key, component = %component, "Removing component");
                             // Store request for the runner to pick up
                             self.pending_remove_component = Some((issue_key, component));
+                        }
+                        DetailAction::OpenHistory(issue_key) => {
+                            debug!(key = %issue_key, "Opening history panel");
+                            self.detail_view.show_history();
+                        }
+                        DetailAction::FetchChangelog(issue_key) => {
+                            debug!(key = %issue_key, "Fetching changelog");
+                            // Store request for the runner to pick up (start at 0)
+                            self.pending_fetch_changelog = Some((issue_key, 0));
+                        }
+                        DetailAction::LoadMoreChangelog(issue_key) => {
+                            let start_at = self.detail_view.history_next_start();
+                            debug!(key = %issue_key, start = %start_at, "Loading more changelog");
+                            // Store request for the runner to pick up
+                            self.pending_fetch_changelog = Some((issue_key, start_at));
                         }
                     }
                 }

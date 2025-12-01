@@ -11,14 +11,14 @@ Implement a view for displaying issue history and changelog, showing all changes
 
 ## Acceptance Criteria
 
-- [ ] History view accessible from issue detail ('h' key)
-- [ ] Display all field changes with before/after values
-- [ ] Show user who made the change
-- [ ] Display timestamp for each change
-- [ ] Group changes by date
-- [ ] Scrollable list for long histories
-- [ ] Visual indicators for different change types
-- [ ] Return to detail view with 'q' or Escape
+- [x] History view accessible from issue detail ('h' key)
+- [x] Display all field changes with before/after values
+- [x] Show user who made the change
+- [x] Display timestamp for each change
+- [x] Group changes by date
+- [x] Scrollable list for long histories
+- [x] Visual indicators for different change types
+- [x] Return to detail view with 'q' or Escape
 
 ## Implementation Details
 
@@ -350,14 +350,14 @@ pub enum HistoryAction {
 
 ## Testing Requirements
 
-- [ ] 'h' opens history view
-- [ ] History loads for issue
-- [ ] Changes displayed correctly
-- [ ] User and timestamp shown
-- [ ] Scrolling works
-- [ ] Pagination loads more
-- [ ] 'q'/Esc returns to detail
-- [ ] Different change types styled
+- [x] 'h' opens history view
+- [x] History loads for issue
+- [x] Changes displayed correctly
+- [x] User and timestamp shown
+- [x] Scrolling works
+- [x] Pagination loads more
+- [x] 'q'/Esc returns to detail
+- [x] Different change types styled
 
 ## Dependencies
 
@@ -367,8 +367,74 @@ pub enum HistoryAction {
 
 ## Definition of Done
 
-- [ ] All acceptance criteria met
-- [ ] History is readable
-- [ ] All change types displayed
-- [ ] Pagination works smoothly
-- [ ] Visual indicators clear
+- [x] All acceptance criteria met
+- [x] History is readable
+- [x] All change types displayed
+- [x] Pagination works smoothly
+- [x] Visual indicators clear
+
+---
+
+## Completion Notes
+
+### Implementation Summary
+
+**Date Completed:** 2025-12-01
+**Branch:** `issue-history-changelog`
+**Commit:** `7a96165`
+
+### Files Modified/Created
+
+1. **`src/api/types.rs`** - Added changelog types:
+   - `Changelog` struct with pagination support
+   - `ChangeHistory` struct for individual history entries
+   - `ChangeItem` struct for field changes
+   - `ChangeType` enum for categorizing changes
+   - Methods: `has_more()`, `next_start()`, `display_from()`, `display_to()`, `change_type()`, `icon()`
+
+2. **`src/api/client.rs`** - Added `get_changelog()` API method
+
+3. **`src/ui/views/history.rs`** - Created history view component:
+   - `HistoryView` struct with scrolling and filtering
+   - `HistoryAction` enum (Close, LoadMore)
+   - `HistoryFilter` enum (All, Status, Assignee, Content, Fields)
+   - Keyboard navigation: j/k scroll, g/G top/bottom, f/Tab filter, q/Esc close
+   - Automatic pagination when scrolling near bottom
+
+4. **`src/ui/views/detail.rs`** - Added history integration:
+   - `OpenHistory`, `FetchChangelog`, `LoadMoreChangelog` actions
+   - 'h' key binding to open history panel
+   - Methods: `show_history()`, `set_changelog()`, `append_changelog()`, `hide_history()`
+   - History panel renders as overlay on detail view
+
+5. **`src/ui/views/mod.rs`** - Exported history module
+
+6. **`src/app.rs`** - Added changelog handling:
+   - `pending_fetch_changelog` field
+   - Methods: `take_pending_fetch_changelog()`, `has_pending_fetch_changelog()`, `handle_changelog_fetched()`, `handle_fetch_changelog_failure()`
+
+### Key Features
+
+- **Scrollable History Panel**: Displays changes grouped by date with timestamps
+- **Filtering**: Filter by change type (All, Status, Assignee, Content, Fields) using Tab/f
+- **Pagination**: Automatically loads more history when scrolling near bottom
+- **Visual Indicators**: Different icons and colors for change types:
+  - Status changes: `->` (green)
+  - Assignee changes: `@` (blue)
+  - Priority changes: `!` (yellow)
+  - Content changes: `#` (cyan)
+  - Tag changes: `*` (gray)
+- **Keyboard Navigation**: Vim-style j/k/g/G scrolling, Ctrl+D/U page scroll
+
+### Test Coverage
+
+Added comprehensive tests in `src/api/types.rs` and `src/ui/views/history.rs`:
+- Changelog parsing and pagination tests
+- ChangeItem display value fallback tests
+- ChangeType categorization tests
+- HistoryView show/hide tests
+- Keyboard input handling tests
+- Filter cycling tests
+- Scroll behavior tests
+
+All 686 tests pass.

@@ -247,6 +247,120 @@ pub struct IssueFields {
     /// Story points or other estimate.
     #[serde(default, rename = "customfield_10016")]
     pub story_points: Option<f64>,
+    /// Issue links (blocks, is blocked by, relates to, etc.).
+    #[serde(default, rename = "issuelinks")]
+    pub issue_links: Vec<IssueLink>,
+    /// Subtasks of this issue.
+    #[serde(default)]
+    pub subtasks: Vec<Subtask>,
+    /// Parent issue (for subtasks).
+    #[serde(default)]
+    pub parent: Option<ParentIssue>,
+}
+
+// ============================================================================
+// Linked Issues and Subtasks Types
+// ============================================================================
+
+/// A link between two issues.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IssueLink {
+    /// The link ID.
+    pub id: String,
+    /// The type of link.
+    #[serde(rename = "type")]
+    pub link_type: IssueLinkType,
+    /// The inward issue (if this issue is the target).
+    #[serde(default, rename = "inwardIssue")]
+    pub inward_issue: Option<LinkedIssue>,
+    /// The outward issue (if this issue is the source).
+    #[serde(default, rename = "outwardIssue")]
+    pub outward_issue: Option<LinkedIssue>,
+}
+
+/// The type of issue link.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IssueLinkType {
+    /// The link type ID.
+    pub id: String,
+    /// The link type name (e.g., "Blocks").
+    pub name: String,
+    /// The inward description (e.g., "is blocked by").
+    pub inward: String,
+    /// The outward description (e.g., "blocks").
+    pub outward: String,
+}
+
+/// A linked issue with minimal fields.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LinkedIssue {
+    /// The issue ID.
+    pub id: String,
+    /// The issue key (e.g., "PROJ-123").
+    pub key: String,
+    /// The linked issue fields.
+    pub fields: LinkedIssueFields,
+}
+
+/// Minimal fields for a linked issue.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LinkedIssueFields {
+    /// The issue summary.
+    pub summary: String,
+    /// The issue status.
+    pub status: Status,
+    /// The issue priority.
+    #[serde(default)]
+    pub priority: Option<Priority>,
+    /// The issue type.
+    #[serde(default, rename = "issuetype")]
+    pub issue_type: Option<IssueType>,
+}
+
+/// A subtask of an issue.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Subtask {
+    /// The subtask ID.
+    pub id: String,
+    /// The subtask key (e.g., "PROJ-124").
+    pub key: String,
+    /// The subtask fields.
+    pub fields: SubtaskFields,
+}
+
+/// Fields for a subtask.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubtaskFields {
+    /// The subtask summary.
+    pub summary: String,
+    /// The subtask status.
+    pub status: Status,
+    /// The issue type.
+    #[serde(default, rename = "issuetype")]
+    pub issue_type: Option<IssueType>,
+}
+
+/// The parent issue of a subtask.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ParentIssue {
+    /// The parent issue ID.
+    pub id: String,
+    /// The parent issue key (e.g., "PROJ-100").
+    pub key: String,
+    /// The parent issue fields.
+    pub fields: ParentIssueFields,
+}
+
+/// Minimal fields for a parent issue.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ParentIssueFields {
+    /// The parent issue summary.
+    pub summary: String,
+    /// The parent issue status.
+    pub status: Status,
+    /// The issue type.
+    #[serde(default, rename = "issuetype")]
+    pub issue_type: Option<IssueType>,
 }
 
 /// Issue status.
@@ -262,6 +376,16 @@ pub struct Status {
     /// The status category.
     #[serde(default)]
     pub status_category: Option<StatusCategory>,
+}
+
+impl Status {
+    /// Check if this status is in the "done" category.
+    pub fn is_done(&self) -> bool {
+        self.status_category
+            .as_ref()
+            .map(|c| c.key == "done")
+            .unwrap_or(false)
+    }
 }
 
 impl fmt::Display for Status {
@@ -1467,6 +1591,9 @@ mod tests {
                 updated: None,
                 duedate: None,
                 story_points: None,
+                issue_links: vec![],
+                subtasks: vec![],
+                parent: None,
             },
         }
     }
@@ -1686,6 +1813,9 @@ mod tests {
                 updated: None,
                 duedate: None,
                 story_points: None,
+                issue_links: vec![],
+                subtasks: vec![],
+                parent: None,
             },
         };
         assert_eq!(issue_with_data.assignee_name(), "John Doe");

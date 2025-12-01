@@ -18,8 +18,9 @@ use crate::api::types::{
     Transition, User,
 };
 use crate::ui::components::{
-    AssigneeAction, AssigneePicker, CommentAction, CommentsPanel, PriorityAction, PriorityPicker,
-    TagAction, TagEditor, TextEditor, TextInput, TransitionAction, TransitionPicker,
+    AssigneeAction, AssigneePicker, CommentAction, CommentsPanel, LinkedIssuesAction,
+    LinkedIssuesSection, PriorityAction, PriorityPicker, TagAction, TagEditor, TextEditor,
+    TextInput, TransitionAction, TransitionPicker,
 };
 use crate::ui::theme::{issue_type_prefix, priority_style, status_style, theme};
 use crate::ui::views::history::{HistoryAction, HistoryView};
@@ -75,6 +76,8 @@ pub enum DetailAction {
     FetchChangelog(String),
     /// Load more changelog entries (issue key).
     LoadMoreChangelog(String),
+    /// Navigate to a linked issue (issue key).
+    NavigateToIssue(String),
 }
 
 /// Which field is currently being edited.
@@ -131,6 +134,8 @@ pub struct DetailView {
     history_view: HistoryView,
     /// Component editor for adding/removing components.
     component_editor: TagEditor,
+    /// Linked issues section for displaying related issues.
+    linked_issues: LinkedIssuesSection,
 }
 
 impl DetailView {
@@ -151,11 +156,18 @@ impl DetailView {
             label_editor: TagEditor::for_labels(),
             history_view: HistoryView::new(),
             component_editor: TagEditor::for_components(),
+            linked_issues: LinkedIssuesSection::empty(),
         }
     }
 
     /// Set the issue to display.
     pub fn set_issue(&mut self, issue: Issue) {
+        // Update the linked issues section
+        self.linked_issues = LinkedIssuesSection::new(
+            &issue.fields.issue_links,
+            &issue.fields.subtasks,
+            issue.fields.parent.clone(),
+        );
         self.issue = Some(issue);
         self.scroll = 0;
         self.max_scroll = 0;
@@ -184,6 +196,7 @@ impl DetailView {
         self.label_editor.hide();
         self.history_view.hide();
         self.component_editor.hide();
+        self.linked_issues = LinkedIssuesSection::empty();
     }
 
     /// Get a reference to the current issue.
@@ -761,6 +774,49 @@ impl DetailView {
                     None
                 }
             }
+            // Focus linked issues section
+            (KeyCode::Char('r'), KeyModifiers::NONE) => {
+                if !self.linked_issues.is_empty() {
+                    self.linked_issues.set_focused(true);
+                }
+                None
+            }
+            // Navigate to linked issue when in linked issues section
+            (KeyCode::Enter, KeyModifiers::NONE) if self.linked_issues.is_focused() => {
+                if let Some(action) = self.linked_issues.handle_input(key) {
+                    match action {
+                        LinkedIssuesAction::Navigate(key) => {
+                            self.linked_issues.set_focused(false);
+                            Some(DetailAction::NavigateToIssue(key))
+                        }
+                    }
+                } else {
+                    None
+                }
+            }
+            _ if self.linked_issues.is_focused() => {
+                // Handle linked issues navigation when focused
+                match (key.code, key.modifiers) {
+                    // Escape unfocuses the section
+                    (KeyCode::Esc, KeyModifiers::NONE) => {
+                        self.linked_issues.set_focused(false);
+                        None
+                    }
+                    _ => {
+                        // Delegate to linked issues section
+                        if let Some(action) = self.linked_issues.handle_input(key) {
+                            match action {
+                                LinkedIssuesAction::Navigate(issue_key) => {
+                                    self.linked_issues.set_focused(false);
+                                    Some(DetailAction::NavigateToIssue(issue_key))
+                                }
+                            }
+                        } else {
+                            None
+                        }
+                    }
+                }
+            }
             _ => None,
         }
     }
@@ -1036,16 +1092,32 @@ impl DetailView {
         let description = issue.description_text();
         let project_key = issue.project_key().map(|s| s.to_string());
 
-        // Calculate layout
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(3), // Header (type + key)
-                Constraint::Length(2), // Summary
-                Constraint::Length(7), // Metadata
-                Constraint::Min(5),    // Description (scrollable)
-            ])
-            .split(area);
+        // Calculate linked issues height
+        let linked_issues_height = self.linked_issues.height();
+
+        // Calculate layout based on whether linked issues section is visible
+        let chunks = if linked_issues_height > 0 {
+            Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(3),                     // Header (type + key)
+                    Constraint::Length(2),                     // Summary
+                    Constraint::Length(7),                     // Metadata
+                    Constraint::Length(linked_issues_height),  // Linked issues
+                    Constraint::Min(5),                        // Description (scrollable)
+                ])
+                .split(area)
+        } else {
+            Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(3), // Header (type + key)
+                    Constraint::Length(2), // Summary
+                    Constraint::Length(7), // Metadata
+                    Constraint::Min(5),    // Description (scrollable)
+                ])
+                .split(area)
+        };
 
         // Render header
         self.render_header(frame, chunks[0], &issue_type_name, &issue_key);
@@ -1068,8 +1140,15 @@ impl DetailView {
             project_key.as_deref(),
         );
 
-        // Render description (scrollable)
-        self.render_description(frame, chunks[3], &description);
+        // Render linked issues (if any)
+        if linked_issues_height > 0 {
+            self.linked_issues.render(frame, chunks[3]);
+            // Render description (scrollable)
+            self.render_description(frame, chunks[4], &description);
+        } else {
+            // Render description (scrollable)
+            self.render_description(frame, chunks[3], &description);
+        }
 
         // Render pickers and panels (overlays)
         self.transition_picker.render(frame, area);
@@ -1503,6 +1582,9 @@ mod tests {
                 updated: None,
                 duedate: None,
                 story_points: None,
+                issue_links: vec![],
+                subtasks: vec![],
+                parent: None,
             },
         }
     }
@@ -1580,6 +1662,9 @@ mod tests {
                 updated: Some("2024-01-16T14:30:00.000+0000".to_string()),
                 duedate: None,
                 story_points: None,
+                issue_links: vec![],
+                subtasks: vec![],
+                parent: None,
             },
         }
     }

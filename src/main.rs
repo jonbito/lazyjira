@@ -742,6 +742,25 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
             }
         }
 
+        // Handle linked issue navigation request
+        if let Some(issue_key) = app.take_pending_navigate_to_issue() {
+            if let Some(ref c) = client {
+                debug!("Navigating to linked issue: {}", issue_key);
+                match c.get_issue(&issue_key).await {
+                    Ok(issue) => {
+                        info!("Loaded linked issue: {}", issue_key);
+                        app.handle_navigate_to_issue_success(issue);
+                    }
+                    Err(e) => {
+                        error!("Failed to load linked issue: {}", e);
+                        app.handle_navigate_to_issue_failure(&e.to_string());
+                    }
+                }
+            } else {
+                app.handle_navigate_to_issue_failure("No JIRA connection");
+            }
+        }
+
         // Check if we should quit
         if app.should_quit() {
             break;

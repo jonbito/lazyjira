@@ -135,6 +135,8 @@ pub struct App {
     pending_remove_component: Option<(String, String)>,
     /// Pending fetch changelog request (issue key, start_at).
     pending_fetch_changelog: Option<(String, u32)>,
+    /// Pending navigation to a linked issue (issue key).
+    pending_navigate_to_issue: Option<String>,
     /// Help view.
     help_view: HelpView,
     /// Previous state before opening help (to return to).
@@ -207,6 +209,7 @@ impl App {
             pending_add_component: None,
             pending_remove_component: None,
             pending_fetch_changelog: None,
+            pending_navigate_to_issue: None,
             help_view: HelpView::new(),
             previous_state: None,
             command_palette: CommandPalette::new(),
@@ -271,6 +274,7 @@ impl App {
             pending_add_component: None,
             pending_remove_component: None,
             pending_fetch_changelog: None,
+            pending_navigate_to_issue: None,
             help_view: HelpView::new(),
             previous_state: None,
             command_palette: CommandPalette::new(),
@@ -1422,6 +1426,30 @@ impl App {
         self.notify_error(format!("Failed to load history: {}", error));
     }
 
+    // ========================================================================
+    // Linked issue navigation methods
+    // ========================================================================
+
+    /// Take the pending navigate to issue request.
+    pub fn take_pending_navigate_to_issue(&mut self) -> Option<String> {
+        self.pending_navigate_to_issue.take()
+    }
+
+    /// Handle successful linked issue navigation.
+    pub fn handle_navigate_to_issue_success(&mut self, issue: Issue) {
+        info!(key = %issue.key, "Navigated to linked issue");
+        self.selected_issue_key = Some(issue.key.clone());
+        self.set_detail_issue(issue);
+        self.stop_loading();
+    }
+
+    /// Handle failure to navigate to linked issue.
+    pub fn handle_navigate_to_issue_failure(&mut self, error: &str) {
+        warn!(error = %error, "Failed to navigate to linked issue");
+        self.stop_loading();
+        self.notify_error(format!("Failed to load issue: {}", error));
+    }
+
     /// Returns whether the application should quit.
     pub fn should_quit(&self) -> bool {
         self.should_quit
@@ -1836,6 +1864,13 @@ impl App {
                             // Store request for the runner to pick up
                             self.pending_fetch_changelog = Some((issue_key, start_at));
                         }
+                        DetailAction::NavigateToIssue(issue_key) => {
+                            info!(key = %issue_key, "Navigating to linked issue");
+                            // Store the pending navigation for the runner to handle
+                            self.pending_navigate_to_issue = Some(issue_key.clone());
+                            // The runner will fetch the issue details
+                            self.start_loading(format!("Loading issue {}...", issue_key));
+                        }
                     }
                 }
             }
@@ -2184,6 +2219,9 @@ mod tests {
                 updated: None,
                 duedate: None,
                 story_points: None,
+                issue_links: vec![],
+                subtasks: vec![],
+                parent: None,
             },
         }
     }

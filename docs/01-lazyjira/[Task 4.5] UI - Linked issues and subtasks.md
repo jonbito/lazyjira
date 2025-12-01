@@ -416,8 +416,71 @@ pub enum LinkAction {
 
 ## Definition of Done
 
-- [ ] All acceptance criteria met
-- [ ] Navigation works smoothly
-- [ ] All link types supported
-- [ ] Subtasks progress visible
-- [ ] Back navigation preserved
+- [x] All acceptance criteria met
+- [x] Navigation works smoothly
+- [x] All link types supported
+- [x] Subtasks progress visible
+- [x] Back navigation preserved
+
+---
+
+## Completion Summary
+
+**Completed:** 2025-12-01
+
+### Implementation
+
+Added linked issues and subtasks display functionality to the issue detail view, allowing users to see related issues, subtasks, and parent issues with full navigation support.
+
+### Files Modified
+
+1. **`src/api/types.rs`**
+   - Added `IssueLink`, `IssueLinkType`, `LinkedIssue`, `LinkedIssueFields` types
+   - Added `Subtask`, `SubtaskFields`, `ParentIssue`, `ParentIssueFields` types
+   - Extended `IssueFields` with `issue_links`, `subtasks`, and `parent` fields
+   - Added `is_done()` method to `Status` for subtask completion indicators
+
+2. **`src/ui/components/linked_issues.rs`** (new)
+   - Created `LinkedIssuesSection` component with full keyboard navigation
+   - Supports expand/collapse via Tab key
+   - Navigation with j/k and arrow keys
+   - Enter to navigate to selected linked issue
+   - Renders parent issues, linked issues with direction indicators, and subtasks with checkboxes
+
+3. **`src/ui/components/mod.rs`**
+   - Added module declaration and exports for `LinkedIssuesSection` and `LinkedIssuesAction`
+
+4. **`src/ui/views/detail.rs`**
+   - Integrated `LinkedIssuesSection` into the detail view layout
+   - Added `r` key binding to focus the linked issues section
+   - Added `NavigateToIssue` action variant
+   - Dynamic layout calculation based on linked issues presence
+
+5. **`src/app.rs`**
+   - Added `pending_navigate_to_issue` field for async navigation requests
+   - Added `take_pending_navigate_to_issue()`, `handle_navigate_to_issue_success()`, `handle_navigate_to_issue_failure()` methods
+   - Handler for `NavigateToIssue` detail action
+
+6. **`src/main.rs`**
+   - Added handler for linked issue navigation requests using JIRA API
+
+### Key Features
+
+- **Parent Issue Display**: Shows parent issue at the top with ↑ indicator
+- **Linked Issues**: Shows link type and direction (← inward, → outward)
+- **Subtasks**: Shows completion status with [x]/[ ] checkboxes
+- **Navigation**: Full keyboard navigation within the section
+- **Expand/Collapse**: Tab key toggles section visibility
+- **Status Colors**: Color-coded status indicators based on category
+
+### Test Coverage
+
+Added 16 new tests covering:
+- Empty section handling
+- Section with parent, links, subtasks, or all combined
+- Navigation (j/k, up/down, selection tracking)
+- Expand/collapse functionality
+- Input handling when focused/unfocused/collapsed
+- Height calculation
+- Status is_done() method
+- Default implementation

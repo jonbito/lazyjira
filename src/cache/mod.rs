@@ -471,6 +471,9 @@ mod tests {
                 updated: None,
                 duedate: None,
                 story_points: None,
+                issue_links: vec![],
+                subtasks: vec![],
+                parent: None,
             },
         }
     }

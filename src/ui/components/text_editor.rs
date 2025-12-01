@@ -68,6 +68,14 @@ impl TextEditor {
         self.content() != self.original_content
     }
 
+    /// Set the original content for change tracking.
+    ///
+    /// This allows comparing the current content against a different baseline
+    /// than what the editor was initialized with (useful for external editor integration).
+    pub fn set_original_content(&mut self, content: &str) {
+        self.original_content = content.to_string();
+    }
+
     /// Get the current cursor line.
     pub fn cursor_line(&self) -> usize {
         self.cursor_line

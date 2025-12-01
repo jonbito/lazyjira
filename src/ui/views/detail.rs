@@ -91,6 +91,8 @@ pub enum DetailAction {
     ConfirmDeleteLink(String, String),
     /// Delete a link (link ID, issue key to refresh).
     DeleteLink(String, String),
+    /// Open description in external editor (issue key).
+    OpenExternalEditor(String),
 }
 
 /// Which field is currently being edited.
@@ -620,6 +622,33 @@ impl DetailView {
         }
     }
 
+    /// Called after external editor returns with modified content.
+    ///
+    /// This enters edit mode with the description field focused and populated
+    /// with the content from the external editor.
+    pub fn set_external_edit_content(&mut self, content: String) {
+        if let Some(issue) = &self.issue {
+            let summary = issue.fields.summary.clone();
+            let original_description = issue.description_text();
+
+            let mut summary_input = TextInput::with_value(&summary);
+            summary_input.set_placeholder("Enter summary...");
+
+            // Create description editor with the external editor content
+            // but set the original content to the issue's description for change tracking
+            let mut description_editor = TextEditor::new(&content);
+            description_editor.set_original_content(&original_description);
+
+            self.edit_state = Some(EditState {
+                field: EditField::Description, // Focus on description
+                summary_input,
+                description_editor,
+                original_summary: summary,
+                original_description,
+            });
+        }
+    }
+
     /// Exit edit mode without saving.
     pub fn exit_edit_mode(&mut self) {
         self.edit_state = None;
@@ -763,6 +792,14 @@ impl DetailView {
             }
             // Edit issue
             (KeyCode::Char('e'), KeyModifiers::NONE) => Some(DetailAction::EditIssue),
+            // Open description in external editor
+            (KeyCode::Char('E'), KeyModifiers::SHIFT) => {
+                if let Some(issue) = &self.issue {
+                    Some(DetailAction::OpenExternalEditor(issue.key.clone()))
+                } else {
+                    None
+                }
+            }
             // Open comments panel
             (KeyCode::Char('c'), KeyModifiers::NONE) => {
                 if let Some(issue) = &self.issue {
@@ -1630,7 +1667,7 @@ impl DetailView {
             Span::styled(scroll_info, Style::default().fg(t.dim)),
             Span::raw(" | "),
             Span::styled(
-                "j/k:scroll  q:back  e:edit  c:comment  s:status  a:assignee  h:history  l:labels  L:link",
+                "j/k:scroll  q:back  e:edit  E:ext-edit  c:comment  s:status  a:assignee  h:history  l:labels  L:link",
                 Style::default().fg(t.dim),
             ),
         ]);
@@ -2232,5 +2269,116 @@ mod tests {
         view.clear();
 
         assert!(!view.is_transition_picker_visible());
+    }
+
+    // ========================================================================
+    // External editor tests
+    // ========================================================================
+
+    #[test]
+    fn test_shift_e_triggers_open_external_editor() {
+        let mut view = DetailView::new();
+        let issue = create_test_issue("TEST-123", "Test issue");
+        view.set_issue(issue);
+
+        let key = KeyEvent::new(KeyCode::Char('E'), KeyModifiers::SHIFT);
+        let action = view.handle_input(key);
+
+        assert_eq!(
+            action,
+            Some(DetailAction::OpenExternalEditor("TEST-123".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_shift_e_contains_correct_issue_key() {
+        let mut view = DetailView::new();
+        let issue = create_test_issue("PROJ-456", "Another test issue");
+        view.set_issue(issue);
+
+        let key = KeyEvent::new(KeyCode::Char('E'), KeyModifiers::SHIFT);
+        let action = view.handle_input(key);
+
+        match action {
+            Some(DetailAction::OpenExternalEditor(key)) => {
+                assert_eq!(key, "PROJ-456");
+            }
+            _ => panic!("Expected OpenExternalEditor action"),
+        }
+    }
+
+    #[test]
+    fn test_shift_e_without_issue_does_nothing() {
+        let mut view = DetailView::new();
+
+        let key = KeyEvent::new(KeyCode::Char('E'), KeyModifiers::SHIFT);
+        let action = view.handle_input(key);
+
+        assert!(action.is_none());
+    }
+
+    #[test]
+    fn test_shift_e_ignored_in_edit_mode() {
+        let mut view = DetailView::new();
+        let issue = create_test_issue("TEST-123", "Test issue");
+        view.set_issue(issue);
+
+        // Enter edit mode
+        view.enter_edit_mode();
+        assert!(view.is_editing());
+
+        // E should be handled as text input in edit mode, not trigger external editor
+        let key = KeyEvent::new(KeyCode::Char('E'), KeyModifiers::SHIFT);
+        let action = view.handle_input(key);
+
+        // In edit mode, the key is handled by the editor, not returning OpenExternalEditor
+        assert!(action.is_none() || !matches!(action, Some(DetailAction::OpenExternalEditor(_))));
+    }
+
+    #[test]
+    fn test_set_external_edit_content_enters_edit_mode() {
+        let mut view = DetailView::new();
+        let issue = create_test_issue("TEST-123", "Test issue");
+        view.set_issue(issue);
+
+        assert!(!view.is_editing());
+
+        view.set_external_edit_content("New description content".to_string());
+
+        assert!(view.is_editing());
+    }
+
+    #[test]
+    fn test_set_external_edit_content_focuses_description() {
+        let mut view = DetailView::new();
+        let issue = create_test_issue("TEST-123", "Test issue");
+        view.set_issue(issue);
+
+        view.set_external_edit_content("Modified description".to_string());
+
+        // Should be editing the description field, not summary
+        assert_eq!(view.current_edit_field(), Some(EditField::Description));
+    }
+
+    #[test]
+    fn test_set_external_edit_content_marks_as_modified() {
+        let mut view = DetailView::new();
+        let issue = create_test_issue("TEST-123", "Test issue");
+        view.set_issue(issue);
+
+        view.set_external_edit_content("Different from original".to_string());
+
+        // The content is different from the original, so it should be marked as having changes
+        assert!(view.has_unsaved_changes());
+    }
+
+    #[test]
+    fn test_set_external_edit_content_without_issue() {
+        let mut view = DetailView::new();
+
+        view.set_external_edit_content("Some content".to_string());
+
+        // Without an issue, nothing should happen
+        assert!(!view.is_editing());
     }
 }

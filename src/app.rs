@@ -149,6 +149,8 @@ pub struct App {
     pending_delete_link: Option<(String, String)>,
     /// Delete link confirmation dialog.
     delete_link_confirm_dialog: ConfirmDialog,
+    /// Pending external editor request (issue key, current description).
+    pending_external_edit: Option<(String, String)>,
     /// Help view.
     help_view: HelpView,
     /// Previous state before opening help (to return to).
@@ -228,6 +230,7 @@ impl App {
             pending_confirm_delete_link: None,
             pending_delete_link: None,
             delete_link_confirm_dialog: ConfirmDialog::new(),
+            pending_external_edit: None,
             help_view: HelpView::new(),
             previous_state: None,
             command_palette: CommandPalette::new(),
@@ -299,6 +302,7 @@ impl App {
             pending_confirm_delete_link: None,
             pending_delete_link: None,
             delete_link_confirm_dialog: ConfirmDialog::new(),
+            pending_external_edit: None,
             help_view: HelpView::new(),
             previous_state: None,
             command_palette: CommandPalette::new(),
@@ -1572,6 +1576,17 @@ impl App {
         self.notify_error(format!("Failed to delete link: {}", error));
     }
 
+    // ========================================================================
+    // External editor methods
+    // ========================================================================
+
+    /// Take the pending external edit request.
+    ///
+    /// Returns (issue_key, current_description) if there's a pending external edit.
+    pub fn take_pending_external_edit(&mut self) -> Option<(String, String)> {
+        self.pending_external_edit.take()
+    }
+
     /// Returns whether the application should quit.
     pub fn should_quit(&self) -> bool {
         self.should_quit
@@ -2054,6 +2069,13 @@ impl App {
                             info!(link_id = %link_id, key = %issue_key, "Deleting issue link");
                             self.pending_delete_link = Some((link_id, issue_key));
                             self.start_loading("Deleting link...".to_string());
+                        }
+                        DetailAction::OpenExternalEditor(issue_key) => {
+                            if let Some(issue) = self.detail_view.issue() {
+                                let description = issue.description_text();
+                                info!(key = %issue_key, "Opening external editor for issue description");
+                                self.pending_external_edit = Some((issue_key, description));
+                            }
                         }
                     }
                 }

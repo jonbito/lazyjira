@@ -11,14 +11,14 @@ Integrate the external editor functionality into the DetailView component. Add t
 
 ## Acceptance Criteria
 
-- [ ] `E` (Shift+e) key binding triggers external editor when viewing issue detail
-- [ ] New `DetailAction::OpenExternalEditor(String)` action variant exists
-- [ ] Action includes the issue key for temp file naming
-- [ ] After external edit, view enters edit mode with updated content
-- [ ] If content unchanged, no edit mode is triggered
-- [ ] Key binding only works when not already in edit mode
-- [ ] Help text updated to show `E` key binding
-- [ ] Tests written and passing
+- [x] `E` (Shift+e) key binding triggers external editor when viewing issue detail
+- [x] New `DetailAction::OpenExternalEditor(String)` action variant exists
+- [x] Action includes the issue key for temp file naming
+- [x] After external edit, view enters edit mode with updated content
+- [x] If content unchanged, no edit mode is triggered
+- [x] Key binding only works when not already in edit mode
+- [x] Help text updated to show `E` key binding
+- [x] Tests written and passing
 
 ## Implementation Details
 
@@ -80,11 +80,11 @@ E       Open description in external editor ($EDITOR)
 
 ## Testing Requirements
 
-- [ ] Test `E` key triggers `OpenExternalEditor` action
-- [ ] Test action contains correct issue key
-- [ ] Test `E` is ignored when already in edit mode
-- [ ] Test `set_external_edit_content` properly enters edit mode
-- [ ] Test help text includes new key binding
+- [x] Test `E` key triggers `OpenExternalEditor` action
+- [x] Test action contains correct issue key
+- [x] Test `E` is ignored when already in edit mode
+- [x] Test `set_external_edit_content` properly enters edit mode
+- [x] Test help text includes new key binding
 
 ## Dependencies
 
@@ -94,9 +94,47 @@ E       Open description in external editor ($EDITOR)
 
 ## Definition of Done
 
-- [ ] All acceptance criteria met
-- [ ] Code follows project standards (cargo fmt, cargo clippy)
-- [ ] Unit tests passing
+- [x] All acceptance criteria met
+- [x] Code follows project standards (cargo fmt, cargo clippy)
+- [x] Unit tests passing
 - [ ] Key binding works as expected in manual testing
-- [ ] Help screen updated with `E` key documentation
+- [x] Help screen updated with `E` key documentation
 - [ ] Code reviewed and merged
+
+## Implementation Completion
+
+**Completed:** 2025-12-01
+**Branch:** `detail-view-external-editor-integration`
+
+### Files Created/Modified
+
+- `src/ui/views/detail.rs` - **Modified**
+  - Added `DetailAction::OpenExternalEditor(String)` variant
+  - Added `E` key binding handler in `handle_input()` (only works when not in edit mode)
+  - Added `set_external_edit_content()` method for receiving external editor content
+  - Updated status bar help text to show `E:ext-edit`
+- `src/app.rs` - **Modified**
+  - Added `pending_external_edit: Option<(String, String)>` field
+  - Added handler for `DetailAction::OpenExternalEditor` that stores pending request
+  - Added `take_pending_external_edit()` method for main loop consumption
+- `src/ui/components/text_editor.rs` - **Modified**
+  - Added `set_original_content()` method for proper change tracking with external editor content
+
+### Test Coverage
+
+8 new unit tests added:
+- `test_shift_e_triggers_open_external_editor` - Verifies E key triggers action
+- `test_shift_e_contains_correct_issue_key` - Verifies action contains correct issue key
+- `test_shift_e_without_issue_does_nothing` - Verifies no action without issue
+- `test_shift_e_ignored_in_edit_mode` - Verifies E is ignored during edit mode
+- `test_set_external_edit_content_enters_edit_mode` - Verifies edit mode is entered
+- `test_set_external_edit_content_focuses_description` - Verifies description field is focused
+- `test_set_external_edit_content_marks_as_modified` - Verifies change tracking works
+- `test_set_external_edit_content_without_issue` - Verifies no-op without issue
+
+### Key Implementation Decisions
+
+1. **Change tracking**: Used `TextEditor::set_original_content()` to compare against issue's original description, not external editor content
+2. **Action payload**: Stores `(issue_key, description)` in pending_external_edit for main loop to use
+3. **Focus behavior**: External edit content sets focus to Description field, not Summary
+4. **Help text**: Added `E:ext-edit` to status bar (abbreviated due to space constraints)

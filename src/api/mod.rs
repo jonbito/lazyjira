@@ -43,13 +43,4 @@ pub mod error;
 pub mod types;
 
 // Re-export main types for convenience
-pub use auth::Auth;
 pub use client::JiraClient;
-pub use error::{ApiError, Result};
-pub use types::{
-    AtlassianDoc, Comment, CommentsResponse, Component, ComponentOperation, CurrentUser,
-    FieldUpdates, Issue, IssueFields, IssueType, IssueUpdateRequest, LabelOperation, Priority,
-    PriorityRef, Project, SearchResult, Status, StatusCategory, Transition, TransitionField,
-    TransitionRef, TransitionRequest, TransitionTarget, TransitionsResponse, UpdateOperations,
-    User, UserRef,
-};

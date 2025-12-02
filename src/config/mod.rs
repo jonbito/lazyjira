@@ -41,7 +41,6 @@ pub use profile::Profile;
 pub use settings::Settings;
 
 // Re-export Config and ConfigError at the module level
-pub use self::ConfigError as Error;
 
 use std::fs;
 use std::path::PathBuf;

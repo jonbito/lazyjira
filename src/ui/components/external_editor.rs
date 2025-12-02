@@ -199,8 +199,10 @@ fn read_and_cleanup(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     #[test]
+    #[serial]
     fn test_get_editor_with_editor_env() {
         // Save original values
         let original_editor = env::var("EDITOR").ok();
@@ -225,6 +227,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_get_editor_with_visual_env() {
         // Save original values
         let original_editor = env::var("EDITOR").ok();
@@ -249,6 +252,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_get_editor_fallback_to_vi() {
         // Save original values
         let original_editor = env::var("EDITOR").ok();
@@ -273,6 +277,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_editor_priority_editor_over_visual() {
         // Save original values
         let original_editor = env::var("EDITOR").ok();

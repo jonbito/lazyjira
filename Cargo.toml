@@ -35,3 +35,4 @@ open = "5.3"
 [dev-dependencies]
 tokio-test = "0.4"
 tempfile = "3.14"
+serial_test = "3.2"

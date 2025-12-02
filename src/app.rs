@@ -771,6 +771,22 @@ impl App {
         self.filter_options.is_some()
     }
 
+    /// Add a label to the filter options if it doesn't already exist.
+    pub fn add_label_to_filter_options(&mut self, label: &str) {
+        if let Some(ref mut options) = self.filter_options {
+            options.add_label(label);
+            self.filter_panel.set_options(options.clone());
+        }
+    }
+
+    /// Add a component to the filter options if it doesn't already exist.
+    pub fn add_component_to_filter_options(&mut self, component: &str) {
+        if let Some(ref mut options) = self.filter_options {
+            options.add_component(component);
+            self.filter_panel.set_options(options.clone());
+        }
+    }
+
     /// Open the filter panel.
     pub fn open_filter_panel(&mut self) {
         debug!("Opening filter panel");
@@ -1361,6 +1377,11 @@ impl App {
     pub fn handle_label_change_success(&mut self, updated_issue: Issue) {
         info!(key = %updated_issue.key, "Label changed successfully");
 
+        // Add any new labels to filter options
+        for label in &updated_issue.fields.labels {
+            self.add_label_to_filter_options(label);
+        }
+
         // Update the detail view with the updated issue
         self.detail_view.set_issue(updated_issue.clone());
 
@@ -1425,6 +1446,11 @@ impl App {
     /// Handle successful component change.
     pub fn handle_component_change_success(&mut self, updated_issue: Issue) {
         info!(key = %updated_issue.key, "Component changed successfully");
+
+        // Add any new components to filter options
+        for component in &updated_issue.fields.components {
+            self.add_component_to_filter_options(&component.name);
+        }
 
         // Update the detail view with the updated issue
         self.detail_view.set_issue(updated_issue.clone());

@@ -1138,6 +1138,24 @@ impl FilterOptions {
         // Consider loaded if we have at least statuses
         !self.statuses.is_empty()
     }
+
+    /// Add a label if it doesn't already exist.
+    pub fn add_label(&mut self, label: &str) {
+        if !self.labels.iter().any(|l| l.id == label) {
+            self.labels.push(FilterOption::new(label, label));
+            // Keep labels sorted
+            self.labels.sort_by(|a, b| a.label.cmp(&b.label));
+        }
+    }
+
+    /// Add a component if it doesn't already exist.
+    pub fn add_component(&mut self, component: &str) {
+        if !self.components.iter().any(|c| c.id == component) {
+            self.components.push(FilterOption::new(component, component));
+            // Keep components sorted
+            self.components.sort_by(|a, b| a.label.cmp(&b.label));
+        }
+    }
 }
 
 /// A JIRA sprint.

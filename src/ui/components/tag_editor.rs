@@ -21,6 +21,8 @@ pub enum TagAction {
     Add(String),
     /// Remove a tag (tag name).
     Remove(String),
+    /// Create a new tag (tag name) - for tags that don't exist yet.
+    Create(String),
     /// Cancel the editor.
     Cancel,
 }
@@ -184,7 +186,13 @@ impl TagEditor {
         if self.focus_on_current {
             self.current_tags.len()
         } else {
-            self.filtered_indices.len()
+            let base_count = self.filtered_indices.len();
+            // Add 1 for the "create new" option if applicable
+            if self.should_show_create_option() {
+                base_count + 1
+            } else {
+                base_count
+            }
         }
     }
 
@@ -332,7 +340,19 @@ impl TagEditor {
 
     /// Add the currently selected available tag.
     fn add_current_tag(&mut self) -> Option<TagAction> {
-        if let Some(&idx) = self.filtered_indices.get(self.selected) {
+        // Check if we're trying to create a new tag (search query with no matches or selecting "create new")
+        if self.should_show_create_option() && self.selected == 0 {
+            return self.create_new_tag();
+        }
+
+        // Adjust index if create option is shown (it takes position 0)
+        let adjusted_selected = if self.should_show_create_option() {
+            self.selected.saturating_sub(1)
+        } else {
+            self.selected
+        };
+
+        if let Some(&idx) = self.filtered_indices.get(adjusted_selected) {
             if let Some(tag) = self.available_tags.get(idx).cloned() {
                 // Only add if not already in current
                 if !self.current_tags.contains(&tag) {
@@ -342,6 +362,40 @@ impl TagEditor {
             }
         }
         None
+    }
+
+    /// Check if we should show the "create new" option.
+    fn should_show_create_option(&self) -> bool {
+        // Show create option when:
+        // 1. There's a non-empty search query
+        // 2. The query doesn't exactly match any existing tag (case-insensitive)
+        // 3. The query isn't already in current tags
+        if self.search_query.is_empty() {
+            return false;
+        }
+        let query_lower = self.search_query.to_lowercase();
+        let exact_match_exists = self
+            .available_tags
+            .iter()
+            .any(|tag| tag.to_lowercase() == query_lower);
+        let already_assigned = self
+            .current_tags
+            .iter()
+            .any(|tag| tag.to_lowercase() == query_lower);
+        !exact_match_exists && !already_assigned
+    }
+
+    /// Create a new tag from the search query.
+    fn create_new_tag(&mut self) -> Option<TagAction> {
+        if self.search_query.is_empty() {
+            return None;
+        }
+        let new_tag = self.search_query.clone();
+        self.current_tags.push(new_tag.clone());
+        self.search_query.clear();
+        self.update_filtered_indices();
+        self.input_mode = InputMode::Normal;
+        Some(TagAction::Create(new_tag))
     }
 
     /// Render the tag editor.
@@ -534,7 +588,9 @@ impl TagEditor {
         let inner = block.inner(area);
         frame.render_widget(block, area);
 
-        if self.filtered_indices.is_empty() {
+        let show_create = self.should_show_create_option();
+
+        if self.filtered_indices.is_empty() && !show_create {
             let empty_text = if self.search_query.is_empty() {
                 "No options available"
             } else {
@@ -543,21 +599,34 @@ impl TagEditor {
             let paragraph = Paragraph::new(empty_text).style(Style::default().fg(Color::DarkGray));
             frame.render_widget(paragraph, inner);
         } else {
-            let items: Vec<ListItem> = self
-                .filtered_indices
-                .iter()
-                .map(|&idx| {
-                    let tag = &self.available_tags[idx];
-                    let is_assigned = self.current_tags.contains(tag);
-                    let style = if is_assigned {
-                        Style::default().fg(Color::Green)
-                    } else {
+            let mut items: Vec<ListItem> = Vec::new();
+
+            // Add "Create new" option at the top if applicable
+            if show_create {
+                items.push(ListItem::new(Line::from(vec![
+                    Span::styled("[+] ", Style::default().fg(Color::Yellow)),
+                    Span::styled("Create: ", Style::default().fg(Color::Yellow)),
+                    Span::styled(
+                        format!("\"{}\"", &self.search_query),
                         Style::default()
-                    };
-                    let prefix = if is_assigned { "[+] " } else { "    " };
-                    ListItem::new(format!("{}{}", prefix, tag)).style(style)
-                })
-                .collect();
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                ])));
+            }
+
+            // Add filtered available tags
+            for &idx in &self.filtered_indices {
+                let tag = &self.available_tags[idx];
+                let is_assigned = self.current_tags.contains(tag);
+                let style = if is_assigned {
+                    Style::default().fg(Color::Green)
+                } else {
+                    Style::default()
+                };
+                let prefix = if is_assigned { "[+] " } else { "    " };
+                items.push(ListItem::new(format!("{}{}", prefix, tag)).style(style));
+            }
 
             let list = List::new(items);
 
@@ -992,5 +1061,139 @@ mod tests {
         assert_eq!(action, Some(TagAction::Remove("b".to_string())));
         // Selection should adjust to remain valid
         assert_eq!(editor.selected, 0);
+    }
+
+    #[test]
+    fn test_create_new_tag_shown_when_no_match() {
+        let mut editor = TagEditor::for_labels();
+        let available = vec!["bug".to_string(), "feature".to_string()];
+        editor.show(vec![], available);
+
+        // Enter search mode and type a non-matching query
+        let slash = KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE);
+        editor.handle_input(slash);
+
+        let key = KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE);
+        editor.handle_input(key);
+        let key = KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE);
+        editor.handle_input(key);
+        let key = KeyEvent::new(KeyCode::Char('w'), KeyModifiers::NONE);
+        editor.handle_input(key);
+
+        // Should show create option (query "new" doesn't match any existing tag)
+        assert!(editor.should_show_create_option());
+        // Count should be 1 (create option) since no tags match "new"
+        assert_eq!(editor.focused_count(), 1);
+    }
+
+    #[test]
+    fn test_create_new_tag_not_shown_when_exact_match() {
+        let mut editor = TagEditor::for_labels();
+        let available = vec!["bug".to_string(), "feature".to_string()];
+        editor.show(vec![], available);
+
+        // Enter search mode and type an exact match
+        let slash = KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE);
+        editor.handle_input(slash);
+
+        for c in "bug".chars() {
+            let key = KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE);
+            editor.handle_input(key);
+        }
+
+        // Should NOT show create option (query "bug" exactly matches an existing tag)
+        assert!(!editor.should_show_create_option());
+    }
+
+    #[test]
+    fn test_create_new_tag_action() {
+        let mut editor = TagEditor::for_labels();
+        let available = vec!["bug".to_string(), "feature".to_string()];
+        editor.show(vec![], available);
+
+        // Enter search mode and type a non-matching query
+        let slash = KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE);
+        editor.handle_input(slash);
+
+        for c in "newlabel".chars() {
+            let key = KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE);
+            editor.handle_input(key);
+        }
+
+        // Exit search mode and select the create option
+        let esc = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+        editor.handle_input(esc);
+
+        // Selection should be at 0 (the create option)
+        assert_eq!(editor.selected, 0);
+
+        // Press Enter to create
+        let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        let action = editor.handle_input(enter);
+
+        assert_eq!(action, Some(TagAction::Create("newlabel".to_string())));
+        assert!(editor.current_tags.contains(&"newlabel".to_string()));
+        // Search query should be cleared after creation
+        assert!(editor.search_query.is_empty());
+    }
+
+    #[test]
+    fn test_create_not_shown_if_already_assigned() {
+        let mut editor = TagEditor::for_labels();
+        let current = vec!["mytag".to_string()];
+        let available = vec!["bug".to_string()];
+        editor.show(current, available);
+
+        // Enter search mode and type a tag that's already assigned
+        let slash = KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE);
+        editor.handle_input(slash);
+
+        for c in "mytag".chars() {
+            let key = KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE);
+            editor.handle_input(key);
+        }
+
+        // Should NOT show create option (query matches an already assigned tag)
+        assert!(!editor.should_show_create_option());
+    }
+
+    #[test]
+    fn test_select_existing_tag_when_create_shown() {
+        let mut editor = TagEditor::for_labels();
+        let available = vec!["bug".to_string(), "bugfix".to_string()];
+        editor.show(vec![], available);
+
+        // Enter search mode and type partial match that matches some items
+        let slash = KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE);
+        editor.handle_input(slash);
+
+        // Type "bugf" - partial match for "bugfix", not exact match for anything
+        for c in "bugf".chars() {
+            let key = KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE);
+            editor.handle_input(key);
+        }
+
+        // "bugf" doesn't exactly match, should show create option
+        assert!(editor.should_show_create_option());
+        // Should have 1 filtered result ("bugfix") plus the create option
+        assert_eq!(editor.filtered_indices.len(), 1);
+        assert_eq!(editor.focused_count(), 2); // create + bugfix
+
+        // Exit search mode
+        let esc = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+        editor.handle_input(esc);
+
+        // Selection starts at 0 (create option)
+        assert_eq!(editor.selected, 0);
+
+        // Navigate down to select "bugfix" (after create option)
+        let down = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
+        editor.handle_input(down);
+        assert_eq!(editor.selected, 1);
+
+        // Press Enter to add "bugfix"
+        let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        let action = editor.handle_input(enter);
+        assert_eq!(action, Some(TagAction::Add("bugfix".to_string())));
     }
 }

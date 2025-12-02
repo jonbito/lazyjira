@@ -1037,7 +1037,8 @@ impl DetailView {
     fn handle_label_editor_input(&mut self, key: KeyEvent) -> Option<DetailAction> {
         if let Some(action) = self.label_editor.handle_input(key) {
             match action {
-                TagAction::Add(label) => {
+                TagAction::Add(label) | TagAction::Create(label) => {
+                    // Create works the same as Add - JIRA will create the label if it doesn't exist
                     if let Some(issue) = &self.issue {
                         let issue_key = issue.key.clone();
                         Some(DetailAction::AddLabel(issue_key, label))
@@ -1064,7 +1065,9 @@ impl DetailView {
     fn handle_component_editor_input(&mut self, key: KeyEvent) -> Option<DetailAction> {
         if let Some(action) = self.component_editor.handle_input(key) {
             match action {
-                TagAction::Add(component) => {
+                TagAction::Add(component) | TagAction::Create(component) => {
+                    // Note: Components typically need to exist in JIRA project settings
+                    // Create will attempt to add it anyway - JIRA will reject if not allowed
                     if let Some(issue) = &self.issue {
                         let issue_key = issue.key.clone();
                         Some(DetailAction::AddComponent(issue_key, component))

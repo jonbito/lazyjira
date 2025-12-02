@@ -227,8 +227,27 @@ impl NotificationManager {
 
         // Calculate notification area in bottom-right corner
         let notification_width = 50.min(area.width.saturating_sub(4));
-        let notification_height = 3; // Each notification is 3 lines tall (border + content + border)
-        let total_height = (self.notifications.len() as u16 * notification_height)
+        // Inner width accounts for borders (1 char each side) and icon prefix (2 chars for icon + space)
+        let inner_width = notification_width.saturating_sub(4) as usize;
+
+        // Calculate height for each notification based on text wrapping
+        let notification_heights: Vec<u16> = self
+            .notifications
+            .iter()
+            .map(|n| {
+                let text_len = n.message.len() + 2; // +2 for icon and space
+                let lines_needed = if inner_width > 0 {
+                    ((text_len + inner_width - 1) / inner_width) as u16 // Ceiling division
+                } else {
+                    1
+                };
+                lines_needed + 2 // Add 2 for top and bottom borders
+            })
+            .collect();
+
+        let total_height = notification_heights
+            .iter()
+            .sum::<u16>()
             .min(area.height.saturating_sub(2));
 
         let x = area.x + area.width.saturating_sub(notification_width + 2);
@@ -236,11 +255,10 @@ impl NotificationManager {
 
         let notifications_area = Rect::new(x, y, notification_width, total_height);
 
-        // Split into individual notification areas
-        let constraints: Vec<Constraint> = self
-            .notifications
+        // Split into individual notification areas with calculated heights
+        let constraints: Vec<Constraint> = notification_heights
             .iter()
-            .map(|_| Constraint::Length(notification_height))
+            .map(|&h| Constraint::Length(h))
             .collect();
 
         let chunks = Layout::default()

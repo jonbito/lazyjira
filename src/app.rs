@@ -606,10 +606,19 @@ impl App {
         // Refresh list
         self.refresh_profile_list();
 
-        // If this is the first profile, set it as current
+        // If this is the first profile, set it as default, current, and trigger fetch
         if self.current_profile.is_none() {
             if let Some(profile) = self.config.profiles.first().cloned() {
-                self.current_profile = Some(profile);
+                // Set as default profile
+                self.config.settings.default_profile = Some(profile.name.clone());
+                self.config.save()?;
+
+                // Set as current profile
+                self.current_profile = Some(profile.clone());
+
+                // Update list view with profile name and trigger loading
+                self.list_view.set_profile_name(Some(profile.name.clone()));
+                self.list_view.set_loading(true);
             }
         }
 

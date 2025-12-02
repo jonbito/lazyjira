@@ -734,7 +734,12 @@ impl ListView {
     /// Render the loading state.
     fn render_loading(&self, frame: &mut Frame, area: Rect) {
         let t = theme();
-        let loading = Paragraph::new("Loading issues...")
+        let message = if self.profile_name.is_none() {
+            "No profile configured. Press 'P' to add a profile."
+        } else {
+            "Loading issues..."
+        };
+        let loading = Paragraph::new(message)
             .alignment(Alignment::Center)
             .style(Style::default().fg(t.muted));
 

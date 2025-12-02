@@ -273,7 +273,7 @@ impl AssigneePicker {
         }
 
         // Calculate dialog size and position (centered)
-        let dialog_width = 50.min(area.width.saturating_sub(4));
+        let dialog_width = 60.min(area.width.saturating_sub(4));
         let dialog_height = 18.min(area.height.saturating_sub(4));
 
         let dialog_area = centered_rect(dialog_width, dialog_height, area);

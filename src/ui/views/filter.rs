@@ -118,8 +118,13 @@ impl FilterPanelView {
             })
             .collect();
         self.status_select.set_selected(status_ids);
-        self.assignee_select
-            .set_selected(state.assignees.iter().cloned().collect());
+
+        // Restore assignee selections - include __me__ if assigned_to_me is set
+        let mut assignee_ids: HashSet<String> = state.assignees.iter().cloned().collect();
+        if state.assignee_is_me {
+            assignee_ids.insert("__me__".to_string());
+        }
+        self.assignee_select.set_selected(assignee_ids);
         self.assigned_to_me = state.assignee_is_me;
 
         if let Some(project) = &state.project {
@@ -139,7 +144,9 @@ impl FilterPanelView {
         match &state.sprint {
             Some(SprintFilter::Current) => {
                 self.current_sprint = true;
-                self.sprint_select.set_selected(HashSet::new());
+                let mut selected = HashSet::new();
+                selected.insert("__current__".to_string());
+                self.sprint_select.set_selected(selected);
             }
             Some(SprintFilter::Specific(id)) => {
                 self.current_sprint = false;
@@ -326,8 +333,8 @@ impl FilterPanelView {
                 self.hide();
                 return Some(FilterPanelAction::Apply(state));
             }
-            // Cancel (Esc only for consistency)
-            (KeyCode::Esc, KeyModifiers::NONE) => {
+            // Cancel with Esc or q
+            (KeyCode::Esc, KeyModifiers::NONE) | (KeyCode::Char('q'), KeyModifiers::NONE) => {
                 self.hide();
                 return Some(FilterPanelAction::Cancel);
             }
@@ -335,11 +342,15 @@ impl FilterPanelView {
             (KeyCode::Char('c'), KeyModifiers::NONE) => {
                 self.clear_all();
             }
-            // Switch sections with Tab or arrow keys (no h/l to allow typing)
-            (KeyCode::Tab, KeyModifiers::NONE) | (KeyCode::Right, _) => {
+            // Switch sections with Tab, h/l, or arrow keys
+            (KeyCode::Tab, KeyModifiers::NONE)
+            | (KeyCode::Char('l'), KeyModifiers::NONE)
+            | (KeyCode::Right, _) => {
                 self.next_section();
             }
-            (KeyCode::BackTab, KeyModifiers::SHIFT) | (KeyCode::Left, _) => {
+            (KeyCode::BackTab, KeyModifiers::SHIFT)
+            | (KeyCode::Char('h'), KeyModifiers::NONE)
+            | (KeyCode::Left, _) => {
                 self.prev_section();
             }
             // Delegate to focused multi-select
@@ -414,9 +425,9 @@ impl FilterPanelView {
 
         // Render footer with help
         let help_text = Line::from(vec![
-            Span::styled("Tab/←→", Style::default().fg(t.warning)),
+            Span::styled("h/l", Style::default().fg(t.warning)),
             Span::raw(": switch section  "),
-            Span::styled("↑↓", Style::default().fg(t.warning)),
+            Span::styled("j/k", Style::default().fg(t.warning)),
             Span::raw(": navigate  "),
             Span::styled("Space", Style::default().fg(t.warning)),
             Span::raw(": toggle  "),
@@ -424,7 +435,7 @@ impl FilterPanelView {
             Span::raw(": apply  "),
             Span::styled("c", Style::default().fg(t.warning)),
             Span::raw(": clear  "),
-            Span::styled("Esc", Style::default().fg(t.warning)),
+            Span::styled("q/Esc", Style::default().fg(t.warning)),
             Span::raw(": cancel"),
         ]);
 

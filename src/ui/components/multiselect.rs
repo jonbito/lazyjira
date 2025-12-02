@@ -174,12 +174,12 @@ impl MultiSelect {
     /// Returns true if the input was handled.
     pub fn handle_input(&mut self, key: KeyEvent) -> bool {
         match (key.code, key.modifiers) {
-            // Navigation (arrow keys only to allow typing in text inputs)
-            (KeyCode::Down, _) => {
+            // Navigation with j/k or arrow keys
+            (KeyCode::Char('j'), KeyModifiers::NONE) | (KeyCode::Down, _) => {
                 self.move_down();
                 true
             }
-            (KeyCode::Up, _) => {
+            (KeyCode::Char('k'), KeyModifiers::NONE) | (KeyCode::Up, _) => {
                 self.move_up();
                 true
             }
@@ -257,21 +257,27 @@ impl MultiSelect {
             })
             .collect();
 
-        let highlight_style = if focused {
-            Style::default()
+        let list = if focused {
+            // Only show highlight when focused
+            let highlight_style = Style::default()
                 .fg(Color::White)
                 .bg(Color::DarkGray)
-                .add_modifier(Modifier::BOLD)
+                .add_modifier(Modifier::BOLD);
+
+            List::new(items)
+                .block(block)
+                .highlight_style(highlight_style)
+                .highlight_symbol("> ")
         } else {
-            Style::default().fg(Color::White).bg(Color::DarkGray)
+            // No highlight when not focused
+            List::new(items).block(block)
         };
 
-        let list = List::new(items)
-            .block(block)
-            .highlight_style(highlight_style)
-            .highlight_symbol("> ");
-
-        frame.render_stateful_widget(list, area, &mut self.list_state);
+        if focused {
+            frame.render_stateful_widget(list, area, &mut self.list_state);
+        } else {
+            frame.render_widget(list, area);
+        }
     }
 }
 
@@ -400,9 +406,14 @@ mod tests {
         assert!(handled);
         assert!(ms.is_selected("1"));
 
-        // Character keys are unhandled (allow typing)
+        // j/k are now handled for navigation
         let handled = ms.handle_input(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
-        assert!(!handled);
+        assert!(handled);
+        assert_eq!(ms.cursor, 1);
+
+        let handled = ms.handle_input(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE));
+        assert!(handled);
+        assert_eq!(ms.cursor, 0);
     }
 
     #[test]

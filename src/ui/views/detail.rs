@@ -1460,8 +1460,7 @@ impl DetailView {
     /// Render the header section with issue type and key.
     fn render_header(&self, frame: &mut Frame, area: Rect, issue_type: &str, key: &str) {
         let t = theme();
-        let type_prefix = issue_type_prefix(issue_type);
-        let header_text = format!("{} {} - {}", type_prefix, issue_type, key);
+        let header_text = format!("{} - {}", issue_type, key);
 
         let header = Paragraph::new(Line::from(vec![Span::styled(
             header_text,

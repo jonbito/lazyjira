@@ -19,9 +19,9 @@ use crate::api::types::{
 };
 use crate::ui::components::{
     AssigneeAction, AssigneePicker, CommentAction, CommentsPanel, IssueSearchPicker,
-    IssueSearchPickerAction, LinkTypePicker, LinkTypePickerAction, LinkedIssuesAction,
-    LinkedIssuesSection, PriorityAction, PriorityPicker, TagAction, TagEditor, TextEditor,
-    TextInput, TransitionAction, TransitionPicker,
+    IssueSearchPickerAction, LinkManager, LinkManagerAction, LinkedIssuesSection, PriorityAction,
+    PriorityPicker, TagAction, TagEditor, TextEditor, TextInput, TransitionAction,
+    TransitionPicker,
 };
 use crate::ui::theme::{issue_type_prefix, priority_style, status_style, theme};
 use crate::ui::views::history::{HistoryAction, HistoryView};
@@ -155,8 +155,8 @@ pub struct DetailView {
     component_editor: TagEditor,
     /// Linked issues section for displaying related issues.
     linked_issues: LinkedIssuesSection,
-    /// Link type picker for creating new links.
-    link_type_picker: LinkTypePicker,
+    /// Link manager for viewing/managing issue links.
+    link_manager: LinkManager,
     /// Issue search picker for selecting target issue when linking.
     issue_search_picker: IssueSearchPicker,
     /// The selected link type when creating a link.
@@ -182,7 +182,7 @@ impl DetailView {
             history_view: HistoryView::new(),
             component_editor: TagEditor::for_components(),
             linked_issues: LinkedIssuesSection::empty(),
-            link_type_picker: LinkTypePicker::new(),
+            link_manager: LinkManager::new(),
             issue_search_picker: IssueSearchPicker::new(),
             pending_link_type: None,
         }
@@ -580,14 +580,26 @@ impl DetailView {
         self.issue.as_ref().map(|i| i.key.as_str()).unwrap_or("")
     }
 
-    /// Show the link type picker with available link types.
-    pub fn show_link_type_picker(&mut self, link_types: Vec<IssueLinkType>) {
-        self.link_type_picker.show(link_types);
+    /// Show the link manager with existing links.
+    pub fn show_link_manager(&mut self) {
+        if let Some(issue) = &self.issue {
+            self.link_manager.show(
+                &issue.fields.issue_links,
+                &issue.fields.subtasks,
+                issue.fields.parent.as_ref(),
+            );
+        }
     }
 
-    /// Show the link type picker in loading state.
-    pub fn show_link_type_picker_loading(&mut self) {
-        self.link_type_picker.show_loading();
+    /// Set link types for the link manager (for creating new links).
+    pub fn set_link_types(&mut self, link_types: Vec<IssueLinkType>) {
+        self.link_manager.set_link_types(link_types);
+        self.link_manager.start_link_type_selection();
+    }
+
+    /// Show the link manager in loading state (for link type fetching).
+    pub fn show_link_manager_loading(&mut self) {
+        self.link_manager.show_loading();
     }
 
     /// Set the issue search suggestions.
@@ -595,9 +607,9 @@ impl DetailView {
         self.issue_search_picker.set_suggestions(suggestions);
     }
 
-    /// Check if the link type picker is visible.
-    pub fn is_link_type_picker_visible(&self) -> bool {
-        self.link_type_picker.is_visible()
+    /// Check if the link manager is visible.
+    pub fn is_link_manager_visible(&self) -> bool {
+        self.link_manager.is_visible()
     }
 
     /// Check if the issue search picker is visible.
@@ -745,9 +757,9 @@ impl DetailView {
             return self.handle_component_editor_input(key);
         }
 
-        // Handle link type picker (blocks other input when visible)
-        if self.link_type_picker.is_visible() {
-            return self.handle_link_type_picker_input(key);
+        // Handle link manager (blocks other input when visible)
+        if self.link_manager.is_visible() {
+            return self.handle_link_manager_input(key);
         }
 
         // Handle issue search picker (blocks other input when visible)
@@ -879,20 +891,10 @@ impl DetailView {
                     None
                 }
             }
-            // Create link (open link type picker)
+            // Open link manager (view/manage issue links)
             (KeyCode::Char('L'), KeyModifiers::SHIFT) => {
-                if let Some(issue) = &self.issue {
-                    let issue_key = issue.key.clone();
-                    self.show_link_type_picker_loading();
-                    Some(DetailAction::FetchLinkTypes(issue_key))
-                } else {
-                    None
-                }
-            }
-            // Focus linked issues section
-            (KeyCode::Char('r'), KeyModifiers::NONE) => {
-                if !self.linked_issues.is_empty() {
-                    self.linked_issues.set_focused(true);
+                if self.issue.is_some() {
+                    self.show_link_manager();
                 }
                 None
             }
@@ -902,48 +904,6 @@ impl DetailView {
                     Some(DetailAction::OpenInBrowser(issue.key.clone()))
                 } else {
                     None
-                }
-            }
-            // Navigate to linked issue when in linked issues section
-            (KeyCode::Enter, KeyModifiers::NONE) if self.linked_issues.is_focused() => {
-                if let Some(action) = self.linked_issues.handle_input(key) {
-                    match action {
-                        LinkedIssuesAction::Navigate(key) => {
-                            self.linked_issues.set_focused(false);
-                            Some(DetailAction::NavigateToIssue(key))
-                        }
-                        LinkedIssuesAction::Delete(link_id, description) => {
-                            Some(DetailAction::ConfirmDeleteLink(link_id, description))
-                        }
-                    }
-                } else {
-                    None
-                }
-            }
-            _ if self.linked_issues.is_focused() => {
-                // Handle linked issues navigation when focused
-                match (key.code, key.modifiers) {
-                    // Escape unfocuses the section
-                    (KeyCode::Esc, KeyModifiers::NONE) => {
-                        self.linked_issues.set_focused(false);
-                        None
-                    }
-                    _ => {
-                        // Delegate to linked issues section
-                        if let Some(action) = self.linked_issues.handle_input(key) {
-                            match action {
-                                LinkedIssuesAction::Navigate(issue_key) => {
-                                    self.linked_issues.set_focused(false);
-                                    Some(DetailAction::NavigateToIssue(issue_key))
-                                }
-                                LinkedIssuesAction::Delete(link_id, description) => {
-                                    Some(DetailAction::ConfirmDeleteLink(link_id, description))
-                                }
-                            }
-                        } else {
-                            None
-                        }
-                    }
                 }
             }
             _ => None,
@@ -1094,11 +1054,26 @@ impl DetailView {
         }
     }
 
-    /// Handle keyboard input for the link type picker.
-    fn handle_link_type_picker_input(&mut self, key: KeyEvent) -> Option<DetailAction> {
-        if let Some(action) = self.link_type_picker.handle_input(key) {
+    /// Handle keyboard input for the link manager.
+    fn handle_link_manager_input(&mut self, key: KeyEvent) -> Option<DetailAction> {
+        if let Some(action) = self.link_manager.handle_input(key) {
             match action {
-                LinkTypePickerAction::Select(link_type, is_outward) => {
+                LinkManagerAction::Navigate(key) => {
+                    Some(DetailAction::NavigateToIssue(key))
+                }
+                LinkManagerAction::Delete(link_id, description) => {
+                    Some(DetailAction::ConfirmDeleteLink(link_id, description))
+                }
+                LinkManagerAction::CreateNew => {
+                    // Request link types to show the link type selection
+                    if let Some(issue) = &self.issue {
+                        let issue_key = issue.key.clone();
+                        Some(DetailAction::FetchLinkTypes(issue_key))
+                    } else {
+                        None
+                    }
+                }
+                LinkManagerAction::SelectLinkType(link_type, is_outward) => {
                     // Store the selected link type and direction
                     self.pending_link_type = Some((link_type, is_outward));
                     // Show the issue search picker
@@ -1109,7 +1084,7 @@ impl DetailView {
                     }
                     None
                 }
-                LinkTypePickerAction::Cancel => None,
+                LinkManagerAction::Cancel => None,
             }
         } else {
             None
@@ -1376,7 +1351,7 @@ impl DetailView {
         self.priority_picker.render(frame, area);
         self.label_editor.render(frame, area);
         self.component_editor.render(frame, area);
-        self.link_type_picker.render(frame, area);
+        self.link_manager.render(frame, area);
         self.issue_search_picker.render(frame, area);
         self.comments_panel.render(frame, area);
         self.history_view.render(frame, area);

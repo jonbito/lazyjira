@@ -30,7 +30,7 @@ pub use help_bar::render_context_help;
 pub use input::{InputMode, TextInput};
 pub use issue_search_picker::{IssueSearchPicker, IssueSearchPickerAction};
 pub use jql_input::{JqlAction, JqlInput};
-pub use link_type_picker::{LinkTypePicker, LinkTypePickerAction};
+pub use link_type_picker::{LinkManager, LinkManagerAction};
 pub use linked_issues::{LinkedIssuesAction, LinkedIssuesSection};
 pub use loading::{InlineLoader, LoadingIndicator, SpinnerStyle};
 pub use modal::{ConfirmDialog, ErrorDialog, Modal};

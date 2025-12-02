@@ -961,11 +961,6 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
             }
         }
 
-        // Handle confirm delete link request (show dialog)
-        if let Some((link_id, description)) = app.take_pending_confirm_delete_link() {
-            app.show_delete_link_confirmation(link_id, description);
-        }
-
         // Handle delete link request (after confirmation)
         if let Some((link_id, issue_key)) = app.take_pending_delete_link() {
             if let Some(ref c) = client {

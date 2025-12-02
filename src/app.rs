@@ -1534,7 +1534,7 @@ impl App {
     /// Handle successful link types fetch.
     pub fn handle_link_types_success(&mut self, link_types: Vec<crate::api::types::IssueLinkType>) {
         info!(count = %link_types.len(), "Fetched link types");
-        self.detail_view.show_link_type_picker(link_types);
+        self.detail_view.set_link_types(link_types);
     }
 
     /// Handle failure to fetch link types.
@@ -2124,7 +2124,7 @@ impl App {
                         }
                         DetailAction::ConfirmDeleteLink(link_id, description) => {
                             info!(link_id = %link_id, "Confirming link deletion");
-                            self.pending_confirm_delete_link = Some((link_id, description));
+                            self.show_delete_link_confirmation(link_id, description);
                         }
                         DetailAction::DeleteLink(link_id, issue_key) => {
                             info!(link_id = %link_id, key = %issue_key, "Deleting issue link");

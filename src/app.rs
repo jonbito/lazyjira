@@ -16,7 +16,7 @@ use ratatui::{
 use crate::api::auth;
 use crate::api::types::{
     Changelog, FieldUpdates, FilterOptions, FilterState, Issue, IssueUpdateRequest, Priority,
-    Transition, User,
+    SavedFilter, Transition, User,
 };
 use crate::commands::CommandAction;
 use crate::config::{Config, ConfigError, Profile};
@@ -29,6 +29,7 @@ use crate::ui::{
     HelpAction, HelpView, JqlAction, JqlInput, ListAction, ListView, LoadingIndicator,
     Notification, NotificationManager, ProfileFormAction, ProfileFormData, ProfileFormView,
     ProfileListAction, ProfileListView, ProfilePicker, ProfilePickerAction, ProfileSummary,
+    SavedFiltersAction, SavedFiltersDialog,
 };
 
 /// The current view/screen state of the application.
@@ -93,6 +94,8 @@ pub struct App {
     filter_state: FilterState,
     /// Available filter options (cached).
     filter_options: Option<FilterOptions>,
+    /// Saved filters dialog.
+    saved_filters_dialog: SavedFiltersDialog,
     /// JQL query input.
     jql_input: JqlInput,
     /// Current JQL query (if using direct JQL instead of filters).
@@ -202,6 +205,7 @@ impl App {
             filter_panel: FilterPanelView::new(),
             filter_state: FilterState::new(),
             filter_options: None,
+            saved_filters_dialog: SavedFiltersDialog::new(),
             jql_input,
             current_jql: None,
             pending_issue_update: None,
@@ -274,6 +278,7 @@ impl App {
             filter_panel: FilterPanelView::new(),
             filter_state: FilterState::new(),
             filter_options: None,
+            saved_filters_dialog: SavedFiltersDialog::new(),
             jql_input,
             current_jql: None,
             pending_issue_update: None,
@@ -825,6 +830,52 @@ impl App {
         self.filter_state.clear();
         self.list_view.set_filter_summary(None);
         self.list_view.set_loading(true);
+    }
+
+    // ========================================================================
+    // Saved filters methods
+    // ========================================================================
+
+    /// Check if the saved filters dialog is visible.
+    pub fn is_saved_filters_dialog_visible(&self) -> bool {
+        self.saved_filters_dialog.is_visible()
+    }
+
+    /// Show the saved filters dialog.
+    pub fn show_saved_filters_dialog(&mut self) {
+        debug!("Opening saved filters dialog");
+        let filters = self.config.settings.saved_filters.clone();
+        self.saved_filters_dialog
+            .show(filters, self.filter_state.clone());
+    }
+
+    /// Save the current filter state with the given name.
+    pub fn save_current_filter(&mut self, name: String) {
+        debug!(name = %name, "Saving current filter");
+        let filter = SavedFilter::new(name.clone(), self.filter_state.clone());
+        self.config.settings.add_saved_filter(filter);
+
+        // Persist to config file
+        if let Err(e) = self.config.save() {
+            warn!(error = %e, "Failed to save config");
+            self.notify_error(format!("Failed to save filter: {}", e));
+        } else {
+            self.notify_success(format!("Saved filter: {}", name));
+        }
+    }
+
+    /// Delete a saved filter by name.
+    pub fn delete_saved_filter(&mut self, name: String) {
+        debug!(name = %name, "Deleting saved filter");
+        if self.config.settings.remove_saved_filter(&name) {
+            // Persist to config file
+            if let Err(e) = self.config.save() {
+                warn!(error = %e, "Failed to save config");
+                self.notify_error(format!("Failed to delete filter: {}", e));
+            } else {
+                self.notify_success(format!("Deleted filter: {}", name));
+            }
+        }
     }
 
     /// Get the JQL query string from the current filter state.
@@ -1818,6 +1869,30 @@ impl App {
             return;
         }
 
+        // Handle saved filters dialog (blocks other input when visible)
+        if self.saved_filters_dialog.is_visible() {
+            if let Some(action) = self.saved_filters_dialog.handle_input(key_event) {
+                match action {
+                    SavedFiltersAction::Select(filter) => {
+                        debug!("Saved filter selected");
+                        self.apply_filter(filter);
+                    }
+                    SavedFiltersAction::Save(name) => {
+                        debug!(name = %name, "Saving current filter");
+                        self.save_current_filter(name);
+                    }
+                    SavedFiltersAction::Delete(name) => {
+                        debug!(name = %name, "Deleting saved filter");
+                        self.delete_saved_filter(name);
+                    }
+                    SavedFiltersAction::Cancel => {
+                        debug!("Saved filters dialog cancelled");
+                    }
+                }
+            }
+            return;
+        }
+
         // Handle JQL input (blocks other input when visible)
         if self.jql_input.is_visible() {
             if let Some(action) = self.jql_input.handle_input(key_event) {
@@ -1929,6 +2004,9 @@ impl App {
                         }
                         ListAction::OpenFilter => {
                             self.open_filter_panel();
+                        }
+                        ListAction::OpenSavedFilters => {
+                            self.show_saved_filters_dialog();
                         }
                         ListAction::OpenJqlInput => {
                             self.open_jql_input();
@@ -2288,6 +2366,9 @@ impl App {
 
         // Render profile picker (on top of everything except error dialogs)
         self.profile_picker.render(frame, area);
+
+        // Render saved filters dialog (on top of everything except error dialogs)
+        self.saved_filters_dialog.render(frame, area);
 
         // Render profile form (on top of profile list)
         self.profile_form_view.render(frame, area);

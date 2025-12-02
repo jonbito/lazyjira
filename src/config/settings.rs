@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::api::types::SavedFilter;
 use crate::ui::theme::CustomThemeConfig;
 
 /// Default theme value.
@@ -88,6 +89,12 @@ pub struct Settings {
     /// Allows customizing individual colors of the selected theme.
     #[serde(default)]
     pub custom_theme: Option<CustomThemeConfig>,
+
+    /// Saved filter configurations.
+    ///
+    /// Named filters that can be quickly applied.
+    #[serde(default)]
+    pub saved_filters: Vec<SavedFilter>,
 }
 
 impl Default for Settings {
@@ -102,6 +109,7 @@ impl Default for Settings {
             confirm_transitions: false,
             confirm_discard_changes: default_confirm_discard(),
             custom_theme: None,
+            saved_filters: Vec::new(),
         }
     }
 }
@@ -122,6 +130,25 @@ impl Settings {
         // Trim to max size
         self.jql_history.truncate(MAX_JQL_HISTORY);
     }
+
+    /// Add a saved filter.
+    ///
+    /// If a filter with the same name already exists, it is replaced.
+    pub fn add_saved_filter(&mut self, filter: SavedFilter) {
+        // Remove existing filter with the same name
+        self.saved_filters.retain(|f| f.name != filter.name);
+        // Add the new filter
+        self.saved_filters.push(filter);
+    }
+
+    /// Remove a saved filter by name.
+    ///
+    /// Returns true if a filter was removed, false if no filter with that name existed.
+    pub fn remove_saved_filter(&mut self, name: &str) -> bool {
+        let initial_len = self.saved_filters.len();
+        self.saved_filters.retain(|f| f.name != name);
+        self.saved_filters.len() < initial_len
+    }
 }
 
 #[cfg(test)]
@@ -140,6 +167,7 @@ mod tests {
         assert!(!settings.confirm_transitions);
         assert!(settings.confirm_discard_changes);
         assert!(settings.custom_theme.is_none());
+        assert!(settings.saved_filters.is_empty());
     }
 
     #[test]
@@ -154,6 +182,7 @@ mod tests {
             confirm_transitions: true,
             confirm_discard_changes: false,
             custom_theme: None,
+            saved_filters: Vec::new(),
         };
 
         let toml_str = toml::to_string(&settings).unwrap();
@@ -262,5 +291,53 @@ success = "lightgreen"
         assert_eq!(custom.accent, Some("#ff00ff".to_string()));
         assert_eq!(custom.success, Some("lightgreen".to_string()));
         assert!(custom.error.is_none());
+    }
+
+    #[test]
+    fn test_add_saved_filter() {
+        use crate::api::types::FilterState;
+
+        let mut settings = Settings::default();
+        let filter = SavedFilter::new("My Filter", FilterState::default());
+
+        settings.add_saved_filter(filter.clone());
+        assert_eq!(settings.saved_filters.len(), 1);
+        assert_eq!(settings.saved_filters[0].name, "My Filter");
+    }
+
+    #[test]
+    fn test_add_saved_filter_replaces_existing() {
+        use crate::api::types::FilterState;
+
+        let mut settings = Settings::default();
+
+        let mut filter1 = FilterState::default();
+        filter1.statuses.push("Open".to_string());
+        settings.add_saved_filter(SavedFilter::new("My Filter", filter1));
+
+        let mut filter2 = FilterState::default();
+        filter2.statuses.push("Closed".to_string());
+        settings.add_saved_filter(SavedFilter::new("My Filter", filter2));
+
+        // Should still have only one filter
+        assert_eq!(settings.saved_filters.len(), 1);
+        // Should have the new filter state
+        assert_eq!(settings.saved_filters[0].filter.statuses, vec!["Closed"]);
+    }
+
+    #[test]
+    fn test_remove_saved_filter() {
+        use crate::api::types::FilterState;
+
+        let mut settings = Settings::default();
+        settings.add_saved_filter(SavedFilter::new("Filter1", FilterState::default()));
+        settings.add_saved_filter(SavedFilter::new("Filter2", FilterState::default()));
+
+        assert!(settings.remove_saved_filter("Filter1"));
+        assert_eq!(settings.saved_filters.len(), 1);
+        assert_eq!(settings.saved_filters[0].name, "Filter2");
+
+        // Removing non-existent filter returns false
+        assert!(!settings.remove_saved_filter("Filter1"));
     }
 }

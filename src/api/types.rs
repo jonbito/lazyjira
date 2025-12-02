@@ -875,7 +875,8 @@ impl AtlassianDoc {
 // ============================================================================
 
 /// Sprint filter options.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SprintFilter {
     /// Filter by current/open sprints.
     Current,
@@ -887,7 +888,7 @@ pub enum SprintFilter {
 ///
 /// This struct holds all the filter criteria that can be applied to issues.
 /// It can generate a JQL query string from the current filter state.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FilterState {
     /// Filter by statuses (multi-select).
     pub statuses: Vec<String>,
@@ -1104,6 +1105,27 @@ impl FilterState {
         if self.assignee_is_me {
             // Clear other assignees when "Assigned to me" is selected
             self.assignees.clear();
+        }
+    }
+}
+
+/// A saved filter configuration.
+///
+/// This struct holds a named filter that can be persisted and reused.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SavedFilter {
+    /// The display name for this saved filter.
+    pub name: String,
+    /// The filter state to apply when this filter is selected.
+    pub filter: FilterState,
+}
+
+impl SavedFilter {
+    /// Create a new saved filter.
+    pub fn new(name: impl Into<String>, filter: FilterState) -> Self {
+        Self {
+            name: name.into(),
+            filter,
         }
     }
 }

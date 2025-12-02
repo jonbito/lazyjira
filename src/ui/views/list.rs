@@ -257,6 +257,8 @@ pub enum ListAction {
     Refresh,
     /// Open the filter panel.
     OpenFilter,
+    /// Open the saved filters dialog.
+    OpenSavedFilters,
     /// Open the JQL query input.
     OpenJqlInput,
     /// Sort changed - need to refresh issues with new sort order.
@@ -575,6 +577,10 @@ impl ListView {
             }
             (KeyCode::Char('f'), KeyModifiers::NONE) => {
                 return Some(ListAction::OpenFilter);
+            }
+            // Saved filters dialog
+            (KeyCode::Char('F'), KeyModifiers::SHIFT) => {
+                return Some(ListAction::OpenSavedFilters);
             }
             // JQL input
             (KeyCode::Char(':'), KeyModifiers::NONE)

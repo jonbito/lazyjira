@@ -317,6 +317,7 @@ mod tests {
                 confirm_transitions: false,
                 confirm_discard_changes: true,
                 custom_theme: None,
+                saved_filters: Vec::new(),
             },
             profiles: vec![
                 Profile::new(

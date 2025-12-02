@@ -11,7 +11,8 @@ pub use components::{
     render_context_help, CommandPalette, CommandPaletteAction, ConfirmDialog, ErrorDialog,
     ExternalEditor, InlineLoader, JqlAction, JqlInput, LoadingIndicator, Modal, MultiSelect,
     Notification, NotificationManager, NotificationType, ProfilePicker, ProfilePickerAction,
-    SelectItem, SpinnerStyle, Table, TextEditor, TextInput, TransitionAction, TransitionPicker,
+    SavedFiltersAction, SavedFiltersDialog, SelectItem, SpinnerStyle, Table, TextEditor, TextInput,
+    TransitionAction, TransitionPicker,
 };
 pub use theme::{
     init_theme, issue_type_prefix, load_theme, parse_color, priority_style, status_style, theme,

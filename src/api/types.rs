@@ -2,6 +2,10 @@
 //!
 //! These types model the JIRA REST API v3 responses for issues and search results.
 
+// Many fields and methods in this module are part of the JIRA API types
+// and may be used for serialization/deserialization or future features.
+#![allow(dead_code)]
+
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -78,6 +82,7 @@ pub struct SearchResult {
 
 impl SearchResult {
     /// Check if there are more pages of results.
+    #[allow(dead_code)]
     pub fn has_more(&self) -> bool {
         // New API uses nextPageToken/isLast, old API uses total
         if self.next_page_token.is_some() {
@@ -88,11 +93,13 @@ impl SearchResult {
     }
 
     /// Get the starting index for the next page.
+    #[allow(dead_code)]
     pub fn next_start(&self) -> u32 {
         self.start_at + self.issues.len() as u32
     }
 
     /// Get the next page token if available.
+    #[allow(dead_code)]
     pub fn next_token(&self) -> Option<&str> {
         self.next_page_token.as_deref()
     }
@@ -118,26 +125,31 @@ pub struct Issue {
 
 impl Issue {
     /// Get the issue summary.
+    #[allow(dead_code)]
     pub fn summary(&self) -> &str {
         &self.fields.summary
     }
 
     /// Get the issue status name.
+    #[allow(dead_code)]
     pub fn status(&self) -> &str {
         &self.fields.status.name
     }
 
     /// Get the issue type name.
+    #[allow(dead_code)]
     pub fn issue_type(&self) -> &str {
         &self.fields.issuetype.name
     }
 
     /// Get the issue priority name, if set.
+    #[allow(dead_code)]
     pub fn priority(&self) -> Option<&str> {
         self.fields.priority.as_ref().map(|p| p.name.as_str())
     }
 
     /// Get the assignee display name, if assigned.
+    #[allow(dead_code)]
     pub fn assignee(&self) -> Option<&str> {
         self.fields
             .assignee
@@ -701,11 +713,9 @@ impl AtlassianDoc {
                         }
                     }
                     Some("paragraph") | Some("heading") => {
-                        if let Some(content) = obj.get("content") {
-                            if let serde_json::Value::Array(items) = content {
-                                for item in items {
-                                    Self::extract_text(item, result);
-                                }
+                        if let Some(serde_json::Value::Array(items)) = obj.get("content") {
+                            for item in items {
+                                Self::extract_text(item, result);
                             }
                         }
                         if !result.ends_with('\n') && !result.is_empty() {
@@ -716,30 +726,24 @@ impl AtlassianDoc {
                         result.push('\n');
                     }
                     Some("bulletList") | Some("orderedList") => {
-                        if let Some(content) = obj.get("content") {
-                            if let serde_json::Value::Array(items) = content {
-                                for item in items {
-                                    Self::extract_text(item, result);
-                                }
+                        if let Some(serde_json::Value::Array(items)) = obj.get("content") {
+                            for item in items {
+                                Self::extract_text(item, result);
                             }
                         }
                     }
                     Some("listItem") => {
                         result.push_str("• ");
-                        if let Some(content) = obj.get("content") {
-                            if let serde_json::Value::Array(items) = content {
-                                for item in items {
-                                    Self::extract_text(item, result);
-                                }
+                        if let Some(serde_json::Value::Array(items)) = obj.get("content") {
+                            for item in items {
+                                Self::extract_text(item, result);
                             }
                         }
                     }
                     Some("codeBlock") => {
-                        if let Some(content) = obj.get("content") {
-                            if let serde_json::Value::Array(items) = content {
-                                for item in items {
-                                    Self::extract_text(item, result);
-                                }
+                        if let Some(serde_json::Value::Array(items)) = obj.get("content") {
+                            for item in items {
+                                Self::extract_text(item, result);
                             }
                         }
                         if !result.ends_with('\n') {
@@ -748,28 +752,29 @@ impl AtlassianDoc {
                     }
                     Some("blockquote") => {
                         result.push_str("> ");
-                        if let Some(content) = obj.get("content") {
-                            if let serde_json::Value::Array(items) = content {
-                                for item in items {
-                                    Self::extract_text(item, result);
-                                }
+                        if let Some(serde_json::Value::Array(items)) = obj.get("content") {
+                            for item in items {
+                                Self::extract_text(item, result);
                             }
                         }
                     }
                     Some("mention") => {
-                        if let Some(attrs) = obj.get("attrs") {
-                            if let Some(text) = attrs.get("text").and_then(|t| t.as_str()) {
-                                result.push('@');
-                                result.push_str(text);
-                            }
+                        if let Some(text) = obj
+                            .get("attrs")
+                            .and_then(|a| a.get("text"))
+                            .and_then(|t| t.as_str())
+                        {
+                            result.push('@');
+                            result.push_str(text);
                         }
                     }
                     Some("emoji") => {
-                        if let Some(attrs) = obj.get("attrs") {
-                            if let Some(shortname) = attrs.get("shortName").and_then(|s| s.as_str())
-                            {
-                                result.push_str(shortname);
-                            }
+                        if let Some(shortname) = obj
+                            .get("attrs")
+                            .and_then(|a| a.get("shortName"))
+                            .and_then(|s| s.as_str())
+                        {
+                            result.push_str(shortname);
                         }
                     }
                     Some("inlineCard") | Some("mediaGroup") | Some("mediaSingle") => {
@@ -777,11 +782,9 @@ impl AtlassianDoc {
                     }
                     _ => {
                         // For unknown nodes, try to recurse into content
-                        if let Some(content) = obj.get("content") {
-                            if let serde_json::Value::Array(items) = content {
-                                for item in items {
-                                    Self::extract_text(item, result);
-                                }
+                        if let Some(serde_json::Value::Array(items)) = obj.get("content") {
+                            for item in items {
+                                Self::extract_text(item, result);
                             }
                         }
                     }
@@ -1203,7 +1206,7 @@ impl FilterOptions {
     pub fn add_epic(&mut self, key: &str, summary: &str) {
         if !self.epics.iter().any(|e| e.id == key) {
             self.epics
-                .push(FilterOption::new(key, &format!("{} - {}", key, summary)));
+                .push(FilterOption::new(key, format!("{} - {}", key, summary)));
             // Keep epics sorted by key
             self.epics.sort_by(|a, b| a.id.cmp(&b.id));
         }

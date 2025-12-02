@@ -1,5 +1,8 @@
 //! JIRA profile configuration.
 
+// Profile configuration items are provided for external use
+#![allow(dead_code)]
+
 use serde::{Deserialize, Serialize};
 
 use super::{ConfigError, Result};

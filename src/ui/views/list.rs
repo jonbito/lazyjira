@@ -34,7 +34,7 @@ pub enum SortColumn {
 
 impl SortColumn {
     /// Convert to JQL field name.
-    pub fn to_jql_field(&self) -> &'static str {
+    pub fn as_jql_field(self) -> &'static str {
         match self {
             SortColumn::Key => "key",
             SortColumn::Summary => "summary",
@@ -80,15 +80,16 @@ impl SortColumn {
 }
 
 /// Sort direction.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SortDirection {
     Ascending,
+    #[default]
     Descending,
 }
 
 impl SortDirection {
     /// Toggle to the opposite direction.
-    pub fn toggle(&self) -> Self {
+    pub fn toggle(self) -> Self {
         match self {
             SortDirection::Ascending => SortDirection::Descending,
             SortDirection::Descending => SortDirection::Ascending,
@@ -96,7 +97,7 @@ impl SortDirection {
     }
 
     /// Convert to JQL sort direction.
-    pub fn to_jql(&self) -> &'static str {
+    pub fn as_jql(self) -> &'static str {
         match self {
             SortDirection::Ascending => "ASC",
             SortDirection::Descending => "DESC",
@@ -104,17 +105,11 @@ impl SortDirection {
     }
 
     /// Get display indicator for the sort direction.
-    pub fn indicator(&self) -> &'static str {
+    pub fn indicator(self) -> &'static str {
         match self {
             SortDirection::Ascending => " ▲",
             SortDirection::Descending => " ▼",
         }
-    }
-}
-
-impl Default for SortDirection {
-    fn default() -> Self {
-        SortDirection::Descending
     }
 }
 
@@ -137,8 +132,8 @@ impl SortState {
     pub fn to_jql(&self) -> String {
         format!(
             "ORDER BY {} {}",
-            self.column.to_jql_field(),
-            self.direction.to_jql()
+            self.column.as_jql_field(),
+            self.direction.as_jql()
         )
     }
 
@@ -1407,12 +1402,12 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn test_sort_column_to_jql_field() {
-        assert_eq!(SortColumn::Key.to_jql_field(), "key");
-        assert_eq!(SortColumn::Summary.to_jql_field(), "summary");
-        assert_eq!(SortColumn::Status.to_jql_field(), "status");
-        assert_eq!(SortColumn::Assignee.to_jql_field(), "assignee");
-        assert_eq!(SortColumn::Priority.to_jql_field(), "priority");
+    fn test_sort_column_as_jql_field() {
+        assert_eq!(SortColumn::Key.as_jql_field(), "key");
+        assert_eq!(SortColumn::Summary.as_jql_field(), "summary");
+        assert_eq!(SortColumn::Status.as_jql_field(), "status");
+        assert_eq!(SortColumn::Assignee.as_jql_field(), "assignee");
+        assert_eq!(SortColumn::Priority.as_jql_field(), "priority");
     }
 
     #[test]
@@ -1453,9 +1448,9 @@ mod tests {
     }
 
     #[test]
-    fn test_sort_direction_to_jql() {
-        assert_eq!(SortDirection::Ascending.to_jql(), "ASC");
-        assert_eq!(SortDirection::Descending.to_jql(), "DESC");
+    fn test_sort_direction_as_jql() {
+        assert_eq!(SortDirection::Ascending.as_jql(), "ASC");
+        assert_eq!(SortDirection::Descending.as_jql(), "DESC");
     }
 
     #[test]

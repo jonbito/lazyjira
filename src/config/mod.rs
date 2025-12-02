@@ -86,7 +86,7 @@ pub enum ConfigError {
 pub type Result<T> = std::result::Result<T, ConfigError>;
 
 /// The root configuration structure for LazyJira.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct Config {
     /// Application-wide settings.
     #[serde(default)]
@@ -95,15 +95,6 @@ pub struct Config {
     /// List of JIRA profiles.
     #[serde(default)]
     pub profiles: Vec<Profile>,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            settings: Settings::default(),
-            profiles: Vec::new(),
-        }
-    }
 }
 
 impl Config {

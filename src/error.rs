@@ -4,6 +4,9 @@
 //! user-friendly error messages. All error types use `thiserror` for
 //! ergonomic error handling.
 
+// Error types are part of the public API for external use
+#![allow(dead_code)]
+
 use thiserror::Error;
 
 use crate::api::error::ApiError;

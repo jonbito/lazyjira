@@ -287,8 +287,7 @@ impl SavedFiltersDialog {
             }
             SavedFiltersMode::Browse => {
                 // border (2) + items + hint (2) + margin (1)
-                let base = item_count.min(max_visible_items).max(1) * 2 + 5;
-                base
+                item_count.min(max_visible_items).max(1) * 2 + 5
             }
         }
         .min(area.height.saturating_sub(4));
@@ -409,7 +408,7 @@ impl SavedFiltersDialog {
 
     /// Render create new filter mode.
     fn render_create_mode(&mut self, frame: &mut Frame, area: Rect) {
-        let t = theme();
+        let _t = theme();
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([

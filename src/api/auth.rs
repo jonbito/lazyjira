@@ -77,6 +77,7 @@ impl Auth {
     }
 
     /// Get the email address.
+    #[allow(dead_code)]
     pub fn email(&self) -> &str {
         &self.email
     }

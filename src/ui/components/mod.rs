@@ -1,5 +1,8 @@
 //! Reusable UI components.
 
+// UI component methods are part of the public API
+#![allow(dead_code)]
+
 mod assignee_picker;
 mod command_palette;
 mod comments;
@@ -33,15 +36,14 @@ pub use issue_search_picker::{IssueSearchPicker, IssueSearchPickerAction};
 pub use jql_input::{JqlAction, JqlInput};
 pub use link_type_picker::{LinkManager, LinkManagerAction};
 pub use linked_issues::LinkedIssuesSection;
-pub use loading::{InlineLoader, LoadingIndicator, SpinnerStyle};
-pub use modal::{ConfirmDialog, ErrorDialog, Modal};
+pub use loading::LoadingIndicator;
+pub use modal::{ConfirmDialog, ErrorDialog};
 pub use multiselect::{MultiSelect, SelectItem};
-pub use notification::{Notification, NotificationManager, NotificationType};
+pub use notification::{Notification, NotificationManager};
 pub use priority_picker::{PriorityAction, PriorityPicker};
 pub use profile_picker::{ProfilePicker, ProfilePickerAction};
 pub use saved_filters::{SavedFiltersAction, SavedFiltersDialog};
 pub use search_bar::{highlight_text, render_search_bar, QuickSearch};
-pub use table::Table;
 pub use tag_editor::{TagAction, TagEditor};
 pub use text_editor::TextEditor;
 pub use transition_picker::{TransitionAction, TransitionPicker};

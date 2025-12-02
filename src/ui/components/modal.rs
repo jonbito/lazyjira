@@ -113,8 +113,8 @@ impl ErrorDialog {
         }
 
         // Calculate dialog size (60% width, 40% height, but with min/max)
-        let dialog_width = (area.width * 60 / 100).max(40).min(80);
-        let dialog_height = (area.height * 40 / 100).max(8).min(20);
+        let dialog_width = (area.width * 60 / 100).clamp(40, 80);
+        let dialog_height = (area.height * 40 / 100).clamp(8, 20);
 
         let dialog_area = centered_rect(area, dialog_width, dialog_height);
 
@@ -352,7 +352,7 @@ impl ConfirmDialog {
             return;
         }
 
-        let dialog_width = (area.width * 50 / 100).max(40).min(60);
+        let dialog_width = (area.width * 50 / 100).clamp(40, 60);
         let dialog_height = 8;
 
         let dialog_area = centered_rect(area, dialog_width, dialog_height);

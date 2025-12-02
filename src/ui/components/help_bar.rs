@@ -31,11 +31,11 @@ pub fn render_context_help(frame: &mut Frame, area: Rect, context: KeyContext) {
 /// Highlights the key portion (in brackets) differently from the description.
 fn parse_hints_to_spans(hints: &str) -> Vec<Span<'static>> {
     let mut spans = Vec::new();
-    let mut chars = hints.chars().peekable();
+    let chars = hints.chars().peekable();
     let mut current = String::new();
     let mut in_bracket = false;
 
-    while let Some(c) = chars.next() {
+    for c in chars {
         match c {
             '[' => {
                 // Flush any pending text

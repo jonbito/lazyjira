@@ -91,6 +91,7 @@ impl JiraClient {
     /// * `base_url` - The JIRA instance URL
     /// * `email` - The user's email address
     /// * `token` - The API token
+    #[allow(dead_code)]
     pub fn with_credentials(base_url: &str, email: &str, token: &str) -> Result<Self> {
         let auth = Auth::new(email, token);
         let client = Self::build_http_client()?;
@@ -617,6 +618,7 @@ impl JiraClient {
     }
 
     /// Get the base URL.
+    #[allow(dead_code)]
     pub fn base_url(&self) -> &str {
         &self.base_url
     }
@@ -651,6 +653,7 @@ impl JiraClient {
     ///
     /// * `query` - Search query for username or display name
     /// * `max_results` - Maximum number of results to return (default 50)
+    #[allow(dead_code)]
     #[instrument(skip(self), fields(query = %query))]
     pub async fn search_users(&self, query: &str, max_results: u32) -> Result<Vec<User>> {
         debug!("Searching users");
@@ -715,6 +718,7 @@ impl JiraClient {
     }
 
     /// Get all boards the user has access to.
+    #[allow(dead_code)]
     #[instrument(skip(self))]
     pub async fn get_boards(&self) -> Result<Vec<super::types::Board>> {
         debug!("Fetching boards");
@@ -730,6 +734,7 @@ impl JiraClient {
     ///
     /// * `board_id` - The board ID to get sprints for
     /// * `state` - Optional filter by sprint state (active, future, closed)
+    #[allow(dead_code)]
     #[instrument(skip(self), fields(board_id = board_id))]
     pub async fn get_sprints(
         &self,
@@ -798,7 +803,7 @@ impl JiraClient {
         for epic in epics {
             options.epics.push(FilterOption::new(
                 &epic.key,
-                &format!("{} - {}", epic.key, epic.fields.summary),
+                format!("{} - {}", epic.key, epic.fields.summary),
             ));
         }
 
@@ -932,6 +937,7 @@ impl JiraClient {
     ///
     /// * `key` - The issue key (e.g., "PROJ-123")
     /// * `summary` - The new summary text
+    #[allow(dead_code)]
     #[instrument(skip(self), fields(issue_key = %key))]
     pub async fn update_summary(&self, key: &str, summary: &str) -> Result<()> {
         let update = IssueUpdateRequest {
@@ -1080,6 +1086,7 @@ impl JiraClient {
     ///
     /// * `key` - The issue key (e.g., "PROJ-123")
     /// * `points` - The story points value
+    #[allow(dead_code)]
     #[instrument(skip(self), fields(issue_key = %key, points = %points))]
     pub async fn update_story_points(&self, key: &str, points: f32) -> Result<()> {
         let update = IssueUpdateRequest {
@@ -1098,6 +1105,7 @@ impl JiraClient {
     ///
     /// * `key` - The issue key (e.g., "PROJ-123")
     /// * `sprint_id` - The sprint ID to assign, or None to remove from sprint
+    #[allow(dead_code)]
     #[instrument(skip(self), fields(issue_key = %key))]
     pub async fn update_sprint(&self, key: &str, sprint_id: Option<i64>) -> Result<()> {
         let update = IssueUpdateRequest {

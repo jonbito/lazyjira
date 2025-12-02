@@ -83,8 +83,8 @@ impl LinkedIssuesSection {
                         link_description: link.link_type.inward.clone(),
                         direction: LinkDirection::Inward,
                     })
-                } else if let Some(outward) = &link.outward_issue {
-                    Some(DisplayLink {
+                } else {
+                    link.outward_issue.as_ref().map(|outward| DisplayLink {
                         link_id: link.id.clone(),
                         key: outward.key.clone(),
                         summary: outward.fields.summary.clone(),
@@ -92,8 +92,6 @@ impl LinkedIssuesSection {
                         link_description: link.link_type.outward.clone(),
                         direction: LinkDirection::Outward,
                     })
-                } else {
-                    None
                 }
             })
             .collect();
@@ -247,11 +245,7 @@ impl LinkedIssuesSection {
             // Select/navigate to linked issue
             (KeyCode::Enter, KeyModifiers::NONE) => {
                 if self.expanded {
-                    if let Some(key) = self.selected_key() {
-                        Some(LinkedIssuesAction::Navigate(key))
-                    } else {
-                        None
-                    }
+                    self.selected_key().map(LinkedIssuesAction::Navigate)
                 } else {
                     None
                 }

@@ -6,6 +6,9 @@
 //! - Environment-based log level configuration
 //! - Span-based context for async operations
 
+// Logging utilities are provided for external use
+#![allow(dead_code)]
+
 use std::path::PathBuf;
 
 use tracing_appender::rolling::{RollingFileAppender, Rotation};

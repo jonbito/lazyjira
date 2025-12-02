@@ -2,6 +2,9 @@
 //!
 //! This module handles keyboard input, terminal events, and application events.
 
+// Event variants are part of the public API
+#![allow(dead_code)]
+
 mod handler;
 mod keys;
 

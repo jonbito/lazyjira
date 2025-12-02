@@ -3,6 +3,9 @@
 //! This module implements The Elm Architecture (TEA) pattern for predictable
 //! state management in the TUI application.
 
+// Many public methods are part of the App API for external use and testing
+#![allow(dead_code)]
+
 use tracing::{debug, info, trace, warn};
 
 use ratatui::{
@@ -1108,7 +1111,7 @@ impl App {
             // Show the confirmation dialog
             self.transition_confirm_dialog.show_with_labels(
                 "Change Status?",
-                &format!("Move issue {} to '{}'?", issue_key, transition_name),
+                format!("Move issue {} to '{}'?", issue_key, transition_name),
                 "Confirm",
                 "Cancel",
             );
@@ -2014,7 +2017,7 @@ impl App {
                         ListAction::SortChanged => {
                             info!(
                                 column = %self.list_view.sort().column.display_name(),
-                                direction = %self.list_view.sort().direction.to_jql(),
+                                direction = %self.list_view.sort().direction.as_jql(),
                                 "Sort changed"
                             );
                             // Reset and reload with new sort

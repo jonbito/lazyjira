@@ -3,6 +3,9 @@
 //! This module provides a comprehensive theming system with built-in themes
 //! (dark, light, high-contrast) and support for custom themes via configuration.
 
+// Theme style methods are part of the public API
+#![allow(dead_code)]
+
 use ratatui::style::{Color, Modifier, Style};
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
@@ -312,7 +315,7 @@ impl Theme {
         match name.to_lowercase().as_str() {
             "light" => Self::light(),
             "high-contrast" | "highcontrast" | "high_contrast" => Self::high_contrast(),
-            "dark" | _ => Self::dark(),
+            _ => Self::dark(),
         }
     }
 
@@ -646,8 +649,7 @@ pub fn parse_color(s: &str) -> Option<Color> {
     }
 
     // Hex colors: #rgb or #rrggbb
-    if s.starts_with('#') {
-        let hex = &s[1..];
+    if let Some(hex) = s.strip_prefix('#') {
         match hex.len() {
             3 => {
                 // #rgb -> #rrggbb

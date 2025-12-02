@@ -7,6 +7,9 @@
 //! - Cache size limits with LRU eviction
 //! - Search result caching with JQL hash keys
 
+// Cache functionality is provided for future use
+#![allow(dead_code)]
+
 use std::collections::hash_map::DefaultHasher;
 use std::fs;
 use std::hash::{Hash, Hasher};

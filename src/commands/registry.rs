@@ -2,6 +2,9 @@
 //!
 //! Provides command definitions, fuzzy search, and recent command tracking.
 
+// Command registry API items are provided for external use
+#![allow(dead_code)]
+
 use std::collections::VecDeque;
 
 /// A command that can be executed from the command palette.

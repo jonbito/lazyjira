@@ -811,13 +811,10 @@ impl DetailView {
             // Edit issue
             (KeyCode::Char('e'), KeyModifiers::NONE) => Some(DetailAction::EditIssue),
             // Open description in external editor
-            (KeyCode::Char('E'), KeyModifiers::SHIFT) => {
-                if let Some(issue) = &self.issue {
-                    Some(DetailAction::OpenExternalEditor(issue.key.clone()))
-                } else {
-                    None
-                }
-            }
+            (KeyCode::Char('E'), KeyModifiers::SHIFT) => self
+                .issue
+                .as_ref()
+                .map(|issue| DetailAction::OpenExternalEditor(issue.key.clone())),
             // Open comments panel
             (KeyCode::Char('c'), KeyModifiers::NONE) => {
                 if let Some(issue) = &self.issue {
@@ -899,13 +896,10 @@ impl DetailView {
                 None
             }
             // Open in browser
-            (KeyCode::Char('o'), KeyModifiers::NONE) => {
-                if let Some(issue) = &self.issue {
-                    Some(DetailAction::OpenInBrowser(issue.key.clone()))
-                } else {
-                    None
-                }
-            }
+            (KeyCode::Char('o'), KeyModifiers::NONE) => self
+                .issue
+                .as_ref()
+                .map(|issue| DetailAction::OpenInBrowser(issue.key.clone())),
             _ => None,
         }
     }
@@ -1567,10 +1561,10 @@ impl DetailView {
 
         // Dates
         let created_str = created
-            .map(|d| format_date(d))
+            .map(format_date)
             .unwrap_or_else(|| "Unknown".to_string());
         let updated_str = updated
-            .map(|d| format_date(d))
+            .map(format_date)
             .unwrap_or_else(|| "Unknown".to_string());
 
         lines.push(Line::from(vec![

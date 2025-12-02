@@ -30,6 +30,7 @@ pub enum ApiError {
     Network(#[from] reqwest::Error),
 
     /// Invalid URL.
+    #[allow(dead_code)]
     #[error("Invalid URL: {0}")]
     InvalidUrl(String),
 

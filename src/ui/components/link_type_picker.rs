@@ -204,8 +204,8 @@ impl LinkManager {
                         link_description: link.link_type.inward.clone(),
                         direction: LinkDirection::Inward,
                     })
-                } else if let Some(outward) = &link.outward_issue {
-                    Some(LinkItem::Link {
+                } else {
+                    link.outward_issue.as_ref().map(|outward| LinkItem::Link {
                         link_id: link.id.clone(),
                         key: outward.key.clone(),
                         summary: outward.fields.summary.clone(),
@@ -213,8 +213,6 @@ impl LinkManager {
                         link_description: link.link_type.outward.clone(),
                         direction: LinkDirection::Outward,
                     })
-                } else {
-                    None
                 }
             })
             .collect();

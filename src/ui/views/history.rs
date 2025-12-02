@@ -344,7 +344,7 @@ impl HistoryView {
             return;
         }
 
-        let t = theme();
+        let _t = theme();
 
         // Create centered overlay (80% width, 90% height)
         let overlay_width = (area.width as f32 * 0.8) as u16;

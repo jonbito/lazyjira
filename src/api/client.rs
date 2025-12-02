@@ -746,19 +746,32 @@ impl JiraClient {
         Ok(response.values)
     }
 
+    /// Fetch all epics.
+    ///
+    /// Returns a list of all epic issues (issue type = Epic).
+    #[instrument(skip(self))]
+    pub async fn get_epics(&self) -> Result<Vec<Issue>> {
+        debug!("Fetching all epics");
+        let result = self
+            .search_issues("issuetype = Epic ORDER BY key ASC", 0, 100)
+            .await?;
+        debug!("Found {} epics", result.issues.len());
+        Ok(result.issues)
+    }
+
     /// Fetch all filter options in one call.
     ///
-    /// This method fetches statuses, projects, and labels.
+    /// This method fetches statuses, projects, labels, and epics.
     /// Users and sprints need to be fetched separately with project/board context.
     #[instrument(skip(self))]
     pub async fn get_filter_options(&self) -> Result<FilterOptions> {
         debug!("Fetching all filter options");
 
-        // Fetch statuses, projects, and labels in parallel would be ideal,
-        // but for simplicity we'll do them sequentially for now.
+        // Fetch statuses, projects, labels, and epics sequentially
         let statuses = self.get_statuses().await.unwrap_or_default();
         let projects = self.get_projects().await.unwrap_or_default();
         let labels = self.get_labels().await.unwrap_or_default();
+        let epics = self.get_epics().await.unwrap_or_default();
 
         let mut options = FilterOptions::new();
 
@@ -781,11 +794,20 @@ impl JiraClient {
             options.labels.push(FilterOption::new(&label, &label));
         }
 
+        // Convert epics (key as ID, "key - summary" as label)
+        for epic in epics {
+            options.epics.push(FilterOption::new(
+                &epic.key,
+                &format!("{} - {}", epic.key, epic.fields.summary),
+            ));
+        }
+
         debug!(
-            "Loaded filter options: {} statuses, {} projects, {} labels",
+            "Loaded filter options: {} statuses, {} projects, {} labels, {} epics",
             options.statuses.len(),
             options.projects.len(),
-            options.labels.len()
+            options.labels.len(),
+            options.epics.len()
         );
 
         Ok(options)

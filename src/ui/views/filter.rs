@@ -35,8 +35,8 @@ pub enum FilterSectionType {
     Assignee,
     Project,
     Labels,
-    Components,
     Sprint,
+    Epic,
 }
 
 /// The filter panel view.
@@ -53,10 +53,10 @@ pub struct FilterPanelView {
     project_select: MultiSelect,
     /// Labels multi-select.
     labels_select: MultiSelect,
-    /// Components multi-select.
-    components_select: MultiSelect,
     /// Sprint multi-select.
     sprint_select: MultiSelect,
+    /// Epic multi-select.
+    epic_select: MultiSelect,
     /// Whether "Assigned to me" is selected.
     assigned_to_me: bool,
     /// Whether "Current sprint" is selected.
@@ -77,17 +77,17 @@ impl FilterPanelView {
             assignee_select: MultiSelect::new("Assignee"),
             project_select: MultiSelect::new("Project"),
             labels_select: MultiSelect::new("Labels"),
-            components_select: MultiSelect::new("Components"),
             sprint_select: MultiSelect::new("Sprint"),
+            epic_select: MultiSelect::new("Epic"),
             assigned_to_me: false,
             current_sprint: false,
             options: FilterOptions::default(),
             sections: vec![
+                FilterSectionType::Project,
+                FilterSectionType::Epic,
                 FilterSectionType::Status,
                 FilterSectionType::Assignee,
-                FilterSectionType::Project,
                 FilterSectionType::Labels,
-                FilterSectionType::Components,
                 FilterSectionType::Sprint,
             ],
         }
@@ -138,9 +138,6 @@ impl FilterPanelView {
         self.labels_select
             .set_selected(state.labels.iter().cloned().collect());
 
-        self.components_select
-            .set_selected(state.components.iter().cloned().collect());
-
         match &state.sprint {
             Some(SprintFilter::Current) => {
                 self.current_sprint = true;
@@ -159,6 +156,10 @@ impl FilterPanelView {
                 self.sprint_select.set_selected(HashSet::new());
             }
         }
+
+        // Restore epic selections
+        self.epic_select
+            .set_selected(state.epics.iter().cloned().collect());
     }
 
     /// Hide the filter panel.
@@ -205,13 +206,6 @@ impl FilterPanelView {
             .collect();
         self.labels_select.set_items(label_items);
 
-        let component_items: Vec<SelectItem> = options
-            .components
-            .iter()
-            .map(|o| SelectItem::new(&o.id, &o.label))
-            .collect();
-        self.components_select.set_items(component_items);
-
         // Add "Current Sprint" as a special option
         let mut sprint_items: Vec<SelectItem> =
             vec![SelectItem::new("__current__", "Current Sprint")];
@@ -222,6 +216,13 @@ impl FilterPanelView {
                 .map(|o| SelectItem::new(&o.id, &o.label)),
         );
         self.sprint_select.set_items(sprint_items);
+
+        let epic_items: Vec<SelectItem> = options
+            .epics
+            .iter()
+            .map(|o| SelectItem::new(&o.id, &o.label))
+            .collect();
+        self.epic_select.set_items(epic_items);
 
         self.options = options;
     }
@@ -238,8 +239,8 @@ impl FilterPanelView {
             FilterSectionType::Assignee => &mut self.assignee_select,
             FilterSectionType::Project => &mut self.project_select,
             FilterSectionType::Labels => &mut self.labels_select,
-            FilterSectionType::Components => &mut self.components_select,
             FilterSectionType::Sprint => &mut self.sprint_select,
+            FilterSectionType::Epic => &mut self.epic_select,
         }
     }
 
@@ -290,11 +291,6 @@ impl FilterPanelView {
             state.labels.push(label.clone());
         }
 
-        // Get selected components
-        for component in self.components_select.selected() {
-            state.components.push(component.clone());
-        }
-
         // Handle sprint
         if self.sprint_select.is_selected("__current__") {
             state.sprint = Some(SprintFilter::Current);
@@ -307,6 +303,11 @@ impl FilterPanelView {
             state.sprint = Some(SprintFilter::Specific(sprint_id.clone()));
         }
 
+        // Get selected epics
+        for epic in self.epic_select.selected() {
+            state.epics.push(epic.clone());
+        }
+
         state
     }
 
@@ -316,8 +317,8 @@ impl FilterPanelView {
         self.assignee_select.clear_selection();
         self.project_select.clear_selection();
         self.labels_select.clear_selection();
-        self.components_select.clear_selection();
         self.sprint_select.clear_selection();
+        self.epic_select.clear_selection();
         self.assigned_to_me = false;
         self.current_sprint = false;
     }
@@ -400,25 +401,25 @@ impl FilterPanelView {
         let columns = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
+                Constraint::Ratio(1, 6), // Project
+                Constraint::Ratio(1, 6), // Epic
                 Constraint::Ratio(1, 6), // Status
                 Constraint::Ratio(1, 6), // Assignee
-                Constraint::Ratio(1, 6), // Project
                 Constraint::Ratio(1, 6), // Labels
-                Constraint::Ratio(1, 6), // Components
                 Constraint::Ratio(1, 6), // Sprint
             ])
             .split(content_footer[0]);
 
         // Render each section
-        self.status_select
-            .render(frame, columns[0], self.focused_section == 0);
-        self.assignee_select
-            .render(frame, columns[1], self.focused_section == 1);
         self.project_select
+            .render(frame, columns[0], self.focused_section == 0);
+        self.epic_select
+            .render(frame, columns[1], self.focused_section == 1);
+        self.status_select
             .render(frame, columns[2], self.focused_section == 2);
-        self.labels_select
+        self.assignee_select
             .render(frame, columns[3], self.focused_section == 3);
-        self.components_select
+        self.labels_select
             .render(frame, columns[4], self.focused_section == 4);
         self.sprint_select
             .render(frame, columns[5], self.focused_section == 5);
@@ -506,7 +507,7 @@ mod tests {
         view.prev_section();
         assert_eq!(view.focused_section, 1);
 
-        // Wrap around (now 6 sections: Status, Assignee, Project, Labels, Components, Sprint)
+        // Wrap around (now 6 sections: Project, Epic, Status, Assignee, Labels, Sprint)
         view.focused_section = 5;
         view.next_section();
         assert_eq!(view.focused_section, 0);

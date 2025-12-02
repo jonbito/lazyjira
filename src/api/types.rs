@@ -903,6 +903,8 @@ pub struct FilterState {
     pub components: Vec<String>,
     /// Filter by sprint.
     pub sprint: Option<SprintFilter>,
+    /// Filter by epic keys (multi-select).
+    pub epics: Vec<String>,
 }
 
 impl FilterState {
@@ -973,6 +975,16 @@ impl FilterState {
             None => {}
         }
 
+        if !self.epics.is_empty() {
+            let epics = self
+                .epics
+                .iter()
+                .map(|e| format!("\"{}\"", e))
+                .collect::<Vec<_>>()
+                .join(", ");
+            clauses.push(format!("parent IN ({})", epics));
+        }
+
         if clauses.is_empty() {
             String::new()
         } else {
@@ -989,6 +1001,7 @@ impl FilterState {
             && self.labels.is_empty()
             && self.components.is_empty()
             && self.sprint.is_none()
+            && self.epics.is_empty()
     }
 
     /// Clear all filters.
@@ -1030,6 +1043,10 @@ impl FilterState {
                 parts.push(format!("Sprint: {}", name));
             }
             None => {}
+        }
+
+        if !self.epics.is_empty() {
+            parts.push(format!("Epic: {}", self.epics.join(", ")));
         }
 
         parts
@@ -1125,6 +1142,8 @@ pub struct FilterOptions {
     pub components: Vec<FilterOption>,
     /// Available sprints.
     pub sprints: Vec<FilterOption>,
+    /// Available epics.
+    pub epics: Vec<FilterOption>,
 }
 
 impl FilterOptions {
@@ -1154,6 +1173,16 @@ impl FilterOptions {
             self.components.push(FilterOption::new(component, component));
             // Keep components sorted
             self.components.sort_by(|a, b| a.label.cmp(&b.label));
+        }
+    }
+
+    /// Add an epic if it doesn't already exist.
+    pub fn add_epic(&mut self, key: &str, summary: &str) {
+        if !self.epics.iter().any(|e| e.id == key) {
+            self.epics
+                .push(FilterOption::new(key, &format!("{} - {}", key, summary)));
+            // Keep epics sorted by key
+            self.epics.sort_by(|a, b| a.id.cmp(&b.id));
         }
     }
 }

@@ -189,8 +189,10 @@ impl HistoryView {
         self.loading = false;
         self.total = changelog.total;
         self.all_loaded = !changelog.has_more();
-        // Append new histories (in reverse order so newest is first)
-        self.histories.extend(changelog.histories);
+        // Reverse to show newest first (API returns oldest first)
+        let mut histories = changelog.histories;
+        histories.reverse();
+        self.histories.extend(histories);
         self.update_filtered_count();
     }
 
@@ -198,7 +200,10 @@ impl HistoryView {
     pub fn append_changelog(&mut self, changelog: Changelog) {
         self.loading = false;
         self.all_loaded = !changelog.has_more();
-        self.histories.extend(changelog.histories);
+        // Reverse to show newest first (API returns oldest first)
+        let mut histories = changelog.histories;
+        histories.reverse();
+        self.histories.extend(histories);
         self.update_filtered_count();
     }
 

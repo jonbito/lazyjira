@@ -482,30 +482,39 @@ impl TagEditor {
             frame.render_widget(empty_text, inner);
         } else if self.focus_on_current {
             // When focused, show as a list for selection
+            // We manually handle selection styling to avoid List widget's highlight_style conflicts
             let items: Vec<ListItem> = self
                 .current_tags
                 .iter()
-                .map(|tag| {
-                    ListItem::new(Line::from(Span::styled(
-                        format!("  {} ", tag),
-                        Style::default().fg(Color::White).bg(self.config.tag_color),
-                    )))
+                .enumerate()
+                .map(|(i, tag)| {
+                    let is_selected = i == self.selected;
+                    let (prefix, style) = if is_selected {
+                        // Selected item: high contrast with white text on dark gray
+                        (
+                            "> ",
+                            Style::default()
+                                .fg(Color::White)
+                                .bg(Color::DarkGray)
+                                .add_modifier(Modifier::BOLD),
+                        )
+                    } else {
+                        // Non-selected items: tag chip style
+                        (
+                            "  ",
+                            Style::default().fg(Color::White).bg(self.config.tag_color),
+                        )
+                    };
+                    ListItem::new(Line::from(vec![
+                        Span::styled(prefix, Style::default()),
+                        Span::styled(format!(" {} ", tag), style),
+                    ]))
                 })
                 .collect();
 
-            let list = List::new(items)
-                .highlight_style(
-                    Style::default()
-                        .bg(Color::Yellow)
-                        .fg(Color::Black)
-                        .add_modifier(Modifier::BOLD),
-                )
-                .highlight_symbol("> ");
-
-            let mut state = ListState::default();
-            state.select(Some(self.selected));
-
-            frame.render_stateful_widget(list, inner, &mut state);
+            // Render as plain list without stateful selection to avoid highlight_style conflicts
+            let list = List::new(items);
+            frame.render_widget(list, inner);
         } else {
             // When not focused, show as inline chips
             let mut spans: Vec<Span> = Vec::new();

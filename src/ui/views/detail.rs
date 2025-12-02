@@ -851,7 +851,7 @@ impl DetailView {
                 }
             }
             // Change priority (open priority picker)
-            (KeyCode::Char('P'), KeyModifiers::SHIFT) => {
+            (KeyCode::Char('p'), KeyModifiers::NONE) => {
                 if let Some(issue) = &self.issue {
                     let issue_key = issue.key.clone();
                     self.show_priority_picker_loading();
@@ -1716,7 +1716,7 @@ impl DetailView {
             Span::styled(scroll_info, Style::default().fg(t.dim)),
             Span::raw(" | "),
             Span::styled(
-                "j/k:scroll  q:back  e:edit  E:ext-edit  c:comment  s:status  o:open  a:assignee  h:history  l:labels  L:link",
+                "j/k:scroll  q:back  e:edit  E:ext-edit  c:comment  s:status  o:open  a:assignee  h:history  l:labels  L:link  p:priority",
                 Style::default().fg(t.dim),
             ),
         ]);

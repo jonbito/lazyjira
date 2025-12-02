@@ -165,7 +165,7 @@ impl PriorityPicker {
         }
 
         // Calculate dialog size and position (centered)
-        let dialog_width = 40.min(area.width.saturating_sub(4));
+        let dialog_width = 50.min(area.width.saturating_sub(4));
         let dialog_height = 14.min(area.height.saturating_sub(4));
 
         let dialog_area = centered_rect(dialog_width, dialog_height, area);

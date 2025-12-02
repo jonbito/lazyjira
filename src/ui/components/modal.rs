@@ -408,20 +408,19 @@ impl ConfirmDialog {
         };
 
         // Render buttons with selection highlighting
+        // Selected button uses bold + underline instead of background color for readability
         let confirm_style = if self.selected_confirm {
             Style::default()
-                .fg(Color::Black)
-                .bg(confirm_base_color)
-                .add_modifier(Modifier::BOLD)
+                .fg(confirm_base_color)
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
         } else {
             Style::default().fg(confirm_base_color)
         };
 
         let cancel_style = if !self.selected_confirm {
             Style::default()
-                .fg(Color::Black)
-                .bg(cancel_base_color)
-                .add_modifier(Modifier::BOLD)
+                .fg(cancel_base_color)
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
         } else {
             Style::default().fg(cancel_base_color)
         };

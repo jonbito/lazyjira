@@ -234,10 +234,14 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
             }
             Err(e) => {
                 warn!("Failed to create JIRA client: {}", e);
-                app.notify_error(format!("Failed to connect to JIRA: {}", e));
+                let error_msg = format!("Failed to connect to JIRA: {}", e);
+                app.notify_error(&error_msg);
+                app.list_view_mut().set_loading(false);
+                app.list_view_mut().set_error(error_msg);
             }
         }
     } else {
+        // Keep loading state true - render_loading will show "No profile configured" message
         app.notify_warning("No profile configured. Press 'P' to add a profile.");
     }
 
@@ -275,6 +279,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
                 let issues_count = cached.results.issues.len() as u32;
                 app.list_view_mut().set_issues(cached.results.issues);
                 app.list_view_mut().set_loading(false);
+                app.list_view_mut().clear_error();
                 app.list_view_mut().pagination_mut().update_from_response(
                     0,
                     issues_count,
@@ -296,6 +301,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
                             // Update display with fresh data
                             let issues_count = result.issues.len() as u32;
                             app.list_view_mut().set_issues(result.issues);
+                            app.list_view_mut().clear_error();
                             app.list_view_mut().pagination_mut().update_from_response(
                                 0,
                                 issues_count,
@@ -328,6 +334,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
                         let issues_count = result.issues.len() as u32;
                         app.list_view_mut().set_issues(result.issues);
                         app.list_view_mut().set_loading(false);
+                        app.list_view_mut().clear_error();
                         app.list_view_mut().pagination_mut().update_from_response(
                             0,
                             issues_count,
@@ -338,7 +345,9 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
                     }
                     Err(e) => {
                         error!("Failed to fetch issues: {}", e);
-                        app.notify_error(format!("Failed to fetch issues: {}", e));
+                        let error_msg = format!("Failed to fetch issues: {}", e);
+                        app.notify_error(&error_msg);
+                        app.list_view_mut().set_error(&error_msg);
                         app.list_view_mut().set_loading(false);
                         app.list_view_mut().set_cache_status(None);
                     }
@@ -375,7 +384,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
 
         // Check list view state before update to detect actions
         let was_loading = app.list_view().is_loading();
-        let old_profile = app.current_profile().map(|p| p.name.clone());
+        let old_profile = app.current_profile().cloned();
 
         app.update(event);
 
@@ -417,9 +426,9 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
 
         // Check if we need to refresh issues
         let is_loading_now = app.list_view().is_loading();
-        let new_profile = app.current_profile().map(|p| p.name.clone());
+        let new_profile = app.current_profile().cloned();
 
-        // Detect profile switch - need to recreate client and cache manager
+        // Detect profile change (switch or update) - need to recreate client and cache manager
         if old_profile != new_profile {
             if let Some(profile) = app.current_profile().cloned() {
                 // Recreate cache manager for new profile
@@ -448,9 +457,11 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
                     }
                     Err(e) => {
                         error!("Failed to connect to new profile: {}", e);
-                        app.notify_error(format!("Failed to connect: {}", e));
+                        let error_msg = format!("Failed to connect: {}", e);
+                        app.notify_error(&error_msg);
                         client = None;
                         app.list_view_mut().set_loading(false);
+                        app.list_view_mut().set_error(error_msg);
                     }
                 }
             } else {
@@ -459,8 +470,48 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
             }
         }
         // Detect refresh request (loading changed from false to true)
-        else if !was_loading && is_loading_now && client.is_some() {
-            needs_fetch = true;
+        else if !was_loading && is_loading_now {
+            if client.is_some() {
+                needs_fetch = true;
+            } else if let Some(profile) = app.current_profile().cloned() {
+                // No client but profile exists - try to reconnect
+                match JiraClient::new(&profile).await {
+                    Ok(c) => {
+                        info!("Reconnected to JIRA as profile: {}", profile.name);
+                        client = Some(c);
+                        app.list_view_mut().clear_error();
+                        needs_fetch = true;
+
+                        // Also reinitialize cache manager
+                        let cache_ttl = app.config().settings.cache_ttl_minutes;
+                        match CacheManager::with_max_size(
+                            &profile.name,
+                            cache_ttl,
+                            app.config().settings.cache_max_size_mb,
+                        ) {
+                            Ok(cm) => {
+                                debug!("Cache manager reinitialized for profile: {}", profile.name);
+                                cache_manager = Some(cm);
+                            }
+                            Err(e) => {
+                                warn!("Failed to reinitialize cache: {}", e);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to reconnect: {}", e);
+                        let error_msg = format!("Failed to connect: {}", e);
+                        app.notify_error(&error_msg);
+                        app.list_view_mut().set_loading(false);
+                        app.list_view_mut().set_error(error_msg);
+                    }
+                }
+            } else {
+                // No client and no profile configured
+                app.list_view_mut().set_loading(false);
+                app.list_view_mut()
+                    .set_error("No profile configured. Press 'P' to add a profile.");
+            }
         }
 
         // Handle pending fetch transitions request

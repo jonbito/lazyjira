@@ -297,6 +297,8 @@ pub struct ListView {
     search: QuickSearch,
     /// Cache status for data freshness indicator.
     cache_status: Option<CacheStatus>,
+    /// Error message to display (e.g., authentication failure).
+    error: Option<String>,
 }
 
 impl ListView {
@@ -319,6 +321,7 @@ impl ListView {
             focused_column: 0,
             search: QuickSearch::new(),
             cache_status: None,
+            error: None,
         }
     }
 
@@ -389,6 +392,16 @@ impl ListView {
     /// Set the cache status.
     pub fn set_cache_status(&mut self, status: Option<CacheStatus>) {
         self.cache_status = status;
+    }
+
+    /// Set an error message to display.
+    pub fn set_error(&mut self, error: impl Into<String>) {
+        self.error = Some(error.into());
+    }
+
+    /// Clear any error message.
+    pub fn clear_error(&mut self) {
+        self.error = None;
     }
 
     // ========================================================================
@@ -719,6 +732,8 @@ impl ListView {
 
         if self.loading {
             self.render_loading(frame, table_area);
+        } else if let Some(ref error) = self.error {
+            self.render_error(frame, table_area, error);
         } else if self.issues.is_empty() {
             self.render_empty(frame, table_area);
         } else {
@@ -784,6 +799,39 @@ impl ListView {
             y: vertical_center.saturating_sub(3),
             width: area.width,
             height: 6,
+        };
+
+        frame.render_widget(paragraph, centered_area);
+    }
+
+    /// Render the error state.
+    fn render_error(&self, frame: &mut Frame, area: Rect, error: &str) {
+        let t = theme();
+        let message = vec![
+            Line::from(""),
+            Line::from(Span::styled("Error", Style::default().fg(t.error))),
+            Line::from(""),
+            Line::from(Span::styled(error, Style::default().fg(t.fg))),
+            Line::from(""),
+            Line::from(Span::styled(
+                "Press 'r' to retry",
+                Style::default().fg(t.muted),
+            )),
+            Line::from(Span::styled(
+                "Press 'P' to manage profiles",
+                Style::default().fg(t.muted),
+            )),
+        ];
+
+        let paragraph = Paragraph::new(message).alignment(Alignment::Center);
+
+        // Center vertically
+        let vertical_center = area.y + area.height / 2;
+        let centered_area = Rect {
+            x: area.x,
+            y: vertical_center.saturating_sub(4),
+            width: area.width,
+            height: 8,
         };
 
         frame.render_widget(paragraph, centered_area);

@@ -287,8 +287,28 @@ impl TextInput {
     /// * `frame` - The frame to render to
     /// * `area` - The area to render in
     /// * `label` - The label to display
-    /// * `focused` - Whether this input is currently focused
+    /// * `focused` - Whether this input is currently focused (shows cursor)
     pub fn render_with_label(&self, frame: &mut Frame, area: Rect, label: &str, focused: bool) {
+        self.render_with_label_and_border(frame, area, label, focused, None)
+    }
+
+    /// Render the input field with a label and optional custom border color.
+    ///
+    /// # Arguments
+    ///
+    /// * `frame` - The frame to render to
+    /// * `area` - The area to render in
+    /// * `label` - The label to display
+    /// * `focused` - Whether this input is currently focused (shows cursor)
+    /// * `border_color` - Optional custom border color override
+    pub fn render_with_label_and_border(
+        &self,
+        frame: &mut Frame,
+        area: Rect,
+        label: &str,
+        focused: bool,
+        border_color: Option<Color>,
+    ) {
         let t = theme();
         let display = if self.value.is_empty() && !self.placeholder.is_empty() {
             self.placeholder.clone()
@@ -304,14 +324,18 @@ impl TextInput {
             Style::default().fg(t.input_fg)
         };
 
-        let border_style = if focused {
+        let border_style = if let Some(color) = border_color {
+            Style::default().fg(color)
+        } else if focused {
             Style::default().fg(t.border_focused)
         } else {
             Style::default().fg(t.border)
         };
 
-        let title_style = if focused {
-            Style::default().fg(t.accent).add_modifier(Modifier::BOLD)
+        let title_style = if border_color.is_some() || focused {
+            Style::default()
+                .fg(border_color.unwrap_or(t.accent))
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(t.fg)
         };

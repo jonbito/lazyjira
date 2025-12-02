@@ -111,6 +111,8 @@ pub enum EditField {
 pub struct EditState {
     /// Which field is currently being edited.
     pub field: EditField,
+    /// Whether the user is actively editing text (vs navigating fields).
+    pub editing: bool,
     /// The summary input field.
     pub summary_input: TextInput,
     /// The description editor.
@@ -616,6 +618,7 @@ impl DetailView {
 
             self.edit_state = Some(EditState {
                 field: EditField::Summary,
+                editing: false,
                 summary_input,
                 description_editor,
                 original_summary: summary,
@@ -643,6 +646,7 @@ impl DetailView {
 
             self.edit_state = Some(EditState {
                 field: EditField::Description, // Focus on description
+                editing: true, // Start editing since user is coming from external editor
                 summary_input,
                 description_editor,
                 original_summary: summary,
@@ -1177,17 +1181,30 @@ impl DetailView {
 
     /// Handle keyboard input in edit mode.
     fn handle_edit_input(&mut self, key: KeyEvent) -> Option<DetailAction> {
+        // Check if we're actively editing text
+        let is_editing = self
+            .edit_state
+            .as_ref()
+            .map(|s| s.editing)
+            .unwrap_or(false);
+
         match (key.code, key.modifiers) {
-            // Escape - cancel edit (may show confirmation if changes exist)
+            // Escape - either exit text editing mode, or cancel edit (may show confirmation)
             (KeyCode::Esc, KeyModifiers::NONE) => {
-                if self.has_unsaved_changes() {
+                if is_editing {
+                    // Exit text editing mode, but stay in edit view
+                    if let Some(edit_state) = &mut self.edit_state {
+                        edit_state.editing = false;
+                    }
+                    None
+                } else if self.has_unsaved_changes() {
                     Some(DetailAction::ConfirmDiscard)
                 } else {
                     self.exit_edit_mode();
                     None
                 }
             }
-            // Ctrl+S - save changes
+            // Ctrl+S - save changes (works in both modes)
             (KeyCode::Char('s'), KeyModifiers::CONTROL) => {
                 if let Some(issue) = &self.issue {
                     if let Some(update_request) = self.create_update_request() {
@@ -1201,13 +1218,24 @@ impl DetailView {
                     None
                 }
             }
-            // Tab - switch between fields
-            (KeyCode::Tab, KeyModifiers::NONE) | (KeyCode::BackTab, KeyModifiers::SHIFT) => {
+            // Enter - start editing text in the current field
+            (KeyCode::Enter, KeyModifiers::NONE) if !is_editing => {
+                if let Some(edit_state) = &mut self.edit_state {
+                    edit_state.editing = true;
+                }
+                None
+            }
+            // j/k - navigate between fields (only when not editing)
+            (KeyCode::Char('j'), KeyModifiers::NONE) if !is_editing => {
                 self.switch_edit_field();
                 None
             }
-            // All other input goes to the focused field
-            _ => {
+            (KeyCode::Char('k'), KeyModifiers::NONE) if !is_editing => {
+                self.switch_edit_field();
+                None
+            }
+            // All other input goes to the focused field when editing
+            _ if is_editing => {
                 if let Some(edit_state) = &mut self.edit_state {
                     match edit_state.field {
                         EditField::Summary => {
@@ -1220,6 +1248,8 @@ impl DetailView {
                 }
                 None
             }
+            // Ignore other keys when not editing
+            _ => None,
         }
     }
 
@@ -1368,6 +1398,7 @@ impl DetailView {
         };
 
         let current_field = edit_state.field;
+        let is_editing = edit_state.editing;
         let has_changes = edit_state.summary_input.value() != edit_state.original_summary
             || edit_state.description_editor.content() != edit_state.original_description;
 
@@ -1407,43 +1438,74 @@ impl DetailView {
         let mut edit_state = edit_state;
 
         // Render summary input
-        let summary_title = if current_field == EditField::Summary {
+        let summary_focused = current_field == EditField::Summary;
+        let summary_title = if summary_focused && is_editing {
             " Summary (editing) "
+        } else if summary_focused {
+            " Summary (press Enter to edit) "
         } else {
             " Summary "
         };
-        edit_state.summary_input.render_with_label(
+        // Yellow border when hovered but not editing
+        let summary_border = if summary_focused && !is_editing {
+            Some(Color::Yellow)
+        } else {
+            None
+        };
+        edit_state.summary_input.render_with_label_and_border(
             frame,
             chunks[1],
             summary_title,
-            current_field == EditField::Summary,
+            summary_focused && is_editing, // Only show cursor when actively editing
+            summary_border,
         );
 
         // Render description editor
-        let description_title = if current_field == EditField::Description {
+        let description_focused = current_field == EditField::Description;
+        let description_title = if description_focused && is_editing {
             " Description (editing) "
+        } else if description_focused {
+            " Description (press Enter to edit) "
         } else {
             " Description "
         };
-        edit_state.description_editor.render(
+        // Yellow border when hovered but not editing
+        let description_border = if description_focused && !is_editing {
+            Some(Color::Yellow)
+        } else {
+            None
+        };
+        edit_state.description_editor.render_with_border(
             frame,
             chunks[2],
-            current_field == EditField::Description,
+            description_focused && is_editing, // Only show cursor when actively editing
             Some(description_title),
+            description_border,
         );
 
         // Put edit_state back
         self.edit_state = Some(edit_state);
 
-        // Render edit mode hints
-        let hints = Line::from(vec![
-            Span::styled("Tab", Style::default().fg(t.warning)),
-            Span::raw(": switch field  "),
-            Span::styled("Ctrl+S", Style::default().fg(t.success)),
-            Span::raw(": save  "),
-            Span::styled("Esc", Style::default().fg(t.error)),
-            Span::raw(": cancel"),
-        ]);
+        // Render edit mode hints (context-sensitive based on editing state)
+        let hints = if is_editing {
+            Line::from(vec![
+                Span::styled("Esc", Style::default().fg(t.warning)),
+                Span::raw(": stop editing  "),
+                Span::styled("Ctrl+S", Style::default().fg(t.success)),
+                Span::raw(": save  "),
+            ])
+        } else {
+            Line::from(vec![
+                Span::styled("j/k", Style::default().fg(t.warning)),
+                Span::raw(": switch field  "),
+                Span::styled("Enter", Style::default().fg(t.warning)),
+                Span::raw(": edit  "),
+                Span::styled("Ctrl+S", Style::default().fg(t.success)),
+                Span::raw(": save  "),
+                Span::styled("Esc", Style::default().fg(t.error)),
+                Span::raw(": cancel"),
+            ])
+        };
         let hints_paragraph = Paragraph::new(hints);
         frame.render_widget(hints_paragraph, chunks[3]);
     }

@@ -314,31 +314,36 @@ impl TextEditor {
     /// * `focused` - Whether this editor is focused
     /// * `title` - Optional title for the block
     pub fn render(&mut self, frame: &mut Frame, area: Rect, focused: bool, title: Option<&str>) {
+        self.render_with_border(frame, area, focused, title, None)
+    }
+
+    /// Render the text editor with an optional custom border color.
+    pub fn render_with_border(
+        &mut self,
+        frame: &mut Frame,
+        area: Rect,
+        focused: bool,
+        title: Option<&str>,
+        border_color: Option<Color>,
+    ) {
         // Calculate visible area (accounting for borders)
         let visible_height = area.height.saturating_sub(2) as usize;
 
         // Ensure cursor is visible
         self.ensure_cursor_visible(visible_height);
 
-        // Build lines to display
+        // Build lines to display (no line highlighting - cursor is sufficient)
         let display_lines: Vec<Line> = self
             .lines
             .iter()
             .skip(self.scroll)
             .take(visible_height)
-            .enumerate()
-            .map(|(i, line)| {
-                let line_num = self.scroll + i;
-                if focused && line_num == self.cursor_line {
-                    // Highlight current line
-                    Line::from(line.as_str()).style(Style::default().bg(Color::DarkGray))
-                } else {
-                    Line::from(line.as_str())
-                }
-            })
+            .map(|line| Line::from(line.as_str()))
             .collect();
 
-        let border_style = if focused {
+        let border_style = if let Some(color) = border_color {
+            Style::default().fg(color)
+        } else if focused {
             Style::default().fg(Color::Yellow)
         } else {
             Style::default().fg(Color::DarkGray)

@@ -188,8 +188,7 @@ impl SavedFiltersDialog {
                 }
             }
             // Create new filter with 'n' or 's' (save)
-            (KeyCode::Char('n'), KeyModifiers::NONE)
-            | (KeyCode::Char('s'), KeyModifiers::NONE) => {
+            (KeyCode::Char('n'), KeyModifiers::NONE) | (KeyCode::Char('s'), KeyModifiers::NONE) => {
                 self.start_create();
                 None
             }

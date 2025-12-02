@@ -271,7 +271,9 @@ pub fn get_keybindings_grouped() -> Vec<(KeyContext, Vec<Keybinding>)> {
 pub fn get_context_hints(context: KeyContext) -> &'static str {
     match context {
         KeyContext::Global => "[?] help",
-        KeyContext::IssueList => "[j/k] navigate  [Enter] open  [f] filter  [F] saved  [/] search  [?] help",
+        KeyContext::IssueList => {
+            "[j/k] navigate  [Enter] open  [f] filter  [F] saved  [/] search  [?] help"
+        }
         KeyContext::IssueDetail => {
             "[e] edit  [c] comment  [s] status  [a] assign  [q] back  [?] help"
         }

@@ -9,16 +9,12 @@ mod views;
 
 pub use components::{
     render_context_help, CommandPalette, CommandPaletteAction, ConfirmDialog, ErrorDialog,
-    ExternalEditor, JqlAction, JqlInput, LoadingIndicator,
-    Notification, NotificationManager, ProfilePicker, ProfilePickerAction,
-    SavedFiltersAction, SavedFiltersDialog,
+    ExternalEditor, JqlAction, JqlInput, LoadingIndicator, Notification, NotificationManager,
+    ProfilePicker, ProfilePickerAction, SavedFiltersAction, SavedFiltersDialog,
 };
-pub use theme::{
-    init_theme, load_theme,
-};
+pub use theme::{init_theme, load_theme};
 pub use views::{
-    DeleteProfileDialog, DetailAction, DetailView, FilterPanelAction,
-    FilterPanelView, FormField, HelpAction, HelpView, ListAction, ListView,
-    ProfileFormAction, ProfileFormData, ProfileFormView, ProfileListAction, ProfileListView,
-    ProfileSummary,
+    DeleteProfileDialog, DetailAction, DetailView, FilterPanelAction, FilterPanelView, FormField,
+    HelpAction, HelpView, ListAction, ListView, ProfileFormAction, ProfileFormData,
+    ProfileFormView, ProfileListAction, ProfileListView, ProfileSummary,
 };

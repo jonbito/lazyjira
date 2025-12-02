@@ -220,7 +220,8 @@ impl LinkManager {
             .collect();
 
         if !display_links.is_empty() {
-            self.items.push(LinkItem::Header("Linked Issues".to_string()));
+            self.items
+                .push(LinkItem::Header("Linked Issues".to_string()));
             self.items.extend(display_links);
         }
 
@@ -286,7 +287,10 @@ impl LinkManager {
 
     /// Get the total number of selectable items.
     pub fn selectable_count(&self) -> usize {
-        self.items.iter().filter(|item| item.is_selectable()).count()
+        self.items
+            .iter()
+            .filter(|item| item.is_selectable())
+            .count()
     }
 
     /// Check if manager is empty (no links/subtasks/parent).
@@ -340,9 +344,7 @@ impl LinkManager {
                 None
             }
             // Create new link
-            (KeyCode::Char('c'), KeyModifiers::NONE) => {
-                Some(LinkManagerAction::CreateNew)
-            }
+            (KeyCode::Char('c'), KeyModifiers::NONE) => Some(LinkManagerAction::CreateNew),
             // Delete selected link
             (KeyCode::Char('d'), KeyModifiers::NONE) => {
                 if let Some(item) = self.items.get(self.selected) {
@@ -384,10 +386,8 @@ impl LinkManager {
             // Select link type
             (KeyCode::Enter, KeyModifiers::NONE) => {
                 if let Some(item) = self.link_type_items.get(self.link_type_selected) {
-                    let result = LinkManagerAction::SelectLinkType(
-                        item.link_type.clone(),
-                        item.is_outward,
-                    );
+                    let result =
+                        LinkManagerAction::SelectLinkType(item.link_type.clone(), item.is_outward);
                     self.hide();
                     return Some(result);
                 }
@@ -539,21 +539,21 @@ impl LinkManager {
         };
 
         match item {
-            LinkItem::Header(text) => {
-                ListItem::new(Line::from(Span::styled(
-                    text.clone(),
-                    Style::default()
-                        .fg(Color::Gray)
-                        .add_modifier(Modifier::BOLD),
-                )))
-            }
+            LinkItem::Header(text) => ListItem::new(Line::from(Span::styled(
+                text.clone(),
+                Style::default()
+                    .fg(Color::Gray)
+                    .add_modifier(Modifier::BOLD),
+            ))),
             LinkItem::Parent {
                 key,
                 summary,
                 status,
             } => {
                 let status_style = if selected {
-                    Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD)
                 } else {
                     status_category_style(status)
                 };
@@ -581,7 +581,9 @@ impl LinkManager {
                 ..
             } => {
                 let status_style = if selected {
-                    Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD)
                 } else {
                     status_category_style(status)
                 };
@@ -614,7 +616,9 @@ impl LinkManager {
                 is_done,
             } => {
                 let status_style = if selected {
-                    Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD)
                 } else {
                     status_category_style(status)
                 };

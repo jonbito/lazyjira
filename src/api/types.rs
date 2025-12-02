@@ -1192,7 +1192,8 @@ impl FilterOptions {
     /// Add a component if it doesn't already exist.
     pub fn add_component(&mut self, component: &str) {
         if !self.components.iter().any(|c| c.id == component) {
-            self.components.push(FilterOption::new(component, component));
+            self.components
+                .push(FilterOption::new(component, component));
             // Keep components sorted
             self.components.sort_by(|a, b| a.label.cmp(&b.label));
         }

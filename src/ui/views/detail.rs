@@ -1058,9 +1058,7 @@ impl DetailView {
     fn handle_link_manager_input(&mut self, key: KeyEvent) -> Option<DetailAction> {
         if let Some(action) = self.link_manager.handle_input(key) {
             match action {
-                LinkManagerAction::Navigate(key) => {
-                    Some(DetailAction::NavigateToIssue(key))
-                }
+                LinkManagerAction::Navigate(key) => Some(DetailAction::NavigateToIssue(key)),
                 LinkManagerAction::Delete(link_id, description) => {
                     Some(DetailAction::ConfirmDeleteLink(link_id, description))
                 }
@@ -1157,11 +1155,7 @@ impl DetailView {
     /// Handle keyboard input in edit mode.
     fn handle_edit_input(&mut self, key: KeyEvent) -> Option<DetailAction> {
         // Check if we're actively editing text
-        let is_editing = self
-            .edit_state
-            .as_ref()
-            .map(|s| s.editing)
-            .unwrap_or(false);
+        let is_editing = self.edit_state.as_ref().map(|s| s.editing).unwrap_or(false);
 
         match (key.code, key.modifiers) {
             // Escape - either exit text editing mode, or cancel edit (may show confirmation)

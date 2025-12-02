@@ -6,9 +6,7 @@ mod handler;
 mod keys;
 
 pub use handler::EventHandler;
-pub use keys::{
-    get_context_hints, get_keybindings_grouped, KeyContext, Keybinding,
-};
+pub use keys::{get_context_hints, get_keybindings_grouped, KeyContext, Keybinding};
 
 use crossterm::event::KeyEvent;
 

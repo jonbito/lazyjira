@@ -60,3 +60,5 @@ publish-jobs = ["homebrew"]
 install-path = "CARGO_HOME"
 # Whether to install an updater program
 install-updater = false
+# Allow custom modifications to CI workflow (ssh-key for homebrew tap)
+allow-dirty = ["ci"]

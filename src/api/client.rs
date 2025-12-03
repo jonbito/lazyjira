@@ -33,7 +33,7 @@ const RETRY_DELAY_MS: u64 = 1000;
 ///
 /// Provides async methods for interacting with the JIRA REST API v3.
 /// Handles authentication, error handling, and retry logic for transient failures.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct JiraClient {
     /// The HTTP client.
     client: Client,

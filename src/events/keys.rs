@@ -137,6 +137,12 @@ pub fn get_keybindings() -> Vec<Keybinding> {
             "Open in browser",
             KeyContext::IssueList,
         ),
+        Keybinding::new(
+            "Ctrl+L",
+            "load_more",
+            "Load more issues",
+            KeyContext::IssueList,
+        ),
         Keybinding::new("q", "quit", "Quit application", KeyContext::IssueList),
         // Issue Detail keybindings
         Keybinding::new(

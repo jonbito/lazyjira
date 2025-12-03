@@ -649,6 +649,12 @@ impl ListView {
                     return Some(ListAction::OpenInBrowser(issue.key.clone()));
                 }
             }
+            // Manual load more
+            (KeyCode::Char('l'), KeyModifiers::CONTROL) => {
+                if self.pagination.has_more && !self.pagination.loading {
+                    return Some(ListAction::LoadMore);
+                }
+            }
             // Clear search with Escape when not in search mode but search has results
             (KeyCode::Esc, _) if !self.search.is_empty() => {
                 self.search.deactivate();
@@ -1179,7 +1185,7 @@ impl ListView {
         } else if !self.search.is_empty() {
             "n/N:next/prev match  /:new search  Esc:clear"
         } else {
-            "j/k:nav  /:search  s:sort  f:filter  o:open  :jql  ?:help"
+            "j/k:nav  /:search  s:sort  f:filter  ^L:more  o:open  ?:help"
         };
         spans.push(Span::styled(help_text, Style::default().fg(t.dim)));
 
@@ -2091,5 +2097,78 @@ mod tests {
     fn test_pagination_state_with_page_size_has_no_error() {
         let state = PaginationState::with_page_size(25);
         assert!(state.error.is_none());
+    }
+
+    // ========================================================================
+    // Manual Load More (Ctrl+L) Tests
+    // ========================================================================
+
+    #[test]
+    fn test_ctrl_l_returns_load_more_when_has_more() {
+        let mut view = ListView::new();
+        let issues: Vec<Issue> = (0..10)
+            .map(|i| create_test_issue(&format!("TEST-{}", i), &format!("Issue {}", i)))
+            .collect();
+        view.set_issues(issues);
+        view.pagination
+            .update_from_response(0, 10, 100, true, Some("token".to_string()));
+
+        // Ctrl+L should trigger LoadMore when has_more is true
+        let key = KeyEvent::new(KeyCode::Char('l'), KeyModifiers::CONTROL);
+        let action = view.handle_input(key);
+
+        assert_eq!(action, Some(ListAction::LoadMore));
+    }
+
+    #[test]
+    fn test_ctrl_l_returns_none_when_no_more_pages() {
+        let mut view = ListView::new();
+        let issues: Vec<Issue> = (0..10)
+            .map(|i| create_test_issue(&format!("TEST-{}", i), &format!("Issue {}", i)))
+            .collect();
+        view.set_issues(issues);
+        view.pagination.update_from_response(0, 10, 10, false, None); // has_more = false
+
+        // Ctrl+L should return None when has_more is false
+        let key = KeyEvent::new(KeyCode::Char('l'), KeyModifiers::CONTROL);
+        let action = view.handle_input(key);
+
+        assert!(action.is_none());
+    }
+
+    #[test]
+    fn test_ctrl_l_returns_none_when_already_loading() {
+        let mut view = ListView::new();
+        let issues: Vec<Issue> = (0..10)
+            .map(|i| create_test_issue(&format!("TEST-{}", i), &format!("Issue {}", i)))
+            .collect();
+        view.set_issues(issues);
+        view.pagination
+            .update_from_response(0, 10, 100, true, Some("token".to_string()));
+        view.pagination.loading = true;
+
+        // Ctrl+L should return None when already loading
+        let key = KeyEvent::new(KeyCode::Char('l'), KeyModifiers::CONTROL);
+        let action = view.handle_input(key);
+
+        assert!(action.is_none());
+    }
+
+    #[test]
+    fn test_ctrl_l_does_not_conflict_with_l_in_header_mode() {
+        let mut view = ListView::new();
+        view.set_issues(vec![create_test_issue("TEST-1", "First")]);
+        view.enter_header_mode();
+
+        // Start at column 0
+        assert_eq!(view.focused_column, 0);
+
+        // Plain 'l' should move right in header mode
+        let key = KeyEvent::new(KeyCode::Char('l'), KeyModifiers::NONE);
+        view.handle_input(key);
+        assert_eq!(view.focused_column, 1);
+
+        // Ctrl+L should not affect header navigation (header mode doesn't handle Ctrl+L)
+        // This tests that Ctrl+L doesn't conflict with 'l' navigation
     }
 }

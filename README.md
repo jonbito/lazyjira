@@ -2,6 +2,7 @@
 
 A fast, keyboard-driven terminal user interface (TUI) for JIRA. Manage issues, track work, and navigate your projects without leaving the command line.
 
+[![CI](https://github.com/jonbito/lazyjira/actions/workflows/ci.yml/badge.svg)](https://github.com/jonbito/lazyjira/actions/workflows/ci.yml)
 ![Rust](https://img.shields.io/badge/rust-1.70%2B-orange)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
@@ -17,17 +18,49 @@ A fast, keyboard-driven terminal user interface (TUI) for JIRA. Manage issues, t
 
 ## Installation
 
-### From source
+### Homebrew (macOS)
 
 ```bash
-git clone https://github.com/lazyjira/lazyjira.git
-cd lazyjira
-cargo install --path .
+brew install jonbito/tap/lazyjira
 ```
+
+### Shell Script (macOS/Linux)
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/jonbito/lazyjira/releases/latest/download/lazyjira-installer.sh | sh
+```
+
+### PowerShell (Windows)
+
+```powershell
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/jonbito/lazyjira/releases/latest/download/lazyjira-installer.ps1 | iex"
+```
+
+### Cargo
+
+```bash
+cargo install lazyjira
+```
+
+### From Source
+
+```bash
+git clone https://github.com/jonbito/lazyjira.git
+cd lazyjira
+cargo build --release
+```
+
+## Supported Platforms
+
+| Platform | Architecture | Installation Methods |
+|----------|--------------|---------------------|
+| macOS | Intel (x86_64) | Homebrew, Shell, Cargo |
+| macOS | Apple Silicon (ARM64) | Homebrew, Shell, Cargo |
+| Linux | x86_64 | Shell, Cargo |
+| Windows | x86_64 | PowerShell, Cargo |
 
 ### Requirements
 
-- Rust 1.70 or later
 - A JIRA Cloud or Data Center instance
 - [JIRA API token](https://support.atlassian.com/atlassian-account/docs/manage-api-tokens-for-your-atlassian-account/)
 

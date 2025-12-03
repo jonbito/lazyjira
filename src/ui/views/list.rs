@@ -12,6 +12,7 @@ use ratatui::{
     widgets::{Block, Borders, Cell, Paragraph, Row, Table, TableState},
     Frame,
 };
+use tracing::debug;
 
 use crate::api::types::Issue;
 use crate::cache::CacheStatus;
@@ -202,10 +203,22 @@ impl PaginationState {
     }
 
     /// Update state from API response.
-    pub fn update_from_response(&mut self, start_at: u32, count: u32, total: u32) {
+    ///
+    /// The `api_has_more` parameter indicates whether the API response has more pages.
+    /// This is needed because the new JIRA API uses token-based pagination and doesn't
+    /// return a total count - it uses `is_last` instead.
+    pub fn update_from_response(
+        &mut self,
+        start_at: u32,
+        count: u32,
+        total: u32,
+        api_has_more: bool,
+    ) {
         self.current_offset = start_at + count;
         self.total = total;
-        self.has_more = self.current_offset < total;
+        // Use api_has_more from the response - handles both old API (total-based)
+        // and new API (token-based with is_last)
+        self.has_more = api_has_more;
         self.loading = false;
     }
 
@@ -464,8 +477,9 @@ impl ListView {
     }
 
     /// Update pagination state from API response.
-    pub fn update_pagination(&mut self, start_at: u32, count: u32, total: u32) {
-        self.pagination.update_from_response(start_at, count, total);
+    pub fn update_pagination(&mut self, start_at: u32, count: u32, total: u32, has_more: bool) {
+        self.pagination
+            .update_from_response(start_at, count, total, has_more);
     }
 
     /// Reset for a new query (clears issues and pagination).
@@ -481,10 +495,22 @@ impl ListView {
     fn check_load_more(&self) -> Option<ListAction> {
         // Load more if within 5 items of end
         let threshold = 5;
-        if self.selected + threshold >= self.issues.len()
-            && self.pagination.has_more
-            && !self.pagination.loading
-        {
+        let near_end = self.selected + threshold >= self.issues.len();
+        let has_more = self.pagination.has_more;
+        let not_loading = !self.pagination.loading;
+
+        debug!(
+            selected = self.selected,
+            issues_len = self.issues.len(),
+            threshold = threshold,
+            near_end = near_end,
+            has_more = has_more,
+            not_loading = not_loading,
+            "check_load_more conditions"
+        );
+
+        if near_end && has_more && not_loading {
+            debug!("Triggering LoadMore action");
             Some(ListAction::LoadMore)
         } else {
             None
@@ -1607,7 +1633,7 @@ mod tests {
     #[test]
     fn test_pagination_state_update_from_response() {
         let mut state = PaginationState::new();
-        state.update_from_response(0, 50, 100);
+        state.update_from_response(0, 50, 100, true); // has_more = true
 
         assert_eq!(state.current_offset, 50);
         assert_eq!(state.total, 100);
@@ -1618,7 +1644,7 @@ mod tests {
     #[test]
     fn test_pagination_state_update_last_page() {
         let mut state = PaginationState::new();
-        state.update_from_response(50, 50, 100);
+        state.update_from_response(50, 50, 100, false); // has_more = false (last page)
 
         assert_eq!(state.current_offset, 100);
         assert_eq!(state.total, 100);
@@ -1628,7 +1654,7 @@ mod tests {
     #[test]
     fn test_pagination_state_reset() {
         let mut state = PaginationState::new();
-        state.update_from_response(50, 50, 100);
+        state.update_from_response(50, 50, 100, false);
         state.reset();
 
         assert_eq!(state.current_offset, 0);
@@ -1641,7 +1667,7 @@ mod tests {
         let mut state = PaginationState::new();
         assert_eq!(state.display(), "No issues");
 
-        state.update_from_response(0, 50, 100);
+        state.update_from_response(0, 50, 100, true);
         assert_eq!(state.display(), "1-50 of 100");
     }
 
@@ -1652,7 +1678,7 @@ mod tests {
             .map(|i| create_test_issue(&format!("TEST-{}", i), &format!("Issue {}", i)))
             .collect();
         view.set_issues(issues);
-        view.pagination.update_from_response(0, 50, 100);
+        view.pagination.update_from_response(0, 50, 100, true);
 
         // At the start, no need to load more
         view.selected = 0;
@@ -1667,7 +1693,7 @@ mod tests {
             .map(|i| create_test_issue(&format!("TEST-{}", i), &format!("Issue {}", i)))
             .collect();
         view.set_issues(issues);
-        view.pagination.update_from_response(0, 50, 100);
+        view.pagination.update_from_response(0, 50, 100, true);
 
         // Near the end, should trigger load more
         view.selected = 46; // Within 5 of 50
@@ -1682,7 +1708,7 @@ mod tests {
             .map(|i| create_test_issue(&format!("TEST-{}", i), &format!("Issue {}", i)))
             .collect();
         view.set_issues(issues);
-        view.pagination.update_from_response(0, 50, 50); // Last page
+        view.pagination.update_from_response(0, 50, 50, false); // Last page
 
         view.selected = 48;
         let action = view.check_load_more();
@@ -1696,7 +1722,7 @@ mod tests {
             .map(|i| create_test_issue(&format!("TEST-{}", i), &format!("Issue {}", i)))
             .collect();
         view.set_issues(issues);
-        view.pagination.update_from_response(0, 50, 100);
+        view.pagination.update_from_response(0, 50, 100, true);
         view.pagination.loading = true;
 
         view.selected = 48;
@@ -1730,7 +1756,7 @@ mod tests {
             create_test_issue("TEST-2", "Second"),
         ]);
         view.selected = 1;
-        view.pagination.update_from_response(0, 50, 100);
+        view.pagination.update_from_response(0, 50, 100, true);
 
         view.reset_for_new_query();
 

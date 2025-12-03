@@ -157,6 +157,8 @@ pub struct App {
     delete_link_confirm_dialog: ConfirmDialog,
     /// Pending external editor request (issue key, current description).
     pending_external_edit: Option<(String, String)>,
+    /// Pending load more issues request (pagination).
+    pending_load_more: bool,
     /// Help view.
     help_view: HelpView,
     /// Previous state before opening help (to return to).
@@ -239,6 +241,7 @@ impl App {
             pending_delete_link: None,
             delete_link_confirm_dialog: ConfirmDialog::new(),
             pending_external_edit: None,
+            pending_load_more: false,
             help_view: HelpView::new(),
             previous_state: None,
             command_palette: CommandPalette::new(),
@@ -316,6 +319,7 @@ impl App {
             pending_delete_link: None,
             delete_link_confirm_dialog: ConfirmDialog::new(),
             pending_external_edit: None,
+            pending_load_more: false,
             help_view: HelpView::new(),
             previous_state: None,
             command_palette: CommandPalette::new(),
@@ -1703,6 +1707,50 @@ impl App {
         self.pending_external_edit.take()
     }
 
+    // ========================================================================
+    // Pagination methods
+    // ========================================================================
+
+    /// Check if there's a pending load more request and clear it.
+    ///
+    /// Returns true if pagination should load more issues.
+    pub fn take_pending_load_more(&mut self) -> bool {
+        std::mem::take(&mut self.pending_load_more)
+    }
+
+    /// Handle successful load more response.
+    ///
+    /// Appends the new issues to the list and updates pagination state.
+    pub fn handle_load_more_success(
+        &mut self,
+        issues: Vec<Issue>,
+        start_at: u32,
+        total: u32,
+        has_more: bool,
+    ) {
+        let count = issues.len() as u32;
+        info!(
+            count = count,
+            start_at = start_at,
+            total = total,
+            has_more = has_more,
+            "Appending issues from load more"
+        );
+        self.list_view.append_issues(issues);
+        self.list_view
+            .pagination_mut()
+            .update_from_response(start_at, count, total, has_more);
+        self.notify_success(format!("Loaded {} more issues", count));
+    }
+
+    /// Handle failed load more request.
+    pub fn handle_load_more_failure(&mut self, error: &str) {
+        warn!(error = %error, "Load more failed");
+        // Stop loading state
+        self.list_view.pagination_mut().loading = false;
+        self.notify_error(format!("Failed to load more issues: {}", error));
+    }
+
     /// Apply the result from an external editor session to the detail view.
     ///
     /// If the content was modified, this enters edit mode with the new content
@@ -2031,12 +2079,20 @@ impl App {
                             // TODO: Trigger async refresh with new sort
                         }
                         ListAction::LoadMore => {
-                            debug!(
-                                offset = self.list_view.pagination().current_offset,
-                                "Loading more issues"
+                            let offset = self.list_view.pagination().current_offset;
+                            let page_size = self.list_view.pagination().page_size;
+                            info!(
+                                offset = offset,
+                                page_size = page_size,
+                                has_more = self.list_view.pagination().has_more,
+                                "ListAction::LoadMore received - setting pending_load_more"
                             );
+                            self.notify_info(format!(
+                                "Loading more issues (offset: {}, page_size: {})",
+                                offset, page_size
+                            ));
                             self.list_view.pagination_mut().start_loading();
-                            // TODO: Trigger async load more
+                            self.pending_load_more = true;
                         }
                         ListAction::OpenInBrowser(issue_key) => {
                             self.open_issue_in_browser(&issue_key);

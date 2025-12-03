@@ -271,12 +271,12 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
 
             if let Some(cached) = cached_result {
                 // Use cached data
-                info!(
-                    "Loaded {} issues from cache (total: {})",
-                    cached.results.issues.len(),
-                    cached.results.total
-                );
                 let issues_count = cached.results.issues.len() as u32;
+                let has_more = cached.results.has_more();
+                info!(
+                    "Loaded {} issues from cache (total: {}, has_more: {})",
+                    issues_count, cached.results.total, has_more
+                );
                 app.list_view_mut().set_issues(cached.results.issues);
                 app.list_view_mut().set_loading(false);
                 app.list_view_mut().clear_error();
@@ -284,6 +284,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
                     0,
                     issues_count,
                     cached.results.total,
+                    has_more,
                 );
                 app.list_view_mut()
                     .set_cache_status(Some(CacheStatus::FromCache));
@@ -301,12 +302,18 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
                             }
                             // Update display with fresh data
                             let issues_count = result.issues.len() as u32;
+                            let has_more = result.has_more();
+                            info!(
+                                "Background refresh: {} issues (total: {}, has_more: {})",
+                                issues_count, result.total, has_more
+                            );
                             app.list_view_mut().set_issues(result.issues);
                             app.list_view_mut().clear_error();
                             app.list_view_mut().pagination_mut().update_from_response(
                                 0,
                                 issues_count,
                                 result.total,
+                                has_more,
                             );
                             app.list_view_mut()
                                 .set_cache_status(Some(CacheStatus::Fresh));
@@ -322,10 +329,11 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
                 let page_size = app.list_view().pagination().page_size;
                 match c.search_issues(jql_query, 0, page_size).await {
                     Ok(result) => {
+                        let issues_count = result.issues.len() as u32;
+                        let has_more = result.has_more();
                         info!(
-                            "Loaded {} issues from API (total: {})",
-                            result.issues.len(),
-                            result.total
+                            "Loaded {} issues from API (total: {}, page_size: {}, has_more: {})",
+                            issues_count, result.total, page_size, has_more
                         );
                         // Store in cache
                         if let Some(ref cm) = cache_manager {
@@ -333,7 +341,6 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
                                 debug!("Failed to cache results: {}", e);
                             }
                         }
-                        let issues_count = result.issues.len() as u32;
                         app.list_view_mut().set_issues(result.issues);
                         app.list_view_mut().set_loading(false);
                         app.list_view_mut().clear_error();
@@ -341,6 +348,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
                             0,
                             issues_count,
                             result.total,
+                            has_more,
                         );
                         app.list_view_mut()
                             .set_cache_status(Some(CacheStatus::Fresh));
@@ -513,6 +521,44 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
                 app.list_view_mut().set_loading(false);
                 app.list_view_mut()
                     .set_error("No profile configured. Press 'P' to add a profile.");
+            }
+        }
+
+        // Handle pending load more request (pagination)
+        if app.take_pending_load_more() {
+            if let Some(ref c) = client {
+                let jql = app.effective_jql();
+                let default_jql = format!(
+                    "assignee = currentUser() OR reporter = currentUser() {}",
+                    app.list_view().sort().to_jql()
+                );
+                let jql_query = if jql.is_empty() { &default_jql } else { &jql };
+                let offset = app.list_view().pagination().current_offset;
+                let page_size = app.list_view().pagination().page_size;
+
+                info!(
+                    "Loading more issues: offset={}, page_size={}, jql={}",
+                    offset, page_size, jql_query
+                );
+
+                match c.search_issues(jql_query, offset, page_size).await {
+                    Ok(result) => {
+                        let has_more = result.has_more();
+                        info!(
+                            "Loaded {} more issues (total: {}, has_more: {})",
+                            result.issues.len(),
+                            result.total,
+                            has_more
+                        );
+                        app.handle_load_more_success(result.issues, offset, result.total, has_more);
+                    }
+                    Err(e) => {
+                        error!("Failed to load more issues: {}", e);
+                        app.handle_load_more_failure(&e.to_string());
+                    }
+                }
+            } else {
+                app.handle_load_more_failure("No JIRA connection");
             }
         }
 

@@ -53,10 +53,12 @@ installers = ["shell", "powershell", "homebrew"]
 # Target platforms to build apps for (Rust target-triple syntax)
 targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
 # A GitHub repo to push Homebrew formulas to
-tap = "jonbito/homebrew-lazyjira"
+tap = "jonbito/homebrew-tap"
 # Publish jobs to run in CI
 publish-jobs = ["homebrew"]
 # Path that installers should place binaries in
 install-path = "CARGO_HOME"
 # Whether to install an updater program
 install-updater = false
+# Allow custom modifications to CI workflow (ssh-key for homebrew tap)
+allow-dirty = ["ci"]

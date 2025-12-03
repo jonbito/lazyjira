@@ -1738,6 +1738,8 @@ impl App {
             has_token = next_page_token.is_some(),
             "Appending issues from load more"
         );
+        // Clear any previous pagination error on success
+        self.list_view.pagination_mut().clear_error();
         self.list_view.append_issues(issues);
         self.list_view.pagination_mut().update_from_response(
             current_offset,
@@ -1751,8 +1753,9 @@ impl App {
     /// Handle failed load more request.
     pub fn handle_load_more_failure(&mut self, error: &str) {
         warn!(error = %error, "Load more failed");
-        // Stop loading state
-        self.list_view.pagination_mut().loading = false;
+        // Set error on pagination state (also stops loading)
+        self.list_view.pagination_mut().set_error(error);
+        // Also show a notification for visibility
         self.notify_error(format!("Failed to load more issues: {}", error));
     }
 

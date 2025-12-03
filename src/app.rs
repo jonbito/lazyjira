@@ -170,7 +170,7 @@ impl App {
     pub fn new() -> Self {
         debug!("Creating new application instance");
 
-        // Load configuration
+        // Load configuration (page_size is validated during load)
         let config = Config::load().unwrap_or_else(|e| {
             warn!("Failed to load config, using default: {}", e);
             Config::default()
@@ -180,7 +180,8 @@ impl App {
         let current_profile = config.get_default_profile().cloned();
         let profile_name = current_profile.as_ref().map(|p| p.name.clone());
 
-        let mut list_view = ListView::new();
+        // Create list view with configured page size
+        let mut list_view = ListView::with_page_size(config.settings.page_size);
         list_view.set_loading(true);
         list_view.set_profile_name(profile_name);
 
@@ -247,13 +248,17 @@ impl App {
     /// Create a new application instance with the given configuration.
     ///
     /// This is useful for testing and for custom initialization.
-    pub fn with_config(config: Config) -> Self {
+    pub fn with_config(mut config: Config) -> Self {
         debug!("Creating application with custom config");
+
+        // Validate page_size setting (in case config wasn't loaded via Config::load)
+        config.settings.validate_page_size();
 
         let current_profile = config.get_default_profile().cloned();
         let profile_name = current_profile.as_ref().map(|p| p.name.clone());
 
-        let mut list_view = ListView::new();
+        // Create list view with configured page size
+        let mut list_view = ListView::with_page_size(config.settings.page_size);
         list_view.set_loading(true);
         list_view.set_profile_name(profile_name);
 

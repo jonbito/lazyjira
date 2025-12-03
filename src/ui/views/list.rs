@@ -299,8 +299,15 @@ pub struct ListView {
 }
 
 impl ListView {
-    /// Create a new list view.
+    /// Create a new list view with default page size.
     pub fn new() -> Self {
+        Self::with_page_size(PaginationState::DEFAULT_PAGE_SIZE)
+    }
+
+    /// Create a new list view with a custom page size.
+    ///
+    /// The page size controls how many issues are fetched per API request.
+    pub fn with_page_size(page_size: u32) -> Self {
         let mut table_state = TableState::default();
         table_state.select(Some(0));
         Self {
@@ -313,7 +320,7 @@ impl ListView {
             pending_g: false,
             filter_summary: None,
             sort: SortState::default(),
-            pagination: PaginationState::new(),
+            pagination: PaginationState::with_page_size(page_size),
             header_focused: false,
             focused_column: 0,
             search: QuickSearch::new(),
@@ -1580,6 +1587,21 @@ mod tests {
     fn test_pagination_state_with_page_size() {
         let state = PaginationState::with_page_size(25);
         assert_eq!(state.page_size, 25);
+    }
+
+    #[test]
+    fn test_list_view_with_page_size() {
+        let view = ListView::with_page_size(25);
+        assert_eq!(view.pagination().page_size, 25);
+    }
+
+    #[test]
+    fn test_list_view_new_uses_default_page_size() {
+        let view = ListView::new();
+        assert_eq!(
+            view.pagination().page_size,
+            PaginationState::DEFAULT_PAGE_SIZE
+        );
     }
 
     #[test]

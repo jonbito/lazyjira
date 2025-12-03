@@ -290,7 +290,8 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
 
                 // Also fetch fresh data in the background (if client available)
                 if let Some(ref c) = client {
-                    match c.search_issues(jql_query, 0, 50).await {
+                    let page_size = app.list_view().pagination().page_size;
+                    match c.search_issues(jql_query, 0, page_size).await {
                         Ok(result) => {
                             // Update cache
                             if let Some(ref cm) = cache_manager {
@@ -318,7 +319,8 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
                 }
             } else if let Some(ref c) = client {
                 // No cache, fetch from API
-                match c.search_issues(jql_query, 0, 50).await {
+                let page_size = app.list_view().pagination().page_size;
+                match c.search_issues(jql_query, 0, page_size).await {
                     Ok(result) => {
                         info!(
                             "Loaded {} issues from API (total: {})",

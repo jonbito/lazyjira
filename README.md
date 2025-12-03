@@ -107,6 +107,7 @@ cargo build --release
 | `F` | Open saved filters |
 | `:` / `/` | Enter JQL query |
 | `o` | Open issue in browser |
+| `Ctrl+L` | Load more issues (pagination) |
 | `q` | Quit |
 
 ### Issue Detail
@@ -164,6 +165,9 @@ vim_mode = true
 # Cache settings
 cache_ttl_minutes = 30
 cache_max_size_mb = 100
+
+# Pagination settings
+page_size = 50  # Issues per page (1-100, default: 50)
 
 # Confirmation dialogs
 confirm_transitions = false
@@ -234,6 +238,24 @@ Create named filter presets for quick access:
 3. Access saved filters with `F`
 
 Filters are stored in your configuration file and persist across sessions.
+
+## Pagination
+
+LazyJira supports pagination for large issue lists:
+
+- Issues are loaded in configurable page sizes (default: 50)
+- More issues automatically load when scrolling near the bottom of the list
+- Press `Ctrl+L` to manually load the next page
+- Status bar shows current progress (e.g., "1-50 of 1500")
+- A loading indicator appears while fetching more issues
+
+Configure the page size in your `config.toml`:
+
+```toml
+page_size = 25  # Fetch 25 issues at a time for faster initial loads
+```
+
+Valid values are 1-100. Values outside this range are automatically clamped with a warning.
 
 ## Security
 

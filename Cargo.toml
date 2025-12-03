@@ -6,7 +6,8 @@ rust-version = "1.70"
 description = "A terminal-based user interface for JIRA"
 authors = ["LazyJira Contributors"]
 license = "MIT"
-repository = "https://github.com/lazyjira/lazyjira"
+repository = "https://github.com/jonbito/lazyjira"
+homepage = "https://github.com/jonbito/lazyjira"
 keywords = ["jira", "tui", "terminal", "cli"]
 categories = ["command-line-utilities"]
 
@@ -36,3 +37,26 @@ open = "5.3"
 tokio-test = "0.4"
 tempfile = "3.14"
 serial_test = "3.2"
+
+[profile.dist]
+inherits = "release"
+lto = "thin"
+
+# Config for 'dist'
+[workspace.metadata.dist]
+# The preferred dist version to use in CI (Cargo.toml SemVer syntax)
+cargo-dist-version = "0.30.2"
+# CI backends to support
+ci = "github"
+# The installers to generate for each app
+installers = ["shell", "powershell", "homebrew"]
+# Target platforms to build apps for (Rust target-triple syntax)
+targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
+# A GitHub repo to push Homebrew formulas to
+tap = "jonbito/homebrew-lazyjira"
+# Publish jobs to run in CI
+publish-jobs = ["homebrew"]
+# Path that installers should place binaries in
+install-path = "CARGO_HOME"
+# Whether to install an updater program
+install-updater = false

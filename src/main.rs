@@ -265,38 +265,41 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
         // =================================================================
         while let Ok(msg) = task_rx.try_recv() {
             match msg {
-                ApiMessage::ClientConnected(result) => {
-                    match result {
-                        Ok(c) => {
-                            info!("Connected to JIRA");
-                            client = Some(c);
-                            needs_fetch = true;
-                            needs_filter_options = true;
-                            app.list_view_mut().clear_error();
-                        }
-                        Err(e) => {
-                            error!("Failed to connect to JIRA: {}", e);
-                            let error_msg = format!("Failed to connect: {}", e);
-                            app.notify_error(&error_msg);
-                            app.list_view_mut().set_loading(false);
-                            app.list_view_mut().set_error(error_msg);
-                        }
+                ApiMessage::ClientConnected(result) => match result {
+                    Ok(c) => {
+                        info!("Connected to JIRA");
+                        client = Some(c);
+                        needs_fetch = true;
+                        needs_filter_options = true;
+                        app.list_view_mut().clear_error();
                     }
-                }
-                ApiMessage::IssuesFetched { jql, result, is_background_refresh } => {
+                    Err(e) => {
+                        error!("Failed to connect to JIRA: {}", e);
+                        let error_msg = format!("Failed to connect: {}", e);
+                        app.notify_error(&error_msg);
+                        app.list_view_mut().set_loading(false);
+                        app.list_view_mut().set_error(error_msg);
+                    }
+                },
+                ApiMessage::IssuesFetched {
+                    jql,
+                    result,
+                    is_background_refresh,
+                } => {
                     match result {
                         Ok(search_result) => {
                             let issues_count = search_result.issues.len() as u32;
                             let has_more = search_result.has_more();
+                            let next_page_token = search_result.next_page_token.clone();
                             if is_background_refresh {
                                 info!(
-                                    "Background refresh: {} issues (total: {}, has_more: {})",
-                                    issues_count, search_result.total, has_more
+                                    "Background refresh: {} issues (total: {}, has_more: {}, has_token: {})",
+                                    issues_count, search_result.total, has_more, next_page_token.is_some()
                                 );
                             } else {
                                 info!(
-                                    "Loaded {} issues from API (total: {}, has_more: {})",
-                                    issues_count, search_result.total, has_more
+                                    "Loaded {} issues from API (total: {}, has_more: {}, has_token: {})",
+                                    issues_count, search_result.total, has_more, next_page_token.is_some()
                                 );
                             }
                             // Update cache
@@ -313,6 +316,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
                                 issues_count,
                                 search_result.total,
                                 has_more,
+                                next_page_token,
                             );
                             app.list_view_mut()
                                 .set_cache_status(Some(CacheStatus::Fresh));
@@ -331,275 +335,237 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
                         }
                     }
                 }
-                ApiMessage::FilterOptionsFetched(result) => {
-                    match result {
-                        Ok(options) => {
-                            debug!("Loaded filter options");
-                            app.set_filter_options(options);
-                        }
-                        Err(e) => {
-                            debug!("Failed to load filter options: {}", e);
-                        }
+                ApiMessage::FilterOptionsFetched(result) => match result {
+                    Ok(options) => {
+                        debug!("Loaded filter options");
+                        app.set_filter_options(options);
                     }
-                }
-                ApiMessage::LoadMoreFetched { result, offset } => {
-                    match result {
-                        Ok(search_result) => {
-                            let has_more = search_result.has_more();
-                            info!(
-                                "Loaded {} more issues (total: {}, has_more: {})",
-                                search_result.issues.len(),
-                                search_result.total,
-                                has_more
-                            );
-                            app.handle_load_more_success(
-                                search_result.issues,
-                                offset,
-                                search_result.total,
-                                has_more,
-                            );
-                        }
-                        Err(e) => {
-                            error!("Failed to load more issues: {}", e);
-                            app.handle_load_more_failure(&e);
-                        }
+                    Err(e) => {
+                        debug!("Failed to load filter options: {}", e);
                     }
-                }
-                ApiMessage::TransitionsFetched { issue_key: _, result } => {
-                    match result {
-                        Ok(transitions) => {
-                            debug!("Loaded {} transitions", transitions.len());
-                            app.set_transitions(transitions);
-                        }
-                        Err(e) => {
-                            error!("Failed to fetch transitions: {}", e);
-                            app.handle_fetch_transitions_failure(&e);
-                        }
+                },
+                ApiMessage::LoadMoreFetched { result } => match result {
+                    Ok(search_result) => {
+                        let has_more = search_result.has_more();
+                        info!(
+                            "Loaded {} more issues (total: {}, has_more: {}, has_token: {})",
+                            search_result.issues.len(),
+                            search_result.total,
+                            has_more,
+                            search_result.next_page_token.is_some()
+                        );
+                        app.handle_load_more_success(
+                            search_result.issues,
+                            search_result.total,
+                            has_more,
+                            search_result.next_page_token,
+                        );
                     }
-                }
-                ApiMessage::TransitionExecuted { issue_key, result } => {
-                    match result {
-                        Ok(updated_issue) => {
-                            info!(
-                                "Transition successful, issue {} now has status: {}",
-                                issue_key, updated_issue.fields.status.name
-                            );
-                            app.handle_transition_success(updated_issue);
-                        }
-                        Err(e) => {
-                            error!("Failed to execute transition: {}", e);
-                            app.handle_transition_failure(&e);
-                        }
+                    Err(e) => {
+                        error!("Failed to load more issues: {}", e);
+                        app.handle_load_more_failure(&e);
                     }
-                }
-                ApiMessage::AssigneesFetched { result } => {
-                    match result {
-                        Ok(users) => {
-                            debug!("Loaded {} assignable users", users.len());
-                            app.set_assignable_users(users);
-                        }
-                        Err(e) => {
-                            error!("Failed to fetch assignable users: {}", e);
-                            app.handle_fetch_assignees_failure(&e);
-                        }
+                },
+                ApiMessage::TransitionsFetched {
+                    issue_key: _,
+                    result,
+                } => match result {
+                    Ok(transitions) => {
+                        debug!("Loaded {} transitions", transitions.len());
+                        app.set_transitions(transitions);
                     }
-                }
-                ApiMessage::AssigneeChanged { result } => {
-                    match result {
-                        Ok(updated_issue) => {
-                            info!("Assignee changed for issue {}", updated_issue.key);
-                            app.handle_assignee_change_success(updated_issue);
-                        }
-                        Err(e) => {
-                            error!("Failed to change assignee: {}", e);
-                            app.handle_assignee_change_failure(&e);
-                        }
+                    Err(e) => {
+                        error!("Failed to fetch transitions: {}", e);
+                        app.handle_fetch_transitions_failure(&e);
                     }
-                }
-                ApiMessage::PrioritiesFetched(result) => {
-                    match result {
-                        Ok(priorities) => {
-                            debug!("Loaded {} priorities", priorities.len());
-                            app.set_priorities(priorities);
-                        }
-                        Err(e) => {
-                            error!("Failed to fetch priorities: {}", e);
-                            app.handle_fetch_priorities_failure(&e);
-                        }
+                },
+                ApiMessage::TransitionExecuted { issue_key, result } => match result {
+                    Ok(updated_issue) => {
+                        info!(
+                            "Transition successful, issue {} now has status: {}",
+                            issue_key, updated_issue.fields.status.name
+                        );
+                        app.handle_transition_success(updated_issue);
                     }
-                }
-                ApiMessage::PriorityChanged { result } => {
-                    match result {
-                        Ok(updated_issue) => {
-                            info!("Priority changed for issue {}", updated_issue.key);
-                            app.handle_priority_change_success(updated_issue);
-                        }
-                        Err(e) => {
-                            error!("Failed to change priority: {}", e);
-                            app.handle_priority_change_failure(&e);
-                        }
+                    Err(e) => {
+                        error!("Failed to execute transition: {}", e);
+                        app.handle_transition_failure(&e);
                     }
-                }
-                ApiMessage::CommentsFetched { result } => {
-                    match result {
-                        Ok((comments, total)) => {
-                            debug!("Loaded {} comments", comments.len());
-                            app.handle_comments_fetched(comments, total);
-                        }
-                        Err(e) => {
-                            error!("Failed to fetch comments: {}", e);
-                            app.handle_fetch_comments_failure(&e);
-                        }
+                },
+                ApiMessage::AssigneesFetched { result } => match result {
+                    Ok(users) => {
+                        debug!("Loaded {} assignable users", users.len());
+                        app.set_assignable_users(users);
                     }
-                }
-                ApiMessage::CommentSubmitted { result } => {
-                    match result {
-                        Ok(comment) => {
-                            info!("Comment submitted");
-                            app.handle_comment_submitted(comment);
-                        }
-                        Err(e) => {
-                            error!("Failed to submit comment: {}", e);
-                            app.handle_submit_comment_failure(&e);
-                        }
+                    Err(e) => {
+                        error!("Failed to fetch assignable users: {}", e);
+                        app.handle_fetch_assignees_failure(&e);
                     }
-                }
-                ApiMessage::IssueUpdated { result } => {
-                    match result {
-                        Ok(updated_issue) => {
-                            info!("Issue {} updated successfully", updated_issue.key);
-                            app.handle_issue_update_success(updated_issue);
-                        }
-                        Err(e) => {
-                            error!("Failed to update issue: {}", e);
-                            app.handle_issue_update_failure(&e);
-                        }
+                },
+                ApiMessage::AssigneeChanged { result } => match result {
+                    Ok(updated_issue) => {
+                        info!("Assignee changed for issue {}", updated_issue.key);
+                        app.handle_assignee_change_success(updated_issue);
                     }
-                }
-                ApiMessage::LabelsFetched(result) => {
-                    match result {
-                        Ok(labels) => {
-                            debug!("Loaded {} labels", labels.len());
-                            app.set_labels(labels);
-                        }
-                        Err(e) => {
-                            error!("Failed to fetch labels: {}", e);
-                            app.handle_fetch_labels_failure(&e);
-                        }
+                    Err(e) => {
+                        error!("Failed to change assignee: {}", e);
+                        app.handle_assignee_change_failure(&e);
                     }
-                }
-                ApiMessage::LabelChanged { result } => {
-                    match result {
-                        Ok(updated_issue) => {
-                            info!("Label changed for issue {}", updated_issue.key);
-                            app.handle_label_change_success(updated_issue);
-                        }
-                        Err(e) => {
-                            error!("Failed to change label: {}", e);
-                            app.handle_label_change_failure(&e);
-                        }
+                },
+                ApiMessage::PrioritiesFetched(result) => match result {
+                    Ok(priorities) => {
+                        debug!("Loaded {} priorities", priorities.len());
+                        app.set_priorities(priorities);
                     }
-                }
-                ApiMessage::ComponentsFetched(result) => {
-                    match result {
-                        Ok(components) => {
-                            debug!("Loaded {} components", components.len());
-                            app.set_components(components);
-                        }
-                        Err(e) => {
-                            error!("Failed to fetch components: {}", e);
-                            app.handle_fetch_components_failure(&e);
-                        }
+                    Err(e) => {
+                        error!("Failed to fetch priorities: {}", e);
+                        app.handle_fetch_priorities_failure(&e);
                     }
-                }
-                ApiMessage::ComponentChanged { result } => {
-                    match result {
-                        Ok(updated_issue) => {
-                            info!("Component changed for issue {}", updated_issue.key);
-                            app.handle_component_change_success(updated_issue);
-                        }
-                        Err(e) => {
-                            error!("Failed to change component: {}", e);
-                            app.handle_component_change_failure(&e);
-                        }
+                },
+                ApiMessage::PriorityChanged { result } => match result {
+                    Ok(updated_issue) => {
+                        info!("Priority changed for issue {}", updated_issue.key);
+                        app.handle_priority_change_success(updated_issue);
                     }
-                }
-                ApiMessage::ChangelogFetched { result, is_append } => {
-                    match result {
-                        Ok(changelog) => {
-                            debug!(
-                                "Loaded {} history entries (total: {})",
-                                changelog.histories.len(),
-                                changelog.total
-                            );
-                            app.handle_changelog_fetched(changelog, is_append);
-                        }
-                        Err(e) => {
-                            error!("Failed to fetch changelog: {}", e);
-                            app.handle_fetch_changelog_failure(&e);
-                        }
+                    Err(e) => {
+                        error!("Failed to change priority: {}", e);
+                        app.handle_priority_change_failure(&e);
                     }
-                }
-                ApiMessage::LinkedIssueFetched { result } => {
-                    match result {
-                        Ok(issue) => {
-                            info!("Loaded linked issue: {}", issue.key);
-                            app.handle_navigate_to_issue_success(issue);
-                        }
-                        Err(e) => {
-                            error!("Failed to load linked issue: {}", e);
-                            app.handle_navigate_to_issue_failure(&e);
-                        }
+                },
+                ApiMessage::CommentsFetched { result } => match result {
+                    Ok((comments, total)) => {
+                        debug!("Loaded {} comments", comments.len());
+                        app.handle_comments_fetched(comments, total);
                     }
-                }
-                ApiMessage::LinkTypesFetched(result) => {
-                    match result {
-                        Ok(link_types) => {
-                            info!("Loaded {} link types", link_types.len());
-                            app.handle_link_types_success(link_types);
-                        }
-                        Err(e) => {
-                            error!("Failed to load link types: {}", e);
-                            app.handle_link_types_failure(&e);
-                        }
+                    Err(e) => {
+                        error!("Failed to fetch comments: {}", e);
+                        app.handle_fetch_comments_failure(&e);
                     }
-                }
-                ApiMessage::IssueSearchResults { result } => {
-                    match result {
-                        Ok(suggestions) => {
-                            info!("Found {} issue suggestions", suggestions.len());
-                            app.handle_issue_search_success(suggestions);
-                        }
-                        Err(e) => {
-                            error!("Failed to search issues: {}", e);
-                            app.handle_issue_search_failure(&e);
-                        }
+                },
+                ApiMessage::CommentSubmitted { result } => match result {
+                    Ok(comment) => {
+                        info!("Comment submitted");
+                        app.handle_comment_submitted(comment);
                     }
-                }
-                ApiMessage::LinkCreated { issue_key, result } => {
-                    match result {
-                        Ok(()) => {
-                            info!("Link created successfully");
-                            app.handle_create_link_success(&issue_key);
-                        }
-                        Err(e) => {
-                            error!("Failed to create link: {}", e);
-                            app.handle_create_link_failure(&e);
-                        }
+                    Err(e) => {
+                        error!("Failed to submit comment: {}", e);
+                        app.handle_submit_comment_failure(&e);
                     }
-                }
-                ApiMessage::LinkDeleted { issue_key, result } => {
-                    match result {
-                        Ok(()) => {
-                            info!("Link deleted successfully");
-                            app.handle_delete_link_success(&issue_key);
-                        }
-                        Err(e) => {
-                            error!("Failed to delete link: {}", e);
-                            app.handle_delete_link_failure(&e);
-                        }
+                },
+                ApiMessage::IssueUpdated { result } => match result {
+                    Ok(updated_issue) => {
+                        info!("Issue {} updated successfully", updated_issue.key);
+                        app.handle_issue_update_success(updated_issue);
                     }
-                }
+                    Err(e) => {
+                        error!("Failed to update issue: {}", e);
+                        app.handle_issue_update_failure(&e);
+                    }
+                },
+                ApiMessage::LabelsFetched(result) => match result {
+                    Ok(labels) => {
+                        debug!("Loaded {} labels", labels.len());
+                        app.set_labels(labels);
+                    }
+                    Err(e) => {
+                        error!("Failed to fetch labels: {}", e);
+                        app.handle_fetch_labels_failure(&e);
+                    }
+                },
+                ApiMessage::LabelChanged { result } => match result {
+                    Ok(updated_issue) => {
+                        info!("Label changed for issue {}", updated_issue.key);
+                        app.handle_label_change_success(updated_issue);
+                    }
+                    Err(e) => {
+                        error!("Failed to change label: {}", e);
+                        app.handle_label_change_failure(&e);
+                    }
+                },
+                ApiMessage::ComponentsFetched(result) => match result {
+                    Ok(components) => {
+                        debug!("Loaded {} components", components.len());
+                        app.set_components(components);
+                    }
+                    Err(e) => {
+                        error!("Failed to fetch components: {}", e);
+                        app.handle_fetch_components_failure(&e);
+                    }
+                },
+                ApiMessage::ComponentChanged { result } => match result {
+                    Ok(updated_issue) => {
+                        info!("Component changed for issue {}", updated_issue.key);
+                        app.handle_component_change_success(updated_issue);
+                    }
+                    Err(e) => {
+                        error!("Failed to change component: {}", e);
+                        app.handle_component_change_failure(&e);
+                    }
+                },
+                ApiMessage::ChangelogFetched { result, is_append } => match result {
+                    Ok(changelog) => {
+                        debug!(
+                            "Loaded {} history entries (total: {})",
+                            changelog.histories.len(),
+                            changelog.total
+                        );
+                        app.handle_changelog_fetched(changelog, is_append);
+                    }
+                    Err(e) => {
+                        error!("Failed to fetch changelog: {}", e);
+                        app.handle_fetch_changelog_failure(&e);
+                    }
+                },
+                ApiMessage::LinkedIssueFetched { result } => match result {
+                    Ok(issue) => {
+                        info!("Loaded linked issue: {}", issue.key);
+                        app.handle_navigate_to_issue_success(issue);
+                    }
+                    Err(e) => {
+                        error!("Failed to load linked issue: {}", e);
+                        app.handle_navigate_to_issue_failure(&e);
+                    }
+                },
+                ApiMessage::LinkTypesFetched(result) => match result {
+                    Ok(link_types) => {
+                        info!("Loaded {} link types", link_types.len());
+                        app.handle_link_types_success(link_types);
+                    }
+                    Err(e) => {
+                        error!("Failed to load link types: {}", e);
+                        app.handle_link_types_failure(&e);
+                    }
+                },
+                ApiMessage::IssueSearchResults { result } => match result {
+                    Ok(suggestions) => {
+                        info!("Found {} issue suggestions", suggestions.len());
+                        app.handle_issue_search_success(suggestions);
+                    }
+                    Err(e) => {
+                        error!("Failed to search issues: {}", e);
+                        app.handle_issue_search_failure(&e);
+                    }
+                },
+                ApiMessage::LinkCreated { issue_key, result } => match result {
+                    Ok(()) => {
+                        info!("Link created successfully");
+                        app.handle_create_link_success(&issue_key);
+                    }
+                    Err(e) => {
+                        error!("Failed to create link: {}", e);
+                        app.handle_create_link_failure(&e);
+                    }
+                },
+                ApiMessage::LinkDeleted { issue_key, result } => match result {
+                    Ok(()) => {
+                        info!("Link deleted successfully");
+                        app.handle_delete_link_success(&issue_key);
+                    }
+                    Err(e) => {
+                        error!("Failed to delete link: {}", e);
+                        app.handle_delete_link_failure(&e);
+                    }
+                },
             }
         }
 
@@ -632,9 +598,14 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
                 // Use cached data immediately
                 let issues_count = cached.results.issues.len() as u32;
                 let has_more = cached.results.has_more();
+                // Note: cached token may be stale, but background refresh will update it
+                let next_page_token = cached.results.next_page_token.clone();
                 info!(
-                    "Loaded {} issues from cache (total: {}, has_more: {})",
-                    issues_count, cached.results.total, has_more
+                    "Loaded {} issues from cache (total: {}, has_more: {}, has_token: {})",
+                    issues_count,
+                    cached.results.total,
+                    has_more,
+                    next_page_token.is_some()
                 );
                 app.list_view_mut().set_issues(cached.results.issues);
                 app.list_view_mut().set_loading(false);
@@ -644,6 +615,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
                     issues_count,
                     cached.results.total,
                     has_more,
+                    next_page_token,
                 );
                 app.list_view_mut()
                     .set_cache_status(Some(CacheStatus::FromCache));
@@ -803,20 +775,18 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
                     "assignee = currentUser() OR reporter = currentUser() {}",
                     app.list_view().sort().to_jql()
                 );
-                let jql_query = if jql.is_empty() {
-                    default_jql
-                } else {
-                    jql
-                };
-                let offset = app.list_view().pagination().current_offset;
+                let jql_query = if jql.is_empty() { default_jql } else { jql };
                 let page_size = app.list_view().pagination().page_size;
+                let next_page_token = app.list_view().pagination().next_page_token.clone();
 
                 info!(
-                    "Loading more issues: offset={}, page_size={}, jql={}",
-                    offset, page_size, jql_query
+                    "Loading more issues: page_size={}, has_token={}, jql={}",
+                    page_size,
+                    next_page_token.is_some(),
+                    jql_query
                 );
 
-                task_spawner.spawn_load_more(c, jql_query, offset, page_size);
+                task_spawner.spawn_load_more(c, jql_query, page_size, next_page_token);
             } else {
                 app.handle_load_more_failure("No JIRA connection");
             }
@@ -1034,7 +1004,13 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
                     "Creating link: {} -> {} (type: {}, outward: {})",
                     current_key, target_key, link_type_name, is_outward
                 );
-                task_spawner.spawn_create_link(c, current_key, target_key, link_type_name, is_outward);
+                task_spawner.spawn_create_link(
+                    c,
+                    current_key,
+                    target_key,
+                    link_type_name,
+                    is_outward,
+                );
             } else {
                 app.handle_create_link_failure("No JIRA connection");
             }

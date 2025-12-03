@@ -1724,23 +1724,28 @@ impl App {
     pub fn handle_load_more_success(
         &mut self,
         issues: Vec<Issue>,
-        start_at: u32,
         total: u32,
         has_more: bool,
+        next_page_token: Option<String>,
     ) {
         let count = issues.len() as u32;
+        let current_offset = self.list_view.pagination().current_offset;
         info!(
             count = count,
-            start_at = start_at,
+            current_offset = current_offset,
             total = total,
             has_more = has_more,
+            has_token = next_page_token.is_some(),
             "Appending issues from load more"
         );
         self.list_view.append_issues(issues);
-        self.list_view
-            .pagination_mut()
-            .update_from_response(start_at, count, total, has_more);
-        self.notify_success(format!("Loaded {} more issues", count));
+        self.list_view.pagination_mut().update_from_response(
+            current_offset,
+            count,
+            total,
+            has_more,
+            next_page_token,
+        );
     }
 
     /// Handle failed load more request.
@@ -2087,10 +2092,6 @@ impl App {
                                 has_more = self.list_view.pagination().has_more,
                                 "ListAction::LoadMore received - setting pending_load_more"
                             );
-                            self.notify_info(format!(
-                                "Loading more issues (offset: {}, page_size: {})",
-                                offset, page_size
-                            ));
                             self.list_view.pagination_mut().start_loading();
                             self.pending_load_more = true;
                         }

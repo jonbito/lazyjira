@@ -177,6 +177,8 @@ pub struct PaginationState {
     pub loading: bool,
     /// Whether there are more issues to load.
     pub has_more: bool,
+    /// Token for fetching the next page (JIRA v3 API).
+    pub next_page_token: Option<String>,
 }
 
 impl PaginationState {
@@ -191,6 +193,7 @@ impl PaginationState {
             total: 0,
             loading: false,
             has_more: true,
+            next_page_token: None,
         }
     }
 
@@ -213,12 +216,14 @@ impl PaginationState {
         count: u32,
         total: u32,
         api_has_more: bool,
+        next_page_token: Option<String>,
     ) {
         self.current_offset = start_at + count;
         self.total = total;
         // Use api_has_more from the response - handles both old API (total-based)
         // and new API (token-based with is_last)
         self.has_more = api_has_more;
+        self.next_page_token = next_page_token;
         self.loading = false;
     }
 
@@ -228,6 +233,7 @@ impl PaginationState {
         self.total = 0;
         self.loading = false;
         self.has_more = true;
+        self.next_page_token = None;
     }
 
     /// Get the number of issues currently loaded.
@@ -477,9 +483,16 @@ impl ListView {
     }
 
     /// Update pagination state from API response.
-    pub fn update_pagination(&mut self, start_at: u32, count: u32, total: u32, has_more: bool) {
+    pub fn update_pagination(
+        &mut self,
+        start_at: u32,
+        count: u32,
+        total: u32,
+        has_more: bool,
+        next_page_token: Option<String>,
+    ) {
         self.pagination
-            .update_from_response(start_at, count, total, has_more);
+            .update_from_response(start_at, count, total, has_more, next_page_token);
     }
 
     /// Reset for a new query (clears issues and pagination).
@@ -1633,33 +1646,36 @@ mod tests {
     #[test]
     fn test_pagination_state_update_from_response() {
         let mut state = PaginationState::new();
-        state.update_from_response(0, 50, 100, true); // has_more = true
+        state.update_from_response(0, 50, 100, true, Some("next-token".to_string()));
 
         assert_eq!(state.current_offset, 50);
         assert_eq!(state.total, 100);
         assert!(state.has_more);
         assert!(!state.loading);
+        assert_eq!(state.next_page_token, Some("next-token".to_string()));
     }
 
     #[test]
     fn test_pagination_state_update_last_page() {
         let mut state = PaginationState::new();
-        state.update_from_response(50, 50, 100, false); // has_more = false (last page)
+        state.update_from_response(50, 50, 100, false, None); // has_more = false (last page)
 
         assert_eq!(state.current_offset, 100);
         assert_eq!(state.total, 100);
         assert!(!state.has_more);
+        assert!(state.next_page_token.is_none());
     }
 
     #[test]
     fn test_pagination_state_reset() {
         let mut state = PaginationState::new();
-        state.update_from_response(50, 50, 100, false);
+        state.update_from_response(50, 50, 100, false, Some("token".to_string()));
         state.reset();
 
         assert_eq!(state.current_offset, 0);
         assert_eq!(state.total, 0);
         assert!(state.has_more);
+        assert!(state.next_page_token.is_none());
     }
 
     #[test]
@@ -1667,7 +1683,7 @@ mod tests {
         let mut state = PaginationState::new();
         assert_eq!(state.display(), "No issues");
 
-        state.update_from_response(0, 50, 100, true);
+        state.update_from_response(0, 50, 100, true, None);
         assert_eq!(state.display(), "1-50 of 100");
     }
 
@@ -1678,7 +1694,8 @@ mod tests {
             .map(|i| create_test_issue(&format!("TEST-{}", i), &format!("Issue {}", i)))
             .collect();
         view.set_issues(issues);
-        view.pagination.update_from_response(0, 50, 100, true);
+        view.pagination
+            .update_from_response(0, 50, 100, true, Some("token".to_string()));
 
         // At the start, no need to load more
         view.selected = 0;
@@ -1693,7 +1710,8 @@ mod tests {
             .map(|i| create_test_issue(&format!("TEST-{}", i), &format!("Issue {}", i)))
             .collect();
         view.set_issues(issues);
-        view.pagination.update_from_response(0, 50, 100, true);
+        view.pagination
+            .update_from_response(0, 50, 100, true, Some("token".to_string()));
 
         // Near the end, should trigger load more
         view.selected = 46; // Within 5 of 50
@@ -1708,7 +1726,7 @@ mod tests {
             .map(|i| create_test_issue(&format!("TEST-{}", i), &format!("Issue {}", i)))
             .collect();
         view.set_issues(issues);
-        view.pagination.update_from_response(0, 50, 50, false); // Last page
+        view.pagination.update_from_response(0, 50, 50, false, None); // Last page
 
         view.selected = 48;
         let action = view.check_load_more();
@@ -1722,7 +1740,8 @@ mod tests {
             .map(|i| create_test_issue(&format!("TEST-{}", i), &format!("Issue {}", i)))
             .collect();
         view.set_issues(issues);
-        view.pagination.update_from_response(0, 50, 100, true);
+        view.pagination
+            .update_from_response(0, 50, 100, true, Some("token".to_string()));
         view.pagination.loading = true;
 
         view.selected = 48;
@@ -1756,7 +1775,8 @@ mod tests {
             create_test_issue("TEST-2", "Second"),
         ]);
         view.selected = 1;
-        view.pagination.update_from_response(0, 50, 100, true);
+        view.pagination
+            .update_from_response(0, 50, 100, true, Some("token".to_string()));
 
         view.reset_for_new_query();
 
@@ -1764,6 +1784,7 @@ mod tests {
         assert_eq!(view.selected, 0);
         assert_eq!(view.pagination.current_offset, 0);
         assert_eq!(view.pagination.total, 0);
+        assert!(view.pagination.next_page_token.is_none());
     }
 
     // ========================================================================

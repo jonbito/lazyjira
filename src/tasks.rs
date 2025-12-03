@@ -51,7 +51,6 @@ pub enum ApiMessage {
     /// Pagination load more results
     LoadMoreFetched {
         result: Result<SearchResult, String>,
-        offset: u32,
     },
 
     /// Transitions for an issue
@@ -68,22 +67,16 @@ pub enum ApiMessage {
     },
 
     /// Assignable users for a project
-    AssigneesFetched {
-        result: Result<Vec<User>, String>,
-    },
+    AssigneesFetched { result: Result<Vec<User>, String> },
 
     /// Assignee change result
-    AssigneeChanged {
-        result: Result<Issue, String>,
-    },
+    AssigneeChanged { result: Result<Issue, String> },
 
     /// Priorities fetched
     PrioritiesFetched(Result<Vec<Priority>, String>),
 
     /// Priority change result
-    PriorityChanged {
-        result: Result<Issue, String>,
-    },
+    PriorityChanged { result: Result<Issue, String> },
 
     /// Comments fetched for an issue
     CommentsFetched {
@@ -91,30 +84,22 @@ pub enum ApiMessage {
     },
 
     /// Comment submitted
-    CommentSubmitted {
-        result: Result<Comment, String>,
-    },
+    CommentSubmitted { result: Result<Comment, String> },
 
     /// Issue update result
-    IssueUpdated {
-        result: Result<Issue, String>,
-    },
+    IssueUpdated { result: Result<Issue, String> },
 
     /// Labels fetched
     LabelsFetched(Result<Vec<String>, String>),
 
     /// Label added/removed result
-    LabelChanged {
-        result: Result<Issue, String>,
-    },
+    LabelChanged { result: Result<Issue, String> },
 
     /// Components fetched for a project
     ComponentsFetched(Result<Vec<String>, String>),
 
     /// Component added/removed result
-    ComponentChanged {
-        result: Result<Issue, String>,
-    },
+    ComponentChanged { result: Result<Issue, String> },
 
     /// Changelog fetched
     ChangelogFetched {
@@ -123,9 +108,7 @@ pub enum ApiMessage {
     },
 
     /// Navigation to linked issue
-    LinkedIssueFetched {
-        result: Result<Issue, String>,
-    },
+    LinkedIssueFetched { result: Result<Issue, String> },
 
     /// Link types fetched
     LinkTypesFetched(Result<Vec<IssueLinkType>, String>),
@@ -168,9 +151,7 @@ impl TaskSpawner {
     pub fn spawn_connect(&self, profile: Profile) {
         let tx = self.tx.clone();
         tokio::spawn(async move {
-            let result = JiraClient::new(&profile)
-                .await
-                .map_err(|e| e.to_string());
+            let result = JiraClient::new(&profile).await.map_err(|e| e.to_string());
             let _ = tx.send(ApiMessage::ClientConnected(result));
         });
     }
@@ -215,17 +196,17 @@ impl TaskSpawner {
         &self,
         client: &JiraClient,
         jql: String,
-        offset: u32,
         page_size: u32,
+        next_page_token: Option<String>,
     ) {
         let tx = self.tx.clone();
         let client = client.clone();
         tokio::spawn(async move {
             let result = client
-                .search_issues(&jql, offset, page_size)
+                .search_issues_with_token(&jql, page_size, next_page_token.as_deref())
                 .await
                 .map_err(|e| e.to_string());
-            let _ = tx.send(ApiMessage::LoadMoreFetched { result, offset });
+            let _ = tx.send(ApiMessage::LoadMoreFetched { result });
         });
     }
 
@@ -235,7 +216,10 @@ impl TaskSpawner {
         let client = client.clone();
         let key = issue_key.clone();
         tokio::spawn(async move {
-            let result = client.get_transitions(&key).await.map_err(|e| e.to_string());
+            let result = client
+                .get_transitions(&key)
+                .await
+                .map_err(|e| e.to_string());
             let _ = tx.send(ApiMessage::TransitionsFetched { issue_key, result });
         });
     }
@@ -293,7 +277,10 @@ impl TaskSpawner {
                     .update_assignee(&issue_key, account_id.as_deref())
                     .await
                     .map_err(|e| e.to_string())?;
-                client.get_issue(&issue_key).await.map_err(|e| e.to_string())
+                client
+                    .get_issue(&issue_key)
+                    .await
+                    .map_err(|e| e.to_string())
             }
             .await;
             let _ = tx.send(ApiMessage::AssigneeChanged { result });
@@ -325,7 +312,10 @@ impl TaskSpawner {
                     .update_priority(&issue_key, &priority_id)
                     .await
                     .map_err(|e| e.to_string())?;
-                client.get_issue(&issue_key).await.map_err(|e| e.to_string())
+                client
+                    .get_issue(&issue_key)
+                    .await
+                    .map_err(|e| e.to_string())
             }
             .await;
             let _ = tx.send(ApiMessage::PriorityChanged { result });
@@ -374,7 +364,10 @@ impl TaskSpawner {
                     .update_issue(&issue_key, update_request)
                     .await
                     .map_err(|e| e.to_string())?;
-                client.get_issue(&issue_key).await.map_err(|e| e.to_string())
+                client
+                    .get_issue(&issue_key)
+                    .await
+                    .map_err(|e| e.to_string())
             }
             .await;
             let _ = tx.send(ApiMessage::IssueUpdated { result });
@@ -401,7 +394,10 @@ impl TaskSpawner {
                     .add_labels(&issue_key, vec![label])
                     .await
                     .map_err(|e| e.to_string())?;
-                client.get_issue(&issue_key).await.map_err(|e| e.to_string())
+                client
+                    .get_issue(&issue_key)
+                    .await
+                    .map_err(|e| e.to_string())
             }
             .await;
             let _ = tx.send(ApiMessage::LabelChanged { result });
@@ -418,7 +414,10 @@ impl TaskSpawner {
                     .remove_labels(&issue_key, vec![label])
                     .await
                     .map_err(|e| e.to_string())?;
-                client.get_issue(&issue_key).await.map_err(|e| e.to_string())
+                client
+                    .get_issue(&issue_key)
+                    .await
+                    .map_err(|e| e.to_string())
             }
             .await;
             let _ = tx.send(ApiMessage::LabelChanged { result });
@@ -449,7 +448,10 @@ impl TaskSpawner {
                     .add_components(&issue_key, vec![component])
                     .await
                     .map_err(|e| e.to_string())?;
-                client.get_issue(&issue_key).await.map_err(|e| e.to_string())
+                client
+                    .get_issue(&issue_key)
+                    .await
+                    .map_err(|e| e.to_string())
             }
             .await;
             let _ = tx.send(ApiMessage::ComponentChanged { result });
@@ -471,7 +473,10 @@ impl TaskSpawner {
                     .remove_components(&issue_key, vec![component])
                     .await
                     .map_err(|e| e.to_string())?;
-                client.get_issue(&issue_key).await.map_err(|e| e.to_string())
+                client
+                    .get_issue(&issue_key)
+                    .await
+                    .map_err(|e| e.to_string())
             }
             .await;
             let _ = tx.send(ApiMessage::ComponentChanged { result });
@@ -502,7 +507,10 @@ impl TaskSpawner {
         let tx = self.tx.clone();
         let client = client.clone();
         tokio::spawn(async move {
-            let result = client.get_issue(&issue_key).await.map_err(|e| e.to_string());
+            let result = client
+                .get_issue(&issue_key)
+                .await
+                .map_err(|e| e.to_string());
             let _ = tx.send(ApiMessage::LinkedIssueFetched { result });
         });
     }
@@ -512,7 +520,10 @@ impl TaskSpawner {
         let tx = self.tx.clone();
         let client = client.clone();
         tokio::spawn(async move {
-            let result = client.get_issue_link_types().await.map_err(|e| e.to_string());
+            let result = client
+                .get_issue_link_types()
+                .await
+                .map_err(|e| e.to_string());
             let _ = tx.send(ApiMessage::LinkTypesFetched(result));
         });
     }

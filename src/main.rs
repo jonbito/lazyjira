@@ -10,6 +10,7 @@ mod config;
 mod error;
 mod events;
 mod logging;
+mod tasks;
 mod ui;
 
 use std::io::{self, stdout};
@@ -193,18 +194,27 @@ impl<'a> Drop for TuiSuspendGuard<'a> {
 /// Run the main application loop.
 ///
 /// This implements the main event loop following The Elm Architecture pattern:
-/// 1. Render the current view
-/// 2. Wait for and handle events
-/// 3. Update state based on events
-/// 4. Repeat until quit
+/// 1. Poll for completed async tasks (non-blocking)
+/// 2. Render the current view
+/// 3. Wait for and handle events
+/// 4. Update state based on events
+/// 5. Spawn background tasks for pending operations
+/// 6. Repeat until quit
+///
+/// The async task system keeps the UI responsive by running API calls in
+/// background tasks and communicating results through channels.
 async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
     use api::JiraClient;
     use cache::{CacheManager, CacheStatus};
+    use tasks::{create_task_channel, ApiMessage};
     use tracing::{debug, error, info, warn};
     use ui::ExternalEditor;
 
     let mut app = App::new();
     let event_handler = EventHandler::new();
+
+    // Create the async task channel for background operations
+    let (mut task_rx, task_spawner) = create_task_channel();
 
     // Create a JiraClient if a profile is configured
     let mut client: Option<JiraClient> = None;
@@ -250,33 +260,353 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
     let mut needs_filter_options = client.is_some();
 
     loop {
-        // Fetch issues if needed
+        // =================================================================
+        // STEP 1: Poll for completed async tasks (non-blocking)
+        // =================================================================
+        while let Ok(msg) = task_rx.try_recv() {
+            match msg {
+                ApiMessage::ClientConnected(result) => match result {
+                    Ok(c) => {
+                        info!("Connected to JIRA");
+                        client = Some(c);
+                        needs_fetch = true;
+                        needs_filter_options = true;
+                        app.list_view_mut().clear_error();
+                    }
+                    Err(e) => {
+                        error!("Failed to connect to JIRA: {}", e);
+                        let error_msg = format!("Failed to connect: {}", e);
+                        app.notify_error(&error_msg);
+                        app.list_view_mut().set_loading(false);
+                        app.list_view_mut().set_error(error_msg);
+                    }
+                },
+                ApiMessage::IssuesFetched {
+                    jql,
+                    result,
+                    is_background_refresh,
+                } => {
+                    match result {
+                        Ok(search_result) => {
+                            let issues_count = search_result.issues.len() as u32;
+                            let has_more = search_result.has_more();
+                            let next_page_token = search_result.next_page_token.clone();
+                            if is_background_refresh {
+                                info!(
+                                    "Background refresh: {} issues (total: {}, has_more: {}, has_token: {})",
+                                    issues_count, search_result.total, has_more, next_page_token.is_some()
+                                );
+                            } else {
+                                info!(
+                                    "Loaded {} issues from API (total: {}, has_more: {}, has_token: {})",
+                                    issues_count, search_result.total, has_more, next_page_token.is_some()
+                                );
+                            }
+                            // Update cache
+                            if let Some(ref cm) = cache_manager {
+                                if let Err(e) = cm.set_search_results(&jql, &search_result) {
+                                    debug!("Failed to cache results: {}", e);
+                                }
+                            }
+                            app.list_view_mut().set_issues(search_result.issues);
+                            app.list_view_mut().set_loading(false);
+                            app.list_view_mut().clear_error();
+                            app.list_view_mut().pagination_mut().update_from_response(
+                                0,
+                                issues_count,
+                                search_result.total,
+                                has_more,
+                                next_page_token,
+                            );
+                            app.list_view_mut()
+                                .set_cache_status(Some(CacheStatus::Fresh));
+                        }
+                        Err(e) => {
+                            if is_background_refresh {
+                                debug!("Background refresh failed (using cached data): {}", e);
+                            } else {
+                                error!("Failed to fetch issues: {}", e);
+                                let error_msg = format!("Failed to fetch issues: {}", e);
+                                app.notify_error(&error_msg);
+                                app.list_view_mut().set_error(&error_msg);
+                                app.list_view_mut().set_loading(false);
+                                app.list_view_mut().set_cache_status(None);
+                            }
+                        }
+                    }
+                }
+                ApiMessage::FilterOptionsFetched(result) => match result {
+                    Ok(options) => {
+                        debug!("Loaded filter options");
+                        app.set_filter_options(options);
+                    }
+                    Err(e) => {
+                        debug!("Failed to load filter options: {}", e);
+                    }
+                },
+                ApiMessage::LoadMoreFetched { result } => match result {
+                    Ok(search_result) => {
+                        let has_more = search_result.has_more();
+                        info!(
+                            "Loaded {} more issues (total: {}, has_more: {}, has_token: {})",
+                            search_result.issues.len(),
+                            search_result.total,
+                            has_more,
+                            search_result.next_page_token.is_some()
+                        );
+                        app.handle_load_more_success(
+                            search_result.issues,
+                            search_result.total,
+                            has_more,
+                            search_result.next_page_token,
+                        );
+                    }
+                    Err(e) => {
+                        error!("Failed to load more issues: {}", e);
+                        app.handle_load_more_failure(&e);
+                    }
+                },
+                ApiMessage::TransitionsFetched {
+                    issue_key: _,
+                    result,
+                } => match result {
+                    Ok(transitions) => {
+                        debug!("Loaded {} transitions", transitions.len());
+                        app.set_transitions(transitions);
+                    }
+                    Err(e) => {
+                        error!("Failed to fetch transitions: {}", e);
+                        app.handle_fetch_transitions_failure(&e);
+                    }
+                },
+                ApiMessage::TransitionExecuted { issue_key, result } => match result {
+                    Ok(updated_issue) => {
+                        info!(
+                            "Transition successful, issue {} now has status: {}",
+                            issue_key, updated_issue.fields.status.name
+                        );
+                        app.handle_transition_success(updated_issue);
+                    }
+                    Err(e) => {
+                        error!("Failed to execute transition: {}", e);
+                        app.handle_transition_failure(&e);
+                    }
+                },
+                ApiMessage::AssigneesFetched { result } => match result {
+                    Ok(users) => {
+                        debug!("Loaded {} assignable users", users.len());
+                        app.set_assignable_users(users);
+                    }
+                    Err(e) => {
+                        error!("Failed to fetch assignable users: {}", e);
+                        app.handle_fetch_assignees_failure(&e);
+                    }
+                },
+                ApiMessage::AssigneeChanged { result } => match result {
+                    Ok(updated_issue) => {
+                        info!("Assignee changed for issue {}", updated_issue.key);
+                        app.handle_assignee_change_success(updated_issue);
+                    }
+                    Err(e) => {
+                        error!("Failed to change assignee: {}", e);
+                        app.handle_assignee_change_failure(&e);
+                    }
+                },
+                ApiMessage::PrioritiesFetched(result) => match result {
+                    Ok(priorities) => {
+                        debug!("Loaded {} priorities", priorities.len());
+                        app.set_priorities(priorities);
+                    }
+                    Err(e) => {
+                        error!("Failed to fetch priorities: {}", e);
+                        app.handle_fetch_priorities_failure(&e);
+                    }
+                },
+                ApiMessage::PriorityChanged { result } => match result {
+                    Ok(updated_issue) => {
+                        info!("Priority changed for issue {}", updated_issue.key);
+                        app.handle_priority_change_success(updated_issue);
+                    }
+                    Err(e) => {
+                        error!("Failed to change priority: {}", e);
+                        app.handle_priority_change_failure(&e);
+                    }
+                },
+                ApiMessage::CommentsFetched { result } => match result {
+                    Ok((comments, total)) => {
+                        debug!("Loaded {} comments", comments.len());
+                        app.handle_comments_fetched(comments, total);
+                    }
+                    Err(e) => {
+                        error!("Failed to fetch comments: {}", e);
+                        app.handle_fetch_comments_failure(&e);
+                    }
+                },
+                ApiMessage::CommentSubmitted { result } => match result {
+                    Ok(comment) => {
+                        info!("Comment submitted");
+                        app.handle_comment_submitted(comment);
+                    }
+                    Err(e) => {
+                        error!("Failed to submit comment: {}", e);
+                        app.handle_submit_comment_failure(&e);
+                    }
+                },
+                ApiMessage::IssueUpdated { result } => match result {
+                    Ok(updated_issue) => {
+                        info!("Issue {} updated successfully", updated_issue.key);
+                        app.handle_issue_update_success(updated_issue);
+                    }
+                    Err(e) => {
+                        error!("Failed to update issue: {}", e);
+                        app.handle_issue_update_failure(&e);
+                    }
+                },
+                ApiMessage::LabelsFetched(result) => match result {
+                    Ok(labels) => {
+                        debug!("Loaded {} labels", labels.len());
+                        app.set_labels(labels);
+                    }
+                    Err(e) => {
+                        error!("Failed to fetch labels: {}", e);
+                        app.handle_fetch_labels_failure(&e);
+                    }
+                },
+                ApiMessage::LabelChanged { result } => match result {
+                    Ok(updated_issue) => {
+                        info!("Label changed for issue {}", updated_issue.key);
+                        app.handle_label_change_success(updated_issue);
+                    }
+                    Err(e) => {
+                        error!("Failed to change label: {}", e);
+                        app.handle_label_change_failure(&e);
+                    }
+                },
+                ApiMessage::ComponentsFetched(result) => match result {
+                    Ok(components) => {
+                        debug!("Loaded {} components", components.len());
+                        app.set_components(components);
+                    }
+                    Err(e) => {
+                        error!("Failed to fetch components: {}", e);
+                        app.handle_fetch_components_failure(&e);
+                    }
+                },
+                ApiMessage::ComponentChanged { result } => match result {
+                    Ok(updated_issue) => {
+                        info!("Component changed for issue {}", updated_issue.key);
+                        app.handle_component_change_success(updated_issue);
+                    }
+                    Err(e) => {
+                        error!("Failed to change component: {}", e);
+                        app.handle_component_change_failure(&e);
+                    }
+                },
+                ApiMessage::ChangelogFetched { result, is_append } => match result {
+                    Ok(changelog) => {
+                        debug!(
+                            "Loaded {} history entries (total: {})",
+                            changelog.histories.len(),
+                            changelog.total
+                        );
+                        app.handle_changelog_fetched(changelog, is_append);
+                    }
+                    Err(e) => {
+                        error!("Failed to fetch changelog: {}", e);
+                        app.handle_fetch_changelog_failure(&e);
+                    }
+                },
+                ApiMessage::LinkedIssueFetched { result } => match result {
+                    Ok(issue) => {
+                        info!("Loaded linked issue: {}", issue.key);
+                        app.handle_navigate_to_issue_success(issue);
+                    }
+                    Err(e) => {
+                        error!("Failed to load linked issue: {}", e);
+                        app.handle_navigate_to_issue_failure(&e);
+                    }
+                },
+                ApiMessage::LinkTypesFetched(result) => match result {
+                    Ok(link_types) => {
+                        info!("Loaded {} link types", link_types.len());
+                        app.handle_link_types_success(link_types);
+                    }
+                    Err(e) => {
+                        error!("Failed to load link types: {}", e);
+                        app.handle_link_types_failure(&e);
+                    }
+                },
+                ApiMessage::IssueSearchResults { result } => match result {
+                    Ok(suggestions) => {
+                        info!("Found {} issue suggestions", suggestions.len());
+                        app.handle_issue_search_success(suggestions);
+                    }
+                    Err(e) => {
+                        error!("Failed to search issues: {}", e);
+                        app.handle_issue_search_failure(&e);
+                    }
+                },
+                ApiMessage::LinkCreated { issue_key, result } => match result {
+                    Ok(()) => {
+                        info!("Link created successfully");
+                        app.handle_create_link_success(&issue_key);
+                    }
+                    Err(e) => {
+                        error!("Failed to create link: {}", e);
+                        app.handle_create_link_failure(&e);
+                    }
+                },
+                ApiMessage::LinkDeleted { issue_key, result } => match result {
+                    Ok(()) => {
+                        info!("Link deleted successfully");
+                        app.handle_delete_link_success(&issue_key);
+                    }
+                    Err(e) => {
+                        error!("Failed to delete link: {}", e);
+                        app.handle_delete_link_failure(&e);
+                    }
+                },
+            }
+        }
+
+        // =================================================================
+        // STEP 2: Spawn background tasks for pending fetch operations
+        // =================================================================
+
+        // Fetch issues if needed (spawn in background)
         if needs_fetch {
             needs_fetch = false;
             let jql = app.effective_jql();
-            // New JIRA API requires bounded queries - default to showing user's issues
-            // Use the current sort state from the list view for ordering
             let default_jql = format!(
                 "assignee = currentUser() OR reporter = currentUser() {}",
                 app.list_view().sort().to_jql()
             );
-            let jql_query = if jql.is_empty() { &default_jql } else { &jql };
+            let jql_query = if jql.is_empty() {
+                default_jql.clone()
+            } else {
+                jql.clone()
+            };
 
             debug!("Fetching issues with JQL: {}", jql_query);
 
             // Try cache first
             let cached_result = cache_manager
                 .as_ref()
-                .and_then(|cm| cm.get_search_results(jql_query));
+                .and_then(|cm| cm.get_search_results(&jql_query));
 
             if let Some(cached) = cached_result {
-                // Use cached data
-                info!(
-                    "Loaded {} issues from cache (total: {})",
-                    cached.results.issues.len(),
-                    cached.results.total
-                );
+                // Use cached data immediately
                 let issues_count = cached.results.issues.len() as u32;
+                let has_more = cached.results.has_more();
+                // Note: cached token may be stale, but background refresh will update it
+                let next_page_token = cached.results.next_page_token.clone();
+                info!(
+                    "Loaded {} issues from cache (total: {}, has_more: {}, has_token: {})",
+                    issues_count,
+                    cached.results.total,
+                    has_more,
+                    next_page_token.is_some()
+                );
                 app.list_view_mut().set_issues(cached.results.issues);
                 app.list_view_mut().set_loading(false);
                 app.list_view_mut().clear_error();
@@ -284,76 +614,21 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
                     0,
                     issues_count,
                     cached.results.total,
+                    has_more,
+                    next_page_token,
                 );
                 app.list_view_mut()
                     .set_cache_status(Some(CacheStatus::FromCache));
 
-                // Also fetch fresh data in the background (if client available)
+                // Also spawn background refresh (non-blocking)
                 if let Some(ref c) = client {
                     let page_size = app.list_view().pagination().page_size;
-                    match c.search_issues(jql_query, 0, page_size).await {
-                        Ok(result) => {
-                            // Update cache
-                            if let Some(ref cm) = cache_manager {
-                                if let Err(e) = cm.set_search_results(jql_query, &result) {
-                                    debug!("Failed to update cache: {}", e);
-                                }
-                            }
-                            // Update display with fresh data
-                            let issues_count = result.issues.len() as u32;
-                            app.list_view_mut().set_issues(result.issues);
-                            app.list_view_mut().clear_error();
-                            app.list_view_mut().pagination_mut().update_from_response(
-                                0,
-                                issues_count,
-                                result.total,
-                            );
-                            app.list_view_mut()
-                                .set_cache_status(Some(CacheStatus::Fresh));
-                        }
-                        Err(e) => {
-                            // Cache data is still valid, just show a warning
-                            debug!("Background refresh failed (using cached data): {}", e);
-                        }
-                    }
+                    task_spawner.spawn_fetch_issues(c, jql_query, 0, page_size, true);
                 }
             } else if let Some(ref c) = client {
-                // No cache, fetch from API
+                // No cache, spawn fetch from API (non-blocking)
                 let page_size = app.list_view().pagination().page_size;
-                match c.search_issues(jql_query, 0, page_size).await {
-                    Ok(result) => {
-                        info!(
-                            "Loaded {} issues from API (total: {})",
-                            result.issues.len(),
-                            result.total
-                        );
-                        // Store in cache
-                        if let Some(ref cm) = cache_manager {
-                            if let Err(e) = cm.set_search_results(jql_query, &result) {
-                                debug!("Failed to cache results: {}", e);
-                            }
-                        }
-                        let issues_count = result.issues.len() as u32;
-                        app.list_view_mut().set_issues(result.issues);
-                        app.list_view_mut().set_loading(false);
-                        app.list_view_mut().clear_error();
-                        app.list_view_mut().pagination_mut().update_from_response(
-                            0,
-                            issues_count,
-                            result.total,
-                        );
-                        app.list_view_mut()
-                            .set_cache_status(Some(CacheStatus::Fresh));
-                    }
-                    Err(e) => {
-                        error!("Failed to fetch issues: {}", e);
-                        let error_msg = format!("Failed to fetch issues: {}", e);
-                        app.notify_error(&error_msg);
-                        app.list_view_mut().set_error(&error_msg);
-                        app.list_view_mut().set_loading(false);
-                        app.list_view_mut().set_cache_status(None);
-                    }
-                }
+                task_spawner.spawn_fetch_issues(c, jql_query, 0, page_size, false);
             } else {
                 // No client available
                 app.list_view_mut().set_loading(false);
@@ -362,26 +637,22 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
             }
         }
 
-        // Fetch filter options if needed (once at startup)
+        // Fetch filter options if needed (spawn in background)
         if needs_filter_options {
             if let Some(ref c) = client {
                 needs_filter_options = false;
-                match c.get_filter_options().await {
-                    Ok(options) => {
-                        debug!("Loaded filter options");
-                        app.set_filter_options(options);
-                    }
-                    Err(e) => {
-                        debug!("Failed to load filter options: {}", e);
-                    }
-                }
+                task_spawner.spawn_fetch_filter_options(c);
             }
         }
 
-        // Render the current view (View in TEA)
+        // =================================================================
+        // STEP 3: Render the current view (View in TEA)
+        // =================================================================
         terminal.draw(|frame| app.view(frame))?;
 
-        // Wait for and handle events (Update in TEA)
+        // =================================================================
+        // STEP 4: Wait for and handle events (Update in TEA)
+        // =================================================================
         let event = event_handler.next()?;
 
         // Check list view state before update to detect actions
@@ -390,7 +661,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
 
         app.update(event);
 
-        // Handle pending external editor request
+        // Handle pending external editor request (must be synchronous)
         if let Some((issue_key, current_content)) = app.take_pending_external_edit() {
             debug!(issue_key = %issue_key, "Opening external editor");
 
@@ -426,6 +697,10 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
             continue;
         }
 
+        // =================================================================
+        // STEP 5: Spawn background tasks for pending operations
+        // =================================================================
+
         // Check if we need to refresh issues
         let is_loading_now = app.list_view().is_loading();
         let new_profile = app.current_profile().cloned();
@@ -450,22 +725,10 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
                     }
                 }
 
-                match JiraClient::new(&profile).await {
-                    Ok(c) => {
-                        info!("Switched to profile: {}", profile.name);
-                        client = Some(c);
-                        needs_fetch = true;
-                        needs_filter_options = true;
-                    }
-                    Err(e) => {
-                        error!("Failed to connect to new profile: {}", e);
-                        let error_msg = format!("Failed to connect: {}", e);
-                        app.notify_error(&error_msg);
-                        client = None;
-                        app.list_view_mut().set_loading(false);
-                        app.list_view_mut().set_error(error_msg);
-                    }
-                }
+                // Spawn client connection in background
+                info!("Switching to profile: {}", profile.name);
+                client = None; // Clear old client while connecting
+                task_spawner.spawn_connect(profile);
             } else {
                 client = None;
                 cache_manager = None;
@@ -476,38 +739,26 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
             if client.is_some() {
                 needs_fetch = true;
             } else if let Some(profile) = app.current_profile().cloned() {
-                // No client but profile exists - try to reconnect
-                match JiraClient::new(&profile).await {
-                    Ok(c) => {
-                        info!("Reconnected to JIRA as profile: {}", profile.name);
-                        client = Some(c);
-                        app.list_view_mut().clear_error();
-                        needs_fetch = true;
+                // No client but profile exists - spawn reconnection in background
+                info!("Reconnecting to JIRA for profile: {}", profile.name);
 
-                        // Also reinitialize cache manager
-                        let cache_ttl = app.config().settings.cache_ttl_minutes;
-                        match CacheManager::with_max_size(
-                            &profile.name,
-                            cache_ttl,
-                            app.config().settings.cache_max_size_mb,
-                        ) {
-                            Ok(cm) => {
-                                debug!("Cache manager reinitialized for profile: {}", profile.name);
-                                cache_manager = Some(cm);
-                            }
-                            Err(e) => {
-                                warn!("Failed to reinitialize cache: {}", e);
-                            }
-                        }
+                // Reinitialize cache manager
+                let cache_ttl = app.config().settings.cache_ttl_minutes;
+                match CacheManager::with_max_size(
+                    &profile.name,
+                    cache_ttl,
+                    app.config().settings.cache_max_size_mb,
+                ) {
+                    Ok(cm) => {
+                        debug!("Cache manager reinitialized for profile: {}", profile.name);
+                        cache_manager = Some(cm);
                     }
                     Err(e) => {
-                        error!("Failed to reconnect: {}", e);
-                        let error_msg = format!("Failed to connect: {}", e);
-                        app.notify_error(&error_msg);
-                        app.list_view_mut().set_loading(false);
-                        app.list_view_mut().set_error(error_msg);
+                        warn!("Failed to reinitialize cache: {}", e);
                     }
                 }
+
+                task_spawner.spawn_connect(profile);
             } else {
                 // No client and no profile configured
                 app.list_view_mut().set_loading(false);
@@ -516,471 +767,235 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
             }
         }
 
-        // Handle pending fetch transitions request
+        // Handle pending load more request (pagination) - spawn in background
+        if app.take_pending_load_more() {
+            if let Some(ref c) = client {
+                let jql = app.effective_jql();
+                let default_jql = format!(
+                    "assignee = currentUser() OR reporter = currentUser() {}",
+                    app.list_view().sort().to_jql()
+                );
+                let jql_query = if jql.is_empty() { default_jql } else { jql };
+                let page_size = app.list_view().pagination().page_size;
+                let next_page_token = app.list_view().pagination().next_page_token.clone();
+
+                info!(
+                    "Loading more issues: page_size={}, has_token={}, jql={}",
+                    page_size,
+                    next_page_token.is_some(),
+                    jql_query
+                );
+
+                task_spawner.spawn_load_more(c, jql_query, page_size, next_page_token);
+            } else {
+                app.handle_load_more_failure("No JIRA connection");
+            }
+        }
+
+        // Handle pending fetch transitions request - spawn in background
         if let Some(issue_key) = app.take_pending_fetch_transitions() {
             if let Some(ref c) = client {
                 debug!("Fetching transitions for issue: {}", issue_key);
-                match c.get_transitions(&issue_key).await {
-                    Ok(transitions) => {
-                        debug!("Loaded {} transitions", transitions.len());
-                        app.set_transitions(transitions);
-                    }
-                    Err(e) => {
-                        error!("Failed to fetch transitions: {}", e);
-                        app.handle_fetch_transitions_failure(&e.to_string());
-                    }
-                }
+                task_spawner.spawn_fetch_transitions(c, issue_key);
             } else {
                 app.handle_fetch_transitions_failure("No JIRA connection");
             }
         }
 
-        // Handle pending transition execution
+        // Handle pending transition execution - spawn in background
         if let Some((issue_key, transition_id, fields)) = app.take_pending_transition() {
             if let Some(ref c) = client {
                 debug!(
                     "Executing transition {} on issue {}",
                     transition_id, issue_key
                 );
-                match c.transition_issue(&issue_key, &transition_id, fields).await {
-                    Ok(()) => {
-                        // Fetch the updated issue to get the new status
-                        match c.get_issue(&issue_key).await {
-                            Ok(updated_issue) => {
-                                info!(
-                                    "Transition successful, issue {} now has status: {}",
-                                    issue_key, updated_issue.fields.status.name
-                                );
-                                app.handle_transition_success(updated_issue);
-                            }
-                            Err(e) => {
-                                // Transition succeeded but we couldn't fetch the updated issue
-                                warn!(
-                                    "Transition succeeded but failed to fetch updated issue: {}",
-                                    e
-                                );
-                                app.notify_success(format!("Issue {} status changed", issue_key));
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        error!("Failed to execute transition: {}", e);
-                        app.handle_transition_failure(&e.to_string());
-                    }
-                }
+                task_spawner.spawn_transition(c, issue_key, transition_id, fields);
             } else {
                 app.handle_transition_failure("No JIRA connection");
             }
         }
 
-        // Handle pending fetch assignees request
+        // Handle pending fetch assignees request - spawn in background
         if let Some((_issue_key, project_key)) = app.take_pending_fetch_assignees() {
             if let Some(ref c) = client {
                 debug!("Fetching assignable users for project: {}", project_key);
-                match c.get_assignable_users(&project_key).await {
-                    Ok(users) => {
-                        debug!("Loaded {} assignable users", users.len());
-                        app.set_assignable_users(users);
-                    }
-                    Err(e) => {
-                        error!("Failed to fetch assignable users: {}", e);
-                        app.handle_fetch_assignees_failure(&e.to_string());
-                    }
-                }
+                task_spawner.spawn_fetch_assignees(c, project_key);
             } else {
                 app.handle_fetch_assignees_failure("No JIRA connection");
             }
         }
 
-        // Handle pending assignee change
+        // Handle pending assignee change - spawn in background
         if let Some((issue_key, account_id)) = app.take_pending_assignee_change() {
             if let Some(ref c) = client {
                 debug!(
                     "Changing assignee on issue {} to {:?}",
                     issue_key, account_id
                 );
-                match c.update_assignee(&issue_key, account_id.as_deref()).await {
-                    Ok(()) => {
-                        // Fetch the updated issue to get the new assignee
-                        match c.get_issue(&issue_key).await {
-                            Ok(updated_issue) => {
-                                info!("Assignee changed for issue {}", issue_key);
-                                app.handle_assignee_change_success(updated_issue);
-                            }
-                            Err(e) => {
-                                warn!("Assignee changed but failed to fetch updated issue: {}", e);
-                                app.notify_success(format!("Issue {} assignee changed", issue_key));
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        error!("Failed to change assignee: {}", e);
-                        app.handle_assignee_change_failure(&e.to_string());
-                    }
-                }
+                task_spawner.spawn_change_assignee(c, issue_key, account_id);
             } else {
                 app.handle_assignee_change_failure("No JIRA connection");
             }
         }
 
-        // Handle pending fetch priorities request
+        // Handle pending fetch priorities request - spawn in background
         if let Some(_issue_key) = app.take_pending_fetch_priorities() {
             if let Some(ref c) = client {
                 debug!("Fetching priorities");
-                match c.get_priorities().await {
-                    Ok(priorities) => {
-                        debug!("Loaded {} priorities", priorities.len());
-                        app.set_priorities(priorities);
-                    }
-                    Err(e) => {
-                        error!("Failed to fetch priorities: {}", e);
-                        app.handle_fetch_priorities_failure(&e.to_string());
-                    }
-                }
+                task_spawner.spawn_fetch_priorities(c);
             } else {
                 app.handle_fetch_priorities_failure("No JIRA connection");
             }
         }
 
-        // Handle pending priority change
+        // Handle pending priority change - spawn in background
         if let Some((issue_key, priority_id)) = app.take_pending_priority_change() {
             if let Some(ref c) = client {
                 debug!(
                     "Changing priority on issue {} to {}",
                     issue_key, priority_id
                 );
-                match c.update_priority(&issue_key, &priority_id).await {
-                    Ok(()) => {
-                        // Fetch the updated issue to get the new priority
-                        match c.get_issue(&issue_key).await {
-                            Ok(updated_issue) => {
-                                info!("Priority changed for issue {}", issue_key);
-                                app.handle_priority_change_success(updated_issue);
-                            }
-                            Err(e) => {
-                                warn!("Priority changed but failed to fetch updated issue: {}", e);
-                                app.notify_success(format!("Issue {} priority changed", issue_key));
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        error!("Failed to change priority: {}", e);
-                        app.handle_priority_change_failure(&e.to_string());
-                    }
-                }
+                task_spawner.spawn_change_priority(c, issue_key, priority_id);
             } else {
                 app.handle_priority_change_failure("No JIRA connection");
             }
         }
 
-        // Handle fetch comments request
+        // Handle fetch comments request - spawn in background
         if let Some(issue_key) = app.take_pending_fetch_comments() {
             if let Some(ref c) = client {
                 debug!("Fetching comments for issue {}", issue_key);
-                match c.get_comments(&issue_key, 0, 50).await {
-                    Ok(response) => {
-                        debug!("Loaded {} comments", response.comments.len());
-                        app.handle_comments_fetched(response.comments, response.total);
-                    }
-                    Err(e) => {
-                        error!("Failed to fetch comments: {}", e);
-                        app.handle_fetch_comments_failure(&e.to_string());
-                    }
-                }
+                task_spawner.spawn_fetch_comments(c, issue_key);
             } else {
                 app.handle_fetch_comments_failure("No JIRA connection");
             }
         }
 
-        // Handle submit comment request
+        // Handle submit comment request - spawn in background
         if let Some((issue_key, body)) = app.take_pending_submit_comment() {
             if let Some(ref c) = client {
                 debug!("Submitting comment to issue {}", issue_key);
-                match c.add_comment(&issue_key, &body).await {
-                    Ok(comment) => {
-                        info!("Comment added to issue {}", issue_key);
-                        app.handle_comment_submitted(comment);
-                    }
-                    Err(e) => {
-                        error!("Failed to submit comment: {}", e);
-                        app.handle_submit_comment_failure(&e.to_string());
-                    }
-                }
+                task_spawner.spawn_submit_comment(c, issue_key, body);
             } else {
                 app.handle_submit_comment_failure("No JIRA connection");
             }
         }
 
-        // Handle issue update request (summary/description edits)
+        // Handle issue update request (summary/description edits) - spawn in background
         if let Some((issue_key, update_request)) = app.take_pending_issue_update() {
             if let Some(ref c) = client {
                 debug!("Updating issue {}", issue_key);
-                match c.update_issue(&issue_key, update_request).await {
-                    Ok(()) => {
-                        // Fetch the updated issue to refresh the view
-                        match c.get_issue(&issue_key).await {
-                            Ok(updated_issue) => {
-                                info!("Issue {} updated successfully", issue_key);
-                                app.handle_issue_update_success(updated_issue);
-                            }
-                            Err(e) => {
-                                // Update succeeded but fetch failed - still notify success
-                                warn!("Issue updated but failed to fetch: {}", e);
-                                app.detail_view_mut().set_saving(false);
-                                app.notify_success(format!("Issue {} updated", issue_key));
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        error!("Failed to update issue: {}", e);
-                        app.handle_issue_update_failure(&e.to_string());
-                    }
-                }
+                task_spawner.spawn_update_issue(c, issue_key, update_request);
             } else {
                 app.handle_issue_update_failure("No JIRA connection");
             }
         }
 
-        // Handle fetch labels request
+        // Handle fetch labels request - spawn in background
         if let Some(_issue_key) = app.take_pending_fetch_labels() {
             if let Some(ref c) = client {
                 debug!("Fetching labels");
-                match c.get_labels().await {
-                    Ok(labels) => {
-                        debug!("Loaded {} labels", labels.len());
-                        app.set_labels(labels);
-                    }
-                    Err(e) => {
-                        error!("Failed to fetch labels: {}", e);
-                        app.handle_fetch_labels_failure(&e.to_string());
-                    }
-                }
+                task_spawner.spawn_fetch_labels(c);
             } else {
                 app.handle_fetch_labels_failure("No JIRA connection");
             }
         }
 
-        // Handle add label request
+        // Handle add label request - spawn in background
         if let Some((issue_key, label)) = app.take_pending_add_label() {
             if let Some(ref c) = client {
                 debug!("Adding label {} to issue {}", label, issue_key);
-                match c.add_labels(&issue_key, vec![label.clone()]).await {
-                    Ok(()) => {
-                        // Fetch the updated issue
-                        match c.get_issue(&issue_key).await {
-                            Ok(updated_issue) => {
-                                info!("Label added to issue {}", issue_key);
-                                app.handle_label_change_success(updated_issue);
-                            }
-                            Err(e) => {
-                                warn!("Label added but failed to fetch updated issue: {}", e);
-                                app.notify_success(format!("Label '{}' added", label));
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        error!("Failed to add label: {}", e);
-                        app.handle_label_change_failure(&e.to_string());
-                    }
-                }
+                task_spawner.spawn_add_label(c, issue_key, label);
             } else {
                 app.handle_label_change_failure("No JIRA connection");
             }
         }
 
-        // Handle remove label request
+        // Handle remove label request - spawn in background
         if let Some((issue_key, label)) = app.take_pending_remove_label() {
             if let Some(ref c) = client {
                 debug!("Removing label {} from issue {}", label, issue_key);
-                match c.remove_labels(&issue_key, vec![label.clone()]).await {
-                    Ok(()) => {
-                        // Fetch the updated issue
-                        match c.get_issue(&issue_key).await {
-                            Ok(updated_issue) => {
-                                info!("Label removed from issue {}", issue_key);
-                                app.handle_label_change_success(updated_issue);
-                            }
-                            Err(e) => {
-                                warn!("Label removed but failed to fetch updated issue: {}", e);
-                                app.notify_success(format!("Label '{}' removed", label));
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        error!("Failed to remove label: {}", e);
-                        app.handle_label_change_failure(&e.to_string());
-                    }
-                }
+                task_spawner.spawn_remove_label(c, issue_key, label);
             } else {
                 app.handle_label_change_failure("No JIRA connection");
             }
         }
 
-        // Handle fetch components request
+        // Handle fetch components request - spawn in background
         if let Some((_issue_key, project_key)) = app.take_pending_fetch_components() {
             if let Some(ref c) = client {
                 debug!("Fetching components for project {}", project_key);
-                match c.get_project_components(&project_key).await {
-                    Ok(components) => {
-                        debug!("Loaded {} components", components.len());
-                        let component_names: Vec<String> =
-                            components.into_iter().map(|c| c.name).collect();
-                        app.set_components(component_names);
-                    }
-                    Err(e) => {
-                        error!("Failed to fetch components: {}", e);
-                        app.handle_fetch_components_failure(&e.to_string());
-                    }
-                }
+                task_spawner.spawn_fetch_components(c, project_key);
             } else {
                 app.handle_fetch_components_failure("No JIRA connection");
             }
         }
 
-        // Handle add component request
+        // Handle add component request - spawn in background
         if let Some((issue_key, component)) = app.take_pending_add_component() {
             if let Some(ref c) = client {
                 debug!("Adding component {} to issue {}", component, issue_key);
-                match c.add_components(&issue_key, vec![component.clone()]).await {
-                    Ok(()) => {
-                        // Fetch the updated issue
-                        match c.get_issue(&issue_key).await {
-                            Ok(updated_issue) => {
-                                info!("Component added to issue {}", issue_key);
-                                app.handle_component_change_success(updated_issue);
-                            }
-                            Err(e) => {
-                                warn!("Component added but failed to fetch updated issue: {}", e);
-                                app.notify_success(format!("Component '{}' added", component));
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        error!("Failed to add component: {}", e);
-                        app.handle_component_change_failure(&e.to_string());
-                    }
-                }
+                task_spawner.spawn_add_component(c, issue_key, component);
             } else {
                 app.handle_component_change_failure("No JIRA connection");
             }
         }
 
-        // Handle remove component request
+        // Handle remove component request - spawn in background
         if let Some((issue_key, component)) = app.take_pending_remove_component() {
             if let Some(ref c) = client {
                 debug!("Removing component {} from issue {}", component, issue_key);
-                match c
-                    .remove_components(&issue_key, vec![component.clone()])
-                    .await
-                {
-                    Ok(()) => {
-                        // Fetch the updated issue
-                        match c.get_issue(&issue_key).await {
-                            Ok(updated_issue) => {
-                                info!("Component removed from issue {}", issue_key);
-                                app.handle_component_change_success(updated_issue);
-                            }
-                            Err(e) => {
-                                warn!("Component removed but failed to fetch updated issue: {}", e);
-                                app.notify_success(format!("Component '{}' removed", component));
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        error!("Failed to remove component: {}", e);
-                        app.handle_component_change_failure(&e.to_string());
-                    }
-                }
+                task_spawner.spawn_remove_component(c, issue_key, component);
             } else {
                 app.handle_component_change_failure("No JIRA connection");
             }
         }
 
-        // Handle fetch changelog request
+        // Handle fetch changelog request - spawn in background
         if let Some((issue_key, start_at)) = app.take_pending_fetch_changelog() {
             if let Some(ref c) = client {
                 debug!(
                     "Fetching changelog for issue {} (start_at: {})",
                     issue_key, start_at
                 );
-                match c.get_changelog(&issue_key, start_at, 50).await {
-                    Ok(changelog) => {
-                        debug!(
-                            "Loaded {} history entries (total: {})",
-                            changelog.histories.len(),
-                            changelog.total
-                        );
-                        // If start_at > 0, we're appending to existing history
-                        app.handle_changelog_fetched(changelog, start_at > 0);
-                    }
-                    Err(e) => {
-                        error!("Failed to fetch changelog: {}", e);
-                        app.handle_fetch_changelog_failure(&e.to_string());
-                    }
-                }
+                let is_append = start_at > 0;
+                task_spawner.spawn_fetch_changelog(c, issue_key, start_at, is_append);
             } else {
                 app.handle_fetch_changelog_failure("No JIRA connection");
             }
         }
 
-        // Handle linked issue navigation request
+        // Handle linked issue navigation request - spawn in background
         if let Some(issue_key) = app.take_pending_navigate_to_issue() {
             if let Some(ref c) = client {
                 debug!("Navigating to linked issue: {}", issue_key);
-                match c.get_issue(&issue_key).await {
-                    Ok(issue) => {
-                        info!("Loaded linked issue: {}", issue_key);
-                        app.handle_navigate_to_issue_success(issue);
-                    }
-                    Err(e) => {
-                        error!("Failed to load linked issue: {}", e);
-                        app.handle_navigate_to_issue_failure(&e.to_string());
-                    }
-                }
+                task_spawner.spawn_fetch_linked_issue(c, issue_key);
             } else {
                 app.handle_navigate_to_issue_failure("No JIRA connection");
             }
         }
 
-        // Handle fetch link types request
+        // Handle fetch link types request - spawn in background
         if let Some(_issue_key) = app.take_pending_fetch_link_types() {
             if let Some(ref c) = client {
                 debug!("Fetching link types");
-                match c.get_issue_link_types().await {
-                    Ok(link_types) => {
-                        info!("Loaded {} link types", link_types.len());
-                        app.handle_link_types_success(link_types);
-                    }
-                    Err(e) => {
-                        error!("Failed to load link types: {}", e);
-                        app.handle_link_types_failure(&e.to_string());
-                    }
-                }
+                task_spawner.spawn_fetch_link_types(c);
             } else {
                 app.handle_link_types_failure("No JIRA connection");
             }
         }
 
-        // Handle search issues for linking request
+        // Handle search issues for linking request - spawn in background
         if let Some((issue_key, query)) = app.take_pending_search_issues_for_link() {
             if let Some(ref c) = client {
                 debug!("Searching issues for linking: {}", query);
-                match c.search_issues_for_picker(&query, Some(&issue_key)).await {
-                    Ok(suggestions) => {
-                        info!("Found {} issue suggestions", suggestions.len());
-                        app.handle_issue_search_success(suggestions);
-                    }
-                    Err(e) => {
-                        error!("Failed to search issues: {}", e);
-                        app.handle_issue_search_failure(&e.to_string());
-                    }
-                }
+                task_spawner.spawn_search_issues_for_link(c, query, issue_key);
             } else {
                 app.handle_issue_search_failure("No JIRA connection");
             }
         }
 
-        // Handle create link request
+        // Handle create link request - spawn in background
         if let Some((current_key, target_key, link_type_name, is_outward)) =
             app.take_pending_create_link()
         {
@@ -989,45 +1004,23 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
                     "Creating link: {} -> {} (type: {}, outward: {})",
                     current_key, target_key, link_type_name, is_outward
                 );
-                // When is_outward is true, current issue is the outward issue
-                // e.g., "current blocks target" means current is outward
-                let (outward_key, inward_key) = if is_outward {
-                    (current_key.clone(), target_key)
-                } else {
-                    (target_key, current_key.clone())
-                };
-                match c
-                    .create_issue_link(&link_type_name, &outward_key, &inward_key)
-                    .await
-                {
-                    Ok(()) => {
-                        info!("Link created successfully");
-                        app.handle_create_link_success(&current_key);
-                    }
-                    Err(e) => {
-                        error!("Failed to create link: {}", e);
-                        app.handle_create_link_failure(&e.to_string());
-                    }
-                }
+                task_spawner.spawn_create_link(
+                    c,
+                    current_key,
+                    target_key,
+                    link_type_name,
+                    is_outward,
+                );
             } else {
                 app.handle_create_link_failure("No JIRA connection");
             }
         }
 
-        // Handle delete link request (after confirmation)
+        // Handle delete link request (after confirmation) - spawn in background
         if let Some((link_id, issue_key)) = app.take_pending_delete_link() {
             if let Some(ref c) = client {
                 debug!("Deleting link: {}", link_id);
-                match c.delete_issue_link(&link_id).await {
-                    Ok(()) => {
-                        info!("Link deleted successfully");
-                        app.handle_delete_link_success(&issue_key);
-                    }
-                    Err(e) => {
-                        error!("Failed to delete link: {}", e);
-                        app.handle_delete_link_failure(&e.to_string());
-                    }
-                }
+                task_spawner.spawn_delete_link(c, link_id, issue_key);
             } else {
                 app.handle_delete_link_failure("No JIRA connection");
             }

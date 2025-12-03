@@ -179,6 +179,8 @@ pub struct PaginationState {
     pub has_more: bool,
     /// Token for fetching the next page (JIRA v3 API).
     pub next_page_token: Option<String>,
+    /// Error message from the last pagination request (if any).
+    pub error: Option<String>,
 }
 
 impl PaginationState {
@@ -194,6 +196,7 @@ impl PaginationState {
             loading: false,
             has_more: true,
             next_page_token: None,
+            error: None,
         }
     }
 
@@ -234,6 +237,18 @@ impl PaginationState {
         self.loading = false;
         self.has_more = true;
         self.next_page_token = None;
+        self.error = None;
+    }
+
+    /// Set an error message for a failed pagination request.
+    pub fn set_error(&mut self, error: impl Into<String>) {
+        self.error = Some(error.into());
+        self.loading = false;
+    }
+
+    /// Clear the pagination error.
+    pub fn clear_error(&mut self) {
+        self.error = None;
     }
 
     /// Get the number of issues currently loaded.
@@ -768,10 +783,24 @@ impl ListView {
 
     /// Render the list view.
     pub fn render(&mut self, frame: &mut Frame, area: Rect) {
-        // If search is active or has a query, reserve a line for the search bar
+        // Calculate space needed for overlays
         let show_search_bar = self.search.is_active() || !self.search.is_empty();
-        let (table_area, search_area) = if show_search_bar && area.height > 2 {
-            let chunks = Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).split(area);
+        let show_pagination_loading = self.pagination.loading && !self.issues.is_empty();
+        let show_pagination_error = self.pagination.error.is_some() && !self.issues.is_empty();
+
+        // Determine what to show at the bottom (loading or error, not both)
+        let show_pagination_status = show_pagination_loading || show_pagination_error;
+
+        // Reserve lines for overlays at the bottom
+        let overlay_lines = match (show_search_bar, show_pagination_status) {
+            (true, true) => 2,                  // Both search bar and loading/error indicator
+            (true, false) | (false, true) => 1, // One of them
+            (false, false) => 0,                // Neither
+        };
+
+        let (table_area, overlay_area) = if overlay_lines > 0 && area.height > overlay_lines + 2 {
+            let chunks = Layout::vertical([Constraint::Min(1), Constraint::Length(overlay_lines)])
+                .split(area);
             (chunks[0], Some(chunks[1]))
         } else {
             (area, None)
@@ -787,10 +816,50 @@ impl ListView {
             self.render_table(frame, table_area);
         }
 
-        // Render search bar if visible
-        if let Some(search_rect) = search_area {
-            render_search_bar(frame, search_rect, &self.search);
+        // Render overlays if needed
+        if let Some(overlay_rect) = overlay_area {
+            match (show_search_bar, show_pagination_status) {
+                (true, true) => {
+                    // Split for both overlays
+                    let overlay_chunks =
+                        Layout::vertical([Constraint::Length(1), Constraint::Length(1)])
+                            .split(overlay_rect);
+                    self.render_pagination_status(frame, overlay_chunks[0]);
+                    render_search_bar(frame, overlay_chunks[1], &self.search);
+                }
+                (true, false) => {
+                    render_search_bar(frame, overlay_rect, &self.search);
+                }
+                (false, true) => {
+                    self.render_pagination_status(frame, overlay_rect);
+                }
+                (false, false) => {}
+            }
         }
+    }
+
+    /// Render the pagination status (loading or error) at the bottom of the list.
+    fn render_pagination_status(&self, frame: &mut Frame, area: Rect) {
+        let t = theme();
+
+        let widget = if let Some(ref error) = self.pagination.error {
+            // Show error with retry hint
+            Paragraph::new(format!(
+                "Error loading more: {} (press 'r' to retry)",
+                error
+            ))
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(t.error))
+        } else if self.pagination.loading {
+            // Show loading indicator
+            Paragraph::new("Loading more issues...")
+                .alignment(Alignment::Center)
+                .style(Style::default().fg(t.muted))
+        } else {
+            return;
+        };
+
+        frame.render_widget(widget, area);
     }
 
     /// Render the loading state.
@@ -1975,5 +2044,52 @@ mod tests {
         view.handle_input(key);
 
         assert!(view.search.is_empty());
+    }
+
+    // ========================================================================
+    // Pagination Error Tests
+    // ========================================================================
+
+    #[test]
+    fn test_pagination_set_error() {
+        let mut state = PaginationState::new();
+        state.loading = true;
+
+        state.set_error("Network error");
+
+        assert!(!state.loading);
+        assert_eq!(state.error, Some("Network error".to_string()));
+    }
+
+    #[test]
+    fn test_pagination_clear_error() {
+        let mut state = PaginationState::new();
+        state.set_error("Network error");
+
+        state.clear_error();
+
+        assert!(state.error.is_none());
+    }
+
+    #[test]
+    fn test_pagination_error_cleared_on_reset() {
+        let mut state = PaginationState::new();
+        state.set_error("Network error");
+
+        state.reset();
+
+        assert!(state.error.is_none());
+    }
+
+    #[test]
+    fn test_pagination_state_new_has_no_error() {
+        let state = PaginationState::new();
+        assert!(state.error.is_none());
+    }
+
+    #[test]
+    fn test_pagination_state_with_page_size_has_no_error() {
+        let state = PaginationState::with_page_size(25);
+        assert!(state.error.is_none());
     }
 }

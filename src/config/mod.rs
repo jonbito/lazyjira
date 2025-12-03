@@ -141,7 +141,8 @@ impl Config {
 
         let content = fs::read_to_string(&config_path).map_err(ConfigError::ReadError)?;
 
-        let config: Config = toml::from_str(&content).map_err(ConfigError::ParseError)?;
+        let mut config: Config = toml::from_str(&content).map_err(ConfigError::ParseError)?;
+        config.settings.validate_page_size();
         config.validate()?;
         Ok(config)
     }
@@ -303,6 +304,7 @@ mod tests {
                 vim_mode: false,
                 cache_ttl_minutes: 60,
                 cache_max_size_mb: 100,
+                page_size: 25,
                 jql_history: vec!["project = TEST".to_string()],
                 confirm_transitions: false,
                 confirm_discard_changes: true,

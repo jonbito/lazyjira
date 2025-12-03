@@ -25,6 +25,17 @@ fn default_cache_max_size() -> u64 {
     100
 }
 
+/// Default page size for issue list pagination.
+fn default_page_size() -> u32 {
+    50
+}
+
+/// Minimum allowed page size.
+const MIN_PAGE_SIZE: u32 = 1;
+
+/// Maximum allowed page size (JIRA API limit).
+const MAX_PAGE_SIZE: u32 = 100;
+
 /// Default for confirm_discard_changes setting.
 fn default_confirm_discard() -> bool {
     true
@@ -66,6 +77,14 @@ pub struct Settings {
     #[serde(default = "default_cache_max_size")]
     pub cache_max_size_mb: u64,
 
+    /// Page size for issue list pagination.
+    ///
+    /// Controls how many issues are fetched per API request.
+    /// Valid range is 1-100. Values outside this range will be clamped.
+    /// Defaults to 50.
+    #[serde(default = "default_page_size")]
+    pub page_size: u32,
+
     /// JQL query history (most recent first).
     ///
     /// Limited to 10 entries.
@@ -105,6 +124,7 @@ impl Default for Settings {
             vim_mode: default_vim_mode(),
             cache_ttl_minutes: default_cache_ttl(),
             cache_max_size_mb: default_cache_max_size(),
+            page_size: default_page_size(),
             jql_history: Vec::new(),
             confirm_transitions: false,
             confirm_discard_changes: default_confirm_discard(),
@@ -115,6 +135,24 @@ impl Default for Settings {
 }
 
 impl Settings {
+    /// Validate and clamp page_size to the valid range (1-100).
+    ///
+    /// If the value is outside the valid range, it will be clamped and a warning
+    /// will be logged.
+    pub fn validate_page_size(&mut self) {
+        if self.page_size < MIN_PAGE_SIZE || self.page_size > MAX_PAGE_SIZE {
+            let clamped = self.page_size.clamp(MIN_PAGE_SIZE, MAX_PAGE_SIZE);
+            tracing::warn!(
+                "page_size {} is outside valid range ({}-{}), clamping to {}",
+                self.page_size,
+                MIN_PAGE_SIZE,
+                MAX_PAGE_SIZE,
+                clamped
+            );
+            self.page_size = clamped;
+        }
+    }
+
     /// Add a JQL query to the history.
     ///
     /// The query is added to the front of the history. If the query already
@@ -163,6 +201,7 @@ mod tests {
         assert!(settings.vim_mode);
         assert_eq!(settings.cache_ttl_minutes, 30);
         assert_eq!(settings.cache_max_size_mb, 100);
+        assert_eq!(settings.page_size, 50);
         assert!(settings.jql_history.is_empty());
         assert!(!settings.confirm_transitions);
         assert!(settings.confirm_discard_changes);
@@ -178,6 +217,7 @@ mod tests {
             vim_mode: false,
             cache_ttl_minutes: 60,
             cache_max_size_mb: 200,
+            page_size: 25,
             jql_history: vec!["project = TEST".to_string()],
             confirm_transitions: true,
             confirm_discard_changes: false,
@@ -204,6 +244,7 @@ theme = "monokai"
         assert!(settings.vim_mode); // default
         assert_eq!(settings.cache_ttl_minutes, 30); // default
         assert_eq!(settings.cache_max_size_mb, 100); // default
+        assert_eq!(settings.page_size, 50); // default
         assert!(settings.jql_history.is_empty()); // default
         assert!(!settings.confirm_transitions); // default
         assert!(settings.confirm_discard_changes); // default
@@ -219,6 +260,7 @@ theme = "monokai"
         assert!(settings.vim_mode);
         assert_eq!(settings.cache_ttl_minutes, 30);
         assert_eq!(settings.cache_max_size_mb, 100);
+        assert_eq!(settings.page_size, 50);
         assert!(settings.jql_history.is_empty());
         assert!(!settings.confirm_transitions);
         assert!(settings.confirm_discard_changes);
@@ -339,5 +381,80 @@ success = "lightgreen"
 
         // Removing non-existent filter returns false
         assert!(!settings.remove_saved_filter("Filter1"));
+    }
+
+    #[test]
+    fn test_page_size_serialization() {
+        let toml_content = r#"
+page_size = 25
+"#;
+
+        let settings: Settings = toml::from_str(toml_content).unwrap();
+        assert_eq!(settings.page_size, 25);
+
+        // Round-trip serialization
+        let toml_str = toml::to_string(&settings).unwrap();
+        let parsed: Settings = toml::from_str(&toml_str).unwrap();
+        assert_eq!(parsed.page_size, 25);
+    }
+
+    #[test]
+    fn test_page_size_missing_uses_default() {
+        let toml_content = r#"
+theme = "dark"
+"#;
+
+        let settings: Settings = toml::from_str(toml_content).unwrap();
+        assert_eq!(settings.page_size, 50);
+    }
+
+    #[test]
+    fn test_validate_page_size_clamps_below_min() {
+        let mut settings = Settings {
+            page_size: 0,
+            ..Default::default()
+        };
+        settings.validate_page_size();
+        assert_eq!(settings.page_size, 1);
+    }
+
+    #[test]
+    fn test_validate_page_size_clamps_above_max() {
+        let mut settings = Settings {
+            page_size: 150,
+            ..Default::default()
+        };
+        settings.validate_page_size();
+        assert_eq!(settings.page_size, 100);
+    }
+
+    #[test]
+    fn test_validate_page_size_valid_min() {
+        let mut settings = Settings {
+            page_size: 1,
+            ..Default::default()
+        };
+        settings.validate_page_size();
+        assert_eq!(settings.page_size, 1);
+    }
+
+    #[test]
+    fn test_validate_page_size_valid_max() {
+        let mut settings = Settings {
+            page_size: 100,
+            ..Default::default()
+        };
+        settings.validate_page_size();
+        assert_eq!(settings.page_size, 100);
+    }
+
+    #[test]
+    fn test_validate_page_size_valid_middle() {
+        let mut settings = Settings {
+            page_size: 50,
+            ..Default::default()
+        };
+        settings.validate_page_size();
+        assert_eq!(settings.page_size, 50);
     }
 }

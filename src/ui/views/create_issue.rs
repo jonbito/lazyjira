@@ -66,6 +66,8 @@ pub struct CreateIssueView {
     summary_input: TextInput,
     /// Parent issue key text input (for subtasks).
     parent_input: TextInput,
+    /// Epic parent key text input (for standard issues).
+    epic_parent_input: TextInput,
     /// Description text editor.
     description_editor: TextEditor,
     /// Project picker index (for navigating through projects).
@@ -91,9 +93,13 @@ impl CreateIssueView {
         let mut parent_input = TextInput::new();
         parent_input.set_placeholder("e.g., PROJ-123");
 
+        let mut epic_parent_input = TextInput::new();
+        epic_parent_input.set_placeholder("e.g., PROJ-100 (optional)");
+
         Self {
             summary_input,
             parent_input,
+            epic_parent_input,
             description_editor: TextEditor::empty(),
             project_picker_index: 0,
             issue_type_picker_index: 0,
@@ -105,6 +111,7 @@ impl CreateIssueView {
     pub fn reset(&mut self) {
         self.summary_input.clear();
         self.parent_input.clear();
+        self.epic_parent_input.clear();
         self.description_editor = TextEditor::empty();
         self.project_picker_index = 0;
         self.issue_type_picker_index = 0;
@@ -186,6 +193,21 @@ impl CreateIssueView {
         self.parent_input.handle_input(key);
     }
 
+    /// Set the epic parent key value.
+    pub fn set_epic_parent(&mut self, value: &str) {
+        self.epic_parent_input.set_value(value);
+    }
+
+    /// Get the epic parent key value.
+    pub fn epic_parent(&self) -> &str {
+        self.epic_parent_input.value()
+    }
+
+    /// Handle input for the epic parent field.
+    pub fn handle_epic_parent_input(&mut self, key: KeyEvent) {
+        self.epic_parent_input.handle_input(key);
+    }
+
     /// Handle keyboard input.
     ///
     /// Returns an optional action to be handled by the parent.
@@ -252,6 +274,10 @@ impl CreateIssueView {
             CreateIssueFormField::IssueType => self.handle_issue_type_input(app, key),
             CreateIssueFormField::Parent => {
                 self.parent_input.handle_input(key);
+                None
+            }
+            CreateIssueFormField::EpicParent => {
+                self.epic_parent_input.handle_input(key);
                 None
             }
             CreateIssueFormField::Summary => {
@@ -447,10 +473,13 @@ impl CreateIssueView {
     /// Render the create issue view as a modal overlay.
     pub fn render(&mut self, data: &CreateIssueRenderData, frame: &mut Frame, area: Rect) {
         // Calculate dialog size - form needs height for all fields:
-        // Project(3) + IssueType(3) + Parent(3 if subtask) + Summary(3) + Description(6) + Assignee(3) + Priority(3) + Errors(2) + Submit(1)
+        // Project(3) + IssueType(3) + Parent/Epic(3 if applicable) + Summary(3) + Description(6) + Assignee(3) + Priority(3) + Errors(2) + Submit(1)
         // Plus borders(2) and margin(2)
         let dialog_width = 70u16.min(area.width.saturating_sub(4));
-        let base_height = if data.form.is_subtask { 33u16 } else { 30u16 };
+
+        // Determine if we need an extra row for parent/epic field
+        let has_parent_field = data.form.is_subtask || data.form.can_have_epic_parent;
+        let base_height = if has_parent_field { 33u16 } else { 30u16 };
         let dialog_height = base_height.min(area.height.saturating_sub(4));
 
         let dialog_area = centered_rect(area, dialog_width, dialog_height);
@@ -473,15 +502,16 @@ impl CreateIssueView {
 
         let focus = data.focus;
 
-        // Create layout for form fields - different layout for subtasks
+        // Create layout for form fields - different layout based on issue type
         if data.form.is_subtask {
+            // Subtask layout with required Parent field
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .margin(1)
                 .constraints([
                     Constraint::Length(3), // Project
                     Constraint::Length(3), // Issue Type
-                    Constraint::Length(3), // Parent Issue (for subtasks)
+                    Constraint::Length(3), // Parent Issue (required for subtasks)
                     Constraint::Length(3), // Summary
                     Constraint::Length(6), // Description (multi-line)
                     Constraint::Length(3), // Assignee (optional)
@@ -501,7 +531,36 @@ impl CreateIssueView {
             self.render_priority_field(data, frame, chunks[6], focus == CreateIssueFormField::Priority);
             self.render_errors(data, frame, chunks[7]);
             self.render_submit_button(frame, chunks[8], focus == CreateIssueFormField::Submit);
+        } else if data.form.can_have_epic_parent {
+            // Standard issue layout with optional Epic field
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .margin(1)
+                .constraints([
+                    Constraint::Length(3), // Project
+                    Constraint::Length(3), // Issue Type
+                    Constraint::Length(3), // Epic (optional)
+                    Constraint::Length(3), // Summary
+                    Constraint::Length(6), // Description (multi-line)
+                    Constraint::Length(3), // Assignee (optional)
+                    Constraint::Length(3), // Priority (optional)
+                    Constraint::Length(2), // Errors
+                    Constraint::Length(1), // Submit button
+                ])
+                .split(inner);
+
+            // Render fields
+            self.render_project_field(data, frame, chunks[0], focus == CreateIssueFormField::Project);
+            self.render_issue_type_field(data, frame, chunks[1], focus == CreateIssueFormField::IssueType);
+            self.render_epic_parent_field(frame, chunks[2], focus == CreateIssueFormField::EpicParent);
+            self.render_summary_field(frame, chunks[3], focus == CreateIssueFormField::Summary);
+            self.render_description_field(frame, chunks[4], focus == CreateIssueFormField::Description);
+            self.render_assignee_field(data, frame, chunks[5], focus == CreateIssueFormField::Assignee);
+            self.render_priority_field(data, frame, chunks[6], focus == CreateIssueFormField::Priority);
+            self.render_errors(data, frame, chunks[7]);
+            self.render_submit_button(frame, chunks[8], focus == CreateIssueFormField::Submit);
         } else {
+            // Epic or other top-level type layout without parent field
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .margin(1)
@@ -647,6 +706,12 @@ impl CreateIssueView {
     ) {
         self.parent_input
             .render_with_label(frame, area, "Parent Issue *", focused);
+    }
+
+    /// Render the epic parent input field (optional).
+    fn render_epic_parent_field(&self, frame: &mut Frame, area: Rect, focused: bool) {
+        self.epic_parent_input
+            .render_with_label(frame, area, "Epic", focused);
     }
 
     /// Render the summary input field.

@@ -263,6 +263,9 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
         // =================================================================
         // STEP 1: Poll for completed async tasks (non-blocking)
         // =================================================================
+        // Capture loading state BEFORE processing API messages to detect transitions
+        let was_loading_before_api = app.list_view().is_loading();
+
         while let Ok(msg) = task_rx.try_recv() {
             match msg {
                 ApiMessage::ClientConnected(result) => match result {
@@ -755,7 +758,8 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
             }
         }
         // Detect refresh request (loading changed from false to true)
-        else if !was_loading && is_loading_now {
+        // Check both before API messages and before event handling to catch all transitions
+        else if (!was_loading_before_api || !was_loading) && is_loading_now {
             if client.is_some() {
                 needs_fetch = true;
             } else if let Some(profile) = app.current_profile().cloned() {

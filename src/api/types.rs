@@ -466,6 +466,7 @@ impl IssueSuggestion {
 /// Used to populate issue type selection when creating issues.
 /// Returned by `GET /rest/api/3/issue/createmeta/{projectIdOrKey}/issuetypes`.
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct IssueTypeMeta {
     /// The issue type ID.
     pub id: String,
@@ -477,6 +478,25 @@ pub struct IssueTypeMeta {
     /// Whether this is a subtask type.
     #[serde(default)]
     pub subtask: bool,
+    /// The hierarchy level of this issue type.
+    /// - `-1` = subtask (requires parent)
+    /// - `0` = standard issue (Story, Task, Bug) - can have Epic parent
+    /// - `1` = Epic (top of standard hierarchy)
+    #[serde(default)]
+    pub hierarchy_level: Option<i32>,
+}
+
+impl IssueTypeMeta {
+    /// Returns true if this issue type can have an Epic as its parent.
+    ///
+    /// Standard issues (hierarchy level 0) can optionally have an Epic parent.
+    /// Falls back to checking `!subtask` if hierarchy_level is not available.
+    pub fn can_have_epic_parent(&self) -> bool {
+        match self.hierarchy_level {
+            Some(level) => level == 0,
+            None => !self.subtask, // Fallback for older JIRA versions
+        }
+    }
 }
 
 /// Response from the issue type metadata endpoint.

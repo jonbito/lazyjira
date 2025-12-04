@@ -76,6 +76,8 @@ pub enum CreateIssueFormField {
     IssueType,
     /// Parent issue selection field (for subtasks).
     Parent,
+    /// Epic parent selection field (for standard issues that can have an epic parent).
+    EpicParent,
     /// Summary text input field.
     Summary,
     /// Description text input field.
@@ -97,7 +99,8 @@ impl CreateIssueFormField {
         match self {
             Self::Project => Self::IssueType,
             Self::IssueType => Self::Parent,
-            Self::Parent => Self::Summary,
+            Self::Parent => Self::EpicParent,
+            Self::EpicParent => Self::Summary,
             Self::Summary => Self::Description,
             Self::Description => Self::Assignee,
             Self::Assignee => Self::Priority,
@@ -115,7 +118,8 @@ impl CreateIssueFormField {
             Self::Project => Self::Submit,
             Self::IssueType => Self::Project,
             Self::Parent => Self::IssueType,
-            Self::Summary => Self::Parent,
+            Self::EpicParent => Self::Parent,
+            Self::Summary => Self::EpicParent,
             Self::Description => Self::Summary,
             Self::Assignee => Self::Description,
             Self::Priority => Self::Assignee,
@@ -123,24 +127,38 @@ impl CreateIssueFormField {
         }
     }
 
-    /// Get the next field in tab order, skipping Parent if not needed.
-    pub fn next_for_form(self, is_subtask: bool) -> Self {
-        let next = self.next();
+    /// Get the next field in tab order, skipping Parent/EpicParent based on issue type.
+    ///
+    /// - Skip Parent if not a subtask
+    /// - Skip EpicParent if issue type cannot have an epic parent
+    pub fn next_for_form(self, is_subtask: bool, can_have_epic_parent: bool) -> Self {
+        let mut next = self.next();
+        // Skip Parent if not a subtask
         if next == Self::Parent && !is_subtask {
-            next.next()
-        } else {
-            next
+            next = next.next();
         }
+        // Skip EpicParent if cannot have epic parent
+        if next == Self::EpicParent && !can_have_epic_parent {
+            next = next.next();
+        }
+        next
     }
 
-    /// Get the previous field in tab order, skipping Parent if not needed.
-    pub fn prev_for_form(self, is_subtask: bool) -> Self {
-        let prev = self.prev();
-        if prev == Self::Parent && !is_subtask {
-            prev.prev()
-        } else {
-            prev
+    /// Get the previous field in tab order, skipping Parent/EpicParent based on issue type.
+    ///
+    /// - Skip Parent if not a subtask
+    /// - Skip EpicParent if issue type cannot have an epic parent
+    pub fn prev_for_form(self, is_subtask: bool, can_have_epic_parent: bool) -> Self {
+        let mut prev = self.prev();
+        // Skip EpicParent if cannot have epic parent
+        if prev == Self::EpicParent && !can_have_epic_parent {
+            prev = prev.prev();
         }
+        // Skip Parent if not a subtask
+        if prev == Self::Parent && !is_subtask {
+            prev = prev.prev();
+        }
+        prev
     }
 }
 
@@ -157,8 +175,12 @@ pub struct CreateIssueFormData {
     pub issue_type_name: String,
     /// Whether the selected issue type is a subtask type.
     pub is_subtask: bool,
+    /// Whether the selected issue type can have an Epic as parent.
+    pub can_have_epic_parent: bool,
     /// The parent issue key (required for subtasks).
     pub parent_issue_key: Option<String>,
+    /// The Epic parent key (optional, for standard issues).
+    pub epic_parent_key: Option<String>,
     /// The issue summary (title).
     pub summary: String,
     /// The issue description.
@@ -972,6 +994,7 @@ impl App {
         self.available_issue_types.clear();
         self.pending_create_issue = false;
         self.pending_fetch_issue_types = false;
+        self.create_issue_view.reset();
     }
 
     /// Clear the create issue form and reset all state.
@@ -1002,13 +1025,19 @@ impl App {
     /// Move focus to the next field in the create issue form.
     pub fn create_issue_focus_next(&mut self) {
         let is_subtask = self.create_issue_form.is_subtask;
-        self.create_issue_focus = self.create_issue_focus.next_for_form(is_subtask);
+        let can_have_epic_parent = self.create_issue_form.can_have_epic_parent;
+        self.create_issue_focus = self
+            .create_issue_focus
+            .next_for_form(is_subtask, can_have_epic_parent);
     }
 
     /// Move focus to the previous field in the create issue form.
     pub fn create_issue_focus_prev(&mut self) {
         let is_subtask = self.create_issue_form.is_subtask;
-        self.create_issue_focus = self.create_issue_focus.prev_for_form(is_subtask);
+        let can_have_epic_parent = self.create_issue_form.can_have_epic_parent;
+        self.create_issue_focus = self
+            .create_issue_focus
+            .prev_for_form(is_subtask, can_have_epic_parent);
     }
 
     /// Get the validation errors for the create issue form.
@@ -1240,6 +1269,10 @@ impl App {
                 self.create_issue_view.handle_parent_input(key);
                 None
             }
+            CreateIssueFormField::EpicParent => {
+                self.create_issue_view.handle_epic_parent_input(key);
+                None
+            }
             CreateIssueFormField::Summary => {
                 self.create_issue_view.handle_summary_input(key);
                 None
@@ -1297,10 +1330,16 @@ impl App {
             self.create_issue_form.issue_type_id = issue_type.id.clone();
             self.create_issue_form.issue_type_name = issue_type.name.clone();
             self.create_issue_form.is_subtask = issue_type.subtask;
+            self.create_issue_form.can_have_epic_parent = issue_type.can_have_epic_parent();
 
             // Clear parent if not a subtask
             if !issue_type.subtask {
                 self.create_issue_form.parent_issue_key = None;
+            }
+
+            // Clear epic parent if this type cannot have an epic parent
+            if !issue_type.can_have_epic_parent() {
+                self.create_issue_form.epic_parent_key = None;
             }
         }
     }
@@ -1319,6 +1358,16 @@ impl App {
                 Some(parent_value)
             };
         }
+
+        // Sync epic parent key - only if issue type can have epic parent
+        if self.create_issue_form.can_have_epic_parent {
+            let epic_value = self.create_issue_view.epic_parent().trim().to_string();
+            self.create_issue_form.epic_parent_key = if epic_value.is_empty() {
+                None
+            } else {
+                Some(epic_value)
+            };
+        }
     }
 
     /// Sync app state to the view's text inputs.
@@ -1333,6 +1382,13 @@ impl App {
             self.create_issue_view.set_parent(key);
         } else {
             self.create_issue_view.set_parent("");
+        }
+
+        // Sync epic parent key
+        if let Some(ref key) = self.create_issue_form.epic_parent_key {
+            self.create_issue_view.set_epic_parent(key);
+        } else {
+            self.create_issue_view.set_epic_parent("");
         }
     }
 
@@ -1375,11 +1431,20 @@ impl App {
             .as_ref()
             .map(|id| PriorityRef::new(id.clone()));
 
-        // Build optional parent reference (required for subtasks)
-        let parent = form
-            .parent_issue_key
-            .as_ref()
-            .map(|key| ParentRef { key: key.clone() });
+        // Build optional parent reference
+        // - For subtasks: use parent_issue_key (required)
+        // - For standard issues: use epic_parent_key (optional)
+        let parent = if form.is_subtask {
+            form.parent_issue_key
+                .as_ref()
+                .map(|key| ParentRef { key: key.clone() })
+        } else if form.can_have_epic_parent {
+            form.epic_parent_key
+                .as_ref()
+                .map(|key| ParentRef { key: key.clone() })
+        } else {
+            None
+        };
 
         CreateIssueRequest {
             fields: CreateIssueFields {

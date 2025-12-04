@@ -1008,6 +1008,43 @@ impl App {
         self.pending_fetch_issue_types = pending;
     }
 
+    /// Open the create issue form.
+    ///
+    /// This initializes the form with default values, pre-populates the project
+    /// key if available from the current filter state, and transitions to the
+    /// CreateIssue state.
+    pub fn open_create_issue_form(&mut self) {
+        debug!("Opening create issue form");
+        self.init_create_issue_form();
+
+        // Pre-populate project key from current filter if available
+        if let Some(project_key) = &self.filter_state.project {
+            debug!(project = %project_key, "Pre-populating project from filter");
+            self.create_issue_form.project_key = project_key.clone();
+            // Mark that we need to fetch issue types for this project
+            self.pending_fetch_issue_types = true;
+        }
+
+        self.state = AppState::CreateIssue;
+    }
+
+    /// Close the create issue form and return to the issue list.
+    ///
+    /// If `refresh_list` is true, the issue list will be refreshed after closing.
+    /// This should be called after a successful issue creation.
+    pub fn close_create_issue_form(&mut self, refresh_list: bool) {
+        debug!(refresh = refresh_list, "Closing create issue form");
+        self.clear_create_issue_form();
+        self.state = AppState::IssueList;
+
+        if refresh_list {
+            // Trigger a refresh of the issue list
+            self.list_view.set_loading(true);
+            // Note: The actual async refresh will be triggered by the main loop
+            // when it detects list_view.is_loading()
+        }
+    }
+
     // ========================================================================
     // Filter methods
     // ========================================================================
@@ -1949,7 +1986,8 @@ impl App {
         info!(key = %response.key, "Issue created successfully");
         self.stop_loading();
         self.notify_success(format!("Issue {} created successfully", response.key));
-        // TODO: Task 5 will add logic to close the create issue form and refresh the issue list
+        // Close the form and refresh the issue list
+        self.close_create_issue_form(true);
     }
 
     /// Handle failure to create issue.
@@ -2381,6 +2419,9 @@ impl App {
                         }
                         ListAction::OpenInBrowser(issue_key) => {
                             self.open_issue_in_browser(&issue_key);
+                        }
+                        ListAction::OpenCreateIssue => {
+                            self.open_create_issue_form();
                         }
                     }
                 }
@@ -3687,5 +3728,92 @@ mod tests {
 
         // Should now be in edit mode
         assert!(app.detail_view().is_editing());
+    }
+
+    // ========================================================================
+    // Create Issue Form Tests
+    // ========================================================================
+
+    #[test]
+    fn test_open_create_issue_form() {
+        let mut app = App::new();
+
+        // Should start in Loading state
+        assert_eq!(app.state(), AppState::Loading);
+
+        // Open create issue form
+        app.open_create_issue_form();
+
+        // Should transition to CreateIssue state
+        assert_eq!(app.state(), AppState::CreateIssue);
+
+        // Form should be initialized
+        assert!(app.create_issue_form().project_key.is_empty());
+        assert!(app.create_issue_form().summary.is_empty());
+        assert!(app.create_issue_errors().is_empty());
+    }
+
+    #[test]
+    fn test_open_create_issue_form_with_project_filter() {
+        let mut app = App::new();
+
+        // Set a project filter
+        app.filter_state_mut().project = Some("TEST".to_string());
+
+        // Open create issue form
+        app.open_create_issue_form();
+
+        // Should transition to CreateIssue state
+        assert_eq!(app.state(), AppState::CreateIssue);
+
+        // Form should have project pre-populated
+        assert_eq!(app.create_issue_form().project_key, "TEST");
+
+        // Should have pending fetch for issue types
+        assert!(app.is_fetch_issue_types_pending());
+    }
+
+    #[test]
+    fn test_close_create_issue_form_without_refresh() {
+        let mut app = App::new();
+
+        // Ensure list view is not loading initially (simulate after initial load)
+        app.list_view_mut().set_loading(false);
+        assert!(!app.list_view().is_loading());
+
+        // Open create issue form
+        app.open_create_issue_form();
+        assert_eq!(app.state(), AppState::CreateIssue);
+
+        // Close without refresh (cancel)
+        app.close_create_issue_form(false);
+
+        // Should return to IssueList state
+        assert_eq!(app.state(), AppState::IssueList);
+
+        // List should still not be loading (no refresh requested)
+        assert!(!app.list_view().is_loading());
+    }
+
+    #[test]
+    fn test_close_create_issue_form_with_refresh() {
+        let mut app = App::new();
+
+        // Ensure list view is not loading initially (simulate after initial load)
+        app.list_view_mut().set_loading(false);
+        assert!(!app.list_view().is_loading());
+
+        // Open create issue form
+        app.open_create_issue_form();
+        assert_eq!(app.state(), AppState::CreateIssue);
+
+        // Close with refresh (success)
+        app.close_create_issue_form(true);
+
+        // Should return to IssueList state
+        assert_eq!(app.state(), AppState::IssueList);
+
+        // List should be loading (refresh triggered)
+        assert!(app.list_view().is_loading());
     }
 }

@@ -57,6 +57,123 @@ pub enum AppState {
     Help,
     /// Application is in the process of exiting.
     Exiting,
+    /// Creating a new issue.
+    CreateIssue,
+}
+
+// ============================================================================
+// Create Issue Form Types
+// ============================================================================
+
+/// The field currently focused in the create issue form.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CreateIssueFormField {
+    /// Project selection field.
+    #[default]
+    Project,
+    /// Issue type selection field.
+    IssueType,
+    /// Summary text input field.
+    Summary,
+    /// Description text input field.
+    Description,
+    /// Assignee selection field.
+    Assignee,
+    /// Priority selection field.
+    Priority,
+    /// Submit button.
+    Submit,
+}
+
+impl CreateIssueFormField {
+    /// Get the next field in tab order.
+    pub fn next(self) -> Self {
+        match self {
+            Self::Project => Self::IssueType,
+            Self::IssueType => Self::Summary,
+            Self::Summary => Self::Description,
+            Self::Description => Self::Assignee,
+            Self::Assignee => Self::Priority,
+            Self::Priority => Self::Submit,
+            Self::Submit => Self::Project,
+        }
+    }
+
+    /// Get the previous field in tab order.
+    pub fn prev(self) -> Self {
+        match self {
+            Self::Project => Self::Submit,
+            Self::IssueType => Self::Project,
+            Self::Summary => Self::IssueType,
+            Self::Description => Self::Summary,
+            Self::Assignee => Self::Description,
+            Self::Priority => Self::Assignee,
+            Self::Submit => Self::Priority,
+        }
+    }
+}
+
+/// Form data for creating a new issue.
+#[derive(Debug, Clone, Default)]
+pub struct CreateIssueFormData {
+    /// The project key (e.g., "PROJ").
+    pub project_key: String,
+    /// The project name for display purposes.
+    pub project_name: String,
+    /// The issue type ID.
+    pub issue_type_id: String,
+    /// The issue type name for display purposes.
+    pub issue_type_name: String,
+    /// The issue summary (title).
+    pub summary: String,
+    /// The issue description.
+    pub description: String,
+    /// The assignee account ID (optional).
+    pub assignee_id: Option<String>,
+    /// The assignee display name for display purposes (optional).
+    pub assignee_name: Option<String>,
+    /// The priority ID (optional).
+    pub priority_id: Option<String>,
+    /// The priority name for display purposes (optional).
+    pub priority_name: Option<String>,
+}
+
+impl CreateIssueFormData {
+    /// Create a new empty form data instance.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Clear all form fields.
+    pub fn clear(&mut self) {
+        *self = Self::default();
+    }
+
+    /// Validate the form data and return any errors.
+    ///
+    /// Returns a list of error messages for invalid fields.
+    pub fn validate(&self) -> Vec<String> {
+        let mut errors = Vec::new();
+
+        if self.project_key.is_empty() {
+            errors.push("Project is required".to_string());
+        }
+
+        if self.issue_type_id.is_empty() {
+            errors.push("Issue type is required".to_string());
+        }
+
+        if self.summary.trim().is_empty() {
+            errors.push("Summary is required".to_string());
+        }
+
+        errors
+    }
+
+    /// Check if the form data is valid.
+    pub fn is_valid(&self) -> bool {
+        self.validate().is_empty()
+    }
 }
 
 /// The main application struct that holds all state.
@@ -165,6 +282,21 @@ pub struct App {
     previous_state: Option<AppState>,
     /// Command palette for quick command access.
     command_palette: CommandPalette,
+    // -------------------------------------------------------------------------
+    // Create Issue Form State
+    // -------------------------------------------------------------------------
+    /// Create issue form data.
+    create_issue_form: CreateIssueFormData,
+    /// Currently focused field in the create issue form.
+    create_issue_focus: CreateIssueFormField,
+    /// Validation errors for the create issue form.
+    create_issue_errors: Vec<String>,
+    /// Available issue types for the selected project.
+    available_issue_types: Vec<crate::api::types::IssueTypeMeta>,
+    /// Whether a create issue request is pending.
+    pending_create_issue: bool,
+    /// Whether a fetch issue types request is pending.
+    pending_fetch_issue_types: bool,
 }
 
 impl App {
@@ -245,6 +377,13 @@ impl App {
             help_view: HelpView::new(),
             previous_state: None,
             command_palette: CommandPalette::new(),
+            // Create issue form state
+            create_issue_form: CreateIssueFormData::new(),
+            create_issue_focus: CreateIssueFormField::default(),
+            create_issue_errors: Vec::new(),
+            available_issue_types: Vec::new(),
+            pending_create_issue: false,
+            pending_fetch_issue_types: false,
         }
     }
 
@@ -323,6 +462,13 @@ impl App {
             help_view: HelpView::new(),
             previous_state: None,
             command_palette: CommandPalette::new(),
+            // Create issue form state
+            create_issue_form: CreateIssueFormData::new(),
+            create_issue_focus: CreateIssueFormField::default(),
+            create_issue_errors: Vec::new(),
+            available_issue_types: Vec::new(),
+            pending_create_issue: false,
+            pending_fetch_issue_types: false,
         }
     }
 
@@ -765,6 +911,101 @@ impl App {
 
         self.notify_success(format!("'{}' set as default profile", profile_name));
         Ok(())
+    }
+
+    // ========================================================================
+    // Create Issue Form Methods
+    // ========================================================================
+
+    /// Initialize the create issue form with default values.
+    ///
+    /// This resets the form to its initial state, clears any errors,
+    /// and sets the focus to the first field.
+    pub fn init_create_issue_form(&mut self) {
+        self.create_issue_form.clear();
+        self.create_issue_focus = CreateIssueFormField::default();
+        self.create_issue_errors.clear();
+        self.available_issue_types.clear();
+        self.pending_create_issue = false;
+        self.pending_fetch_issue_types = false;
+    }
+
+    /// Clear the create issue form and reset all state.
+    pub fn clear_create_issue_form(&mut self) {
+        self.init_create_issue_form();
+    }
+
+    /// Get a reference to the create issue form data.
+    pub fn create_issue_form(&self) -> &CreateIssueFormData {
+        &self.create_issue_form
+    }
+
+    /// Get a mutable reference to the create issue form data.
+    pub fn create_issue_form_mut(&mut self) -> &mut CreateIssueFormData {
+        &mut self.create_issue_form
+    }
+
+    /// Get the currently focused field in the create issue form.
+    pub fn create_issue_focus(&self) -> CreateIssueFormField {
+        self.create_issue_focus
+    }
+
+    /// Set the focused field in the create issue form.
+    pub fn set_create_issue_focus(&mut self, field: CreateIssueFormField) {
+        self.create_issue_focus = field;
+    }
+
+    /// Move focus to the next field in the create issue form.
+    pub fn create_issue_focus_next(&mut self) {
+        self.create_issue_focus = self.create_issue_focus.next();
+    }
+
+    /// Move focus to the previous field in the create issue form.
+    pub fn create_issue_focus_prev(&mut self) {
+        self.create_issue_focus = self.create_issue_focus.prev();
+    }
+
+    /// Get the validation errors for the create issue form.
+    pub fn create_issue_errors(&self) -> &[String] {
+        &self.create_issue_errors
+    }
+
+    /// Validate the create issue form and update error state.
+    ///
+    /// Returns true if the form is valid, false otherwise.
+    pub fn validate_create_issue_form(&mut self) -> bool {
+        self.create_issue_errors = self.create_issue_form.validate();
+        self.create_issue_errors.is_empty()
+    }
+
+    /// Get the available issue types for the selected project.
+    pub fn available_issue_types(&self) -> &[crate::api::types::IssueTypeMeta] {
+        &self.available_issue_types
+    }
+
+    /// Set the available issue types for the selected project.
+    pub fn set_available_issue_types(&mut self, types: Vec<crate::api::types::IssueTypeMeta>) {
+        self.available_issue_types = types;
+    }
+
+    /// Check if a create issue request is pending.
+    pub fn is_create_issue_pending(&self) -> bool {
+        self.pending_create_issue
+    }
+
+    /// Set the pending create issue state.
+    pub fn set_pending_create_issue(&mut self, pending: bool) {
+        self.pending_create_issue = pending;
+    }
+
+    /// Check if a fetch issue types request is pending.
+    pub fn is_fetch_issue_types_pending(&self) -> bool {
+        self.pending_fetch_issue_types
+    }
+
+    /// Set the pending fetch issue types state.
+    pub fn set_pending_fetch_issue_types(&mut self, pending: bool) {
+        self.pending_fetch_issue_types = pending;
     }
 
     // ========================================================================
@@ -2376,6 +2617,10 @@ impl App {
             AppState::JqlInput => {
                 // JQL input is handled earlier in this function
                 // when jql_input.is_visible() is checked
+            }
+            AppState::CreateIssue => {
+                // Create issue form input handling will be implemented
+                // in a future task (Task 4.1/4.2)
             }
             AppState::Exiting => {
                 // No input handling while exiting

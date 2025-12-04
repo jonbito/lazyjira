@@ -458,6 +458,39 @@ impl IssueSuggestion {
 }
 
 // ============================================================================
+// Issue Creation Metadata Types
+// ============================================================================
+
+/// Issue type metadata from the create metadata endpoint.
+///
+/// Used to populate issue type selection when creating issues.
+/// Returned by `GET /rest/api/3/issue/createmeta/{projectIdOrKey}/issuetypes`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct IssueTypeMeta {
+    /// The issue type ID.
+    pub id: String,
+    /// The issue type name (e.g., "Bug", "Story", "Task").
+    pub name: String,
+    /// The issue type description.
+    #[serde(default)]
+    pub description: String,
+    /// Whether this is a subtask type.
+    #[serde(default)]
+    pub subtask: bool,
+}
+
+/// Response from the issue type metadata endpoint.
+///
+/// Returned by `GET /rest/api/3/issue/createmeta/{projectIdOrKey}/issuetypes`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IssueTypeMetaResponse {
+    /// The available issue types for the project.
+    #[serde(default)]
+    pub issue_types: Vec<IssueTypeMeta>,
+}
+
+// ============================================================================
 // Issue Creation Types
 // ============================================================================
 

@@ -296,6 +296,8 @@ pub enum ListAction {
     LoadMore,
     /// Open the selected issue in the browser (issue key).
     OpenInBrowser(String),
+    /// Open the create issue form.
+    OpenCreateIssue,
 }
 
 /// The issue list view state.
@@ -648,6 +650,10 @@ impl ListView {
                 if let Some(issue) = self.selected_issue() {
                     return Some(ListAction::OpenInBrowser(issue.key.clone()));
                 }
+            }
+            // Create new issue (only when search is empty, since 'n' is used for next match)
+            (KeyCode::Char('n'), KeyModifiers::NONE) if self.search.is_empty() => {
+                return Some(ListAction::OpenCreateIssue);
             }
             // Manual load more
             (KeyCode::Char('l'), KeyModifiers::CONTROL) => {
@@ -2170,5 +2176,49 @@ mod tests {
 
         // Ctrl+L should not affect header navigation (header mode doesn't handle Ctrl+L)
         // This tests that Ctrl+L doesn't conflict with 'l' navigation
+    }
+
+    // ========================================================================
+    // Create Issue (n key) Tests
+    // ========================================================================
+
+    #[test]
+    fn test_n_key_opens_create_issue_when_no_search() {
+        let mut view = ListView::new();
+        view.set_issues(vec![create_test_issue("TEST-1", "First")]);
+
+        // 'n' key should open create issue form when search is empty
+        let key = KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE);
+        let action = view.handle_input(key);
+
+        assert_eq!(action, Some(ListAction::OpenCreateIssue));
+    }
+
+    #[test]
+    fn test_n_key_navigates_search_when_search_active() {
+        let mut view = ListView::new();
+        view.set_issues(vec![
+            create_test_issue("TEST-1", "First"),
+            create_test_issue("TEST-2", "Second"),
+            create_test_issue("TEST-3", "Third"),
+        ]);
+        // Mark as no more pages so navigation doesn't trigger LoadMore
+        view.pagination.has_more = false;
+
+        // Setup search with matches (not active but has query)
+        view.search.push_char('T');
+        view.search.push_char('E');
+        view.search.push_char('S');
+        view.search.push_char('T');
+        view.search.update_matches(&view.issues);
+
+        // 'n' key should navigate to next search match, NOT open create issue
+        let key = KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE);
+        let action = view.handle_input(key);
+
+        // Action should be None (navigation happened) not OpenCreateIssue
+        assert!(action.is_none());
+        // Selection should have moved to next match
+        assert_eq!(view.selected, 1);
     }
 }

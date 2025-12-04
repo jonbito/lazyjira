@@ -1938,6 +1938,46 @@ impl App {
     }
 
     // ========================================================================
+    // Create Issue methods
+    // ========================================================================
+
+    /// Handle successful issue creation.
+    pub fn handle_create_issue_success(
+        &mut self,
+        response: crate::api::types::CreateIssueResponse,
+    ) {
+        info!(key = %response.key, "Issue created successfully");
+        self.stop_loading();
+        self.notify_success(format!("Issue {} created successfully", response.key));
+        // TODO: Task 5 will add logic to close the create issue form and refresh the issue list
+    }
+
+    /// Handle failure to create issue.
+    pub fn handle_create_issue_failure(&mut self, error: &str) {
+        warn!(error = %error, "Failed to create issue");
+        self.stop_loading();
+        self.notify_error(format!("Failed to create issue: {}", error));
+    }
+
+    /// Handle successful issue types fetch.
+    pub fn handle_issue_types_fetched(
+        &mut self,
+        issue_types: Vec<crate::api::types::IssueTypeMeta>,
+    ) {
+        debug!(count = issue_types.len(), "Loaded issue types");
+        self.stop_loading();
+        // TODO: Task 5 will add logic to store issue types in the create issue form
+        let _ = issue_types; // Suppress unused warning until Task 5
+    }
+
+    /// Handle failure to fetch issue types.
+    pub fn handle_fetch_issue_types_failure(&mut self, error: &str) {
+        warn!(error = %error, "Failed to fetch issue types");
+        self.stop_loading();
+        self.notify_error(format!("Failed to load issue types: {}", error));
+    }
+
+    // ========================================================================
     // External editor methods
     // ========================================================================
 

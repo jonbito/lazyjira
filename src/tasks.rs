@@ -23,8 +23,9 @@
 use tokio::sync::mpsc;
 
 use crate::api::types::{
-    Changelog, Comment, FieldUpdates, FilterOptions, Issue, IssueLinkType, IssueSuggestion,
-    IssueUpdateRequest, Priority, SearchResult, Transition, User,
+    Changelog, Comment, CreateIssueRequest, CreateIssueResponse, FieldUpdates, FilterOptions,
+    Issue, IssueLinkType, IssueSuggestion, IssueTypeMeta, IssueUpdateRequest, Priority,
+    SearchResult, Transition, User,
 };
 use crate::api::JiraClient;
 use crate::config::Profile;
@@ -129,6 +130,14 @@ pub enum ApiMessage {
         issue_key: String,
         result: Result<(), String>,
     },
+
+    /// Issue created
+    #[allow(dead_code)] // Will be used by CreateIssueView in future task
+    IssueCreated(Result<CreateIssueResponse, String>),
+
+    /// Issue types fetched for a project
+    #[allow(dead_code)] // Will be used by CreateIssueView in future task
+    IssueTypesFetched(Result<Vec<IssueTypeMeta>, String>),
 }
 
 /// Spawns background tasks for async operations.
@@ -586,6 +595,34 @@ impl TaskSpawner {
                 issue_key: key,
                 result,
             });
+        });
+    }
+
+    /// Spawn a task to create a new issue.
+    #[allow(dead_code)] // Will be used by CreateIssueView in future task
+    pub fn spawn_create_issue(&self, client: &JiraClient, request: CreateIssueRequest) {
+        let tx = self.tx.clone();
+        let client = client.clone();
+        tokio::spawn(async move {
+            let result = client
+                .create_issue(request)
+                .await
+                .map_err(|e| e.to_string());
+            let _ = tx.send(ApiMessage::IssueCreated(result));
+        });
+    }
+
+    /// Spawn a task to fetch issue types for a project.
+    #[allow(dead_code)] // Will be used by CreateIssueView in future task
+    pub fn spawn_fetch_issue_types(&self, client: &JiraClient, project_key: String) {
+        let tx = self.tx.clone();
+        let client = client.clone();
+        tokio::spawn(async move {
+            let result = client
+                .get_project_issue_types(&project_key)
+                .await
+                .map_err(|e| e.to_string());
+            let _ = tx.send(ApiMessage::IssueTypesFetched(result));
         });
     }
 }

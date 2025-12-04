@@ -9,11 +9,13 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     layout::{Position, Rect},
-    style::{Color, Style},
-    text::Line,
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
     Frame,
 };
+
+use crate::ui::theme::theme;
 
 /// A multi-line text editor component.
 #[derive(Debug, Clone)]
@@ -326,32 +328,49 @@ impl TextEditor {
         title: Option<&str>,
         border_color: Option<Color>,
     ) {
+        let t = theme();
+
         // Calculate visible area (accounting for borders)
         let visible_height = area.height.saturating_sub(2) as usize;
 
         // Ensure cursor is visible
         self.ensure_cursor_visible(visible_height);
 
-        // Build lines to display (no line highlighting - cursor is sufficient)
+        // Determine text style based on focus and content
+        let text_style = if focused {
+            Style::default().fg(t.accent)
+        } else {
+            Style::default().fg(t.input_fg)
+        };
+
+        // Build lines to display with proper styling
         let display_lines: Vec<Line> = self
             .lines
             .iter()
             .skip(self.scroll)
             .take(visible_height)
-            .map(|line| Line::from(line.as_str()))
+            .map(|line| Line::from(Span::styled(line.as_str(), text_style)))
             .collect();
 
         let border_style = if let Some(color) = border_color {
             Style::default().fg(color)
         } else if focused {
-            Style::default().fg(Color::Yellow)
+            Style::default().fg(t.border_focused)
         } else {
-            Style::default().fg(Color::DarkGray)
+            Style::default().fg(t.border)
+        };
+
+        let title_style = if border_color.is_some() || focused {
+            Style::default()
+                .fg(border_color.unwrap_or(t.accent))
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(t.fg)
         };
 
         let block = if let Some(title) = title {
             Block::default()
-                .title(title)
+                .title(Span::styled(title, title_style))
                 .borders(Borders::ALL)
                 .border_style(border_style)
         } else {

@@ -19,8 +19,8 @@ use ratatui::{
 use crate::api::auth;
 use crate::api::types::{
     AtlassianDoc, Changelog, CreateIssueFields, CreateIssueRequest, FieldUpdates, FilterOptions,
-    FilterState, Issue, IssueTypeRef, IssueUpdateRequest, Priority, PriorityRef, ProjectRef,
-    SavedFilter, Transition, User, UserRef,
+    FilterState, Issue, IssueTypeRef, IssueUpdateRequest, ParentRef, Priority, PriorityRef,
+    ProjectRef, SavedFilter, Transition, User, UserRef,
 };
 use crate::commands::CommandAction;
 use crate::config::{Config, ConfigError, Profile};
@@ -74,6 +74,8 @@ pub enum CreateIssueFormField {
     Project,
     /// Issue type selection field.
     IssueType,
+    /// Parent issue selection field (for subtasks).
+    Parent,
     /// Summary text input field.
     Summary,
     /// Description text input field.
@@ -88,10 +90,14 @@ pub enum CreateIssueFormField {
 
 impl CreateIssueFormField {
     /// Get the next field in tab order.
+    ///
+    /// Note: This provides a basic linear order. The actual navigation
+    /// may skip fields based on context (e.g., skip Parent when not a subtask).
     pub fn next(self) -> Self {
         match self {
             Self::Project => Self::IssueType,
-            Self::IssueType => Self::Summary,
+            Self::IssueType => Self::Parent,
+            Self::Parent => Self::Summary,
             Self::Summary => Self::Description,
             Self::Description => Self::Assignee,
             Self::Assignee => Self::Priority,
@@ -101,15 +107,39 @@ impl CreateIssueFormField {
     }
 
     /// Get the previous field in tab order.
+    ///
+    /// Note: This provides a basic linear order. The actual navigation
+    /// may skip fields based on context (e.g., skip Parent when not a subtask).
     pub fn prev(self) -> Self {
         match self {
             Self::Project => Self::Submit,
             Self::IssueType => Self::Project,
-            Self::Summary => Self::IssueType,
+            Self::Parent => Self::IssueType,
+            Self::Summary => Self::Parent,
             Self::Description => Self::Summary,
             Self::Assignee => Self::Description,
             Self::Priority => Self::Assignee,
             Self::Submit => Self::Priority,
+        }
+    }
+
+    /// Get the next field in tab order, skipping Parent if not needed.
+    pub fn next_for_form(self, is_subtask: bool) -> Self {
+        let next = self.next();
+        if next == Self::Parent && !is_subtask {
+            next.next()
+        } else {
+            next
+        }
+    }
+
+    /// Get the previous field in tab order, skipping Parent if not needed.
+    pub fn prev_for_form(self, is_subtask: bool) -> Self {
+        let prev = self.prev();
+        if prev == Self::Parent && !is_subtask {
+            prev.prev()
+        } else {
+            prev
         }
     }
 }
@@ -125,6 +155,10 @@ pub struct CreateIssueFormData {
     pub issue_type_id: String,
     /// The issue type name for display purposes.
     pub issue_type_name: String,
+    /// Whether the selected issue type is a subtask type.
+    pub is_subtask: bool,
+    /// The parent issue key (required for subtasks).
+    pub parent_issue_key: Option<String>,
     /// The issue summary (title).
     pub summary: String,
     /// The issue description.
@@ -166,6 +200,11 @@ impl CreateIssueFormData {
 
         if self.summary.trim().is_empty() {
             errors.push("Summary is required".to_string());
+        }
+
+        // Subtasks require a parent issue
+        if self.is_subtask && self.parent_issue_key.is_none() {
+            errors.push("Parent issue is required for subtasks".to_string());
         }
 
         errors
@@ -962,12 +1001,14 @@ impl App {
 
     /// Move focus to the next field in the create issue form.
     pub fn create_issue_focus_next(&mut self) {
-        self.create_issue_focus = self.create_issue_focus.next();
+        let is_subtask = self.create_issue_form.is_subtask;
+        self.create_issue_focus = self.create_issue_focus.next_for_form(is_subtask);
     }
 
     /// Move focus to the previous field in the create issue form.
     pub fn create_issue_focus_prev(&mut self) {
-        self.create_issue_focus = self.create_issue_focus.prev();
+        let is_subtask = self.create_issue_form.is_subtask;
+        self.create_issue_focus = self.create_issue_focus.prev_for_form(is_subtask);
     }
 
     /// Get the validation errors for the create issue form.
@@ -1133,17 +1174,26 @@ impl App {
                     return None;
                 }
 
+                // Check if no project is currently selected
+                let no_selection = self.create_issue_form.project_key.is_empty();
+
                 match key.code {
                     KeyCode::Left | KeyCode::Char('h') => {
                         let idx = self.create_issue_view.project_picker_index();
                         if idx > 0 {
                             self.create_issue_view.set_project_picker_index(idx - 1);
                             self.update_selected_project_from_picker(&projects);
+                        } else if no_selection {
+                            // Select the first project if none is selected
+                            self.update_selected_project_from_picker(&projects);
                         }
                     }
                     KeyCode::Right | KeyCode::Char('l') => {
                         let idx = self.create_issue_view.project_picker_index();
-                        if idx < projects.len() - 1 {
+                        if no_selection {
+                            // Select the current project if none is selected
+                            self.update_selected_project_from_picker(&projects);
+                        } else if idx < projects.len() - 1 {
                             self.create_issue_view.set_project_picker_index(idx + 1);
                             self.update_selected_project_from_picker(&projects);
                         }
@@ -1158,23 +1208,36 @@ impl App {
                     return None;
                 }
 
+                // Check if no issue type is currently selected
+                let no_selection = self.create_issue_form.issue_type_id.is_empty();
+
                 match key.code {
                     KeyCode::Left | KeyCode::Char('h') => {
                         let idx = self.create_issue_view.issue_type_picker_index();
                         if idx > 0 {
                             self.create_issue_view.set_issue_type_picker_index(idx - 1);
                             self.update_selected_issue_type_from_picker();
+                        } else if no_selection {
+                            // Select the first issue type if none is selected
+                            self.update_selected_issue_type_from_picker();
                         }
                     }
                     KeyCode::Right | KeyCode::Char('l') => {
                         let idx = self.create_issue_view.issue_type_picker_index();
-                        if idx < issue_types_len - 1 {
+                        if no_selection {
+                            // Select the current issue type if none is selected
+                            self.update_selected_issue_type_from_picker();
+                        } else if idx < issue_types_len - 1 {
                             self.create_issue_view.set_issue_type_picker_index(idx + 1);
                             self.update_selected_issue_type_from_picker();
                         }
                     }
                     _ => {}
                 }
+                None
+            }
+            CreateIssueFormField::Parent => {
+                self.create_issue_view.handle_parent_input(key);
                 None
             }
             CreateIssueFormField::Summary => {
@@ -1233,6 +1296,12 @@ impl App {
         if let Some(issue_type) = self.available_issue_types.get(idx) {
             self.create_issue_form.issue_type_id = issue_type.id.clone();
             self.create_issue_form.issue_type_name = issue_type.name.clone();
+            self.create_issue_form.is_subtask = issue_type.subtask;
+
+            // Clear parent if not a subtask
+            if !issue_type.subtask {
+                self.create_issue_form.parent_issue_key = None;
+            }
         }
     }
 
@@ -1240,6 +1309,16 @@ impl App {
     fn sync_create_issue_from_view(&mut self) {
         self.create_issue_form.summary = self.create_issue_view.summary().to_string();
         self.create_issue_form.description = self.create_issue_view.description();
+
+        // Sync parent issue key - only if it's a subtask type
+        if self.create_issue_form.is_subtask {
+            let parent_value = self.create_issue_view.parent().trim().to_string();
+            self.create_issue_form.parent_issue_key = if parent_value.is_empty() {
+                None
+            } else {
+                Some(parent_value)
+            };
+        }
     }
 
     /// Sync app state to the view's text inputs.
@@ -1248,6 +1327,13 @@ impl App {
             .set_summary(&self.create_issue_form.summary);
         self.create_issue_view
             .set_description(&self.create_issue_form.description);
+
+        // Sync parent issue key
+        if let Some(ref key) = self.create_issue_form.parent_issue_key {
+            self.create_issue_view.set_parent(key);
+        } else {
+            self.create_issue_view.set_parent("");
+        }
     }
 
     /// Close the create issue form and return to the issue list.
@@ -1289,6 +1375,12 @@ impl App {
             .as_ref()
             .map(|id| PriorityRef::new(id.clone()));
 
+        // Build optional parent reference (required for subtasks)
+        let parent = form
+            .parent_issue_key
+            .as_ref()
+            .map(|key| ParentRef { key: key.clone() });
+
         CreateIssueRequest {
             fields: CreateIssueFields {
                 project: ProjectRef {
@@ -1301,6 +1393,7 @@ impl App {
                 description,
                 assignee,
                 priority,
+                parent,
             },
         }
     }
@@ -2283,6 +2376,7 @@ impl App {
     pub fn handle_create_issue_failure(&mut self, error: &str) {
         warn!(error = %error, "Failed to create issue");
         self.stop_loading();
+        self.create_issue_view.set_submitting(false);
         self.notify_error(format!("Failed to create issue: {}", error));
     }
 

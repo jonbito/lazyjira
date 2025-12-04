@@ -64,6 +64,8 @@ pub enum CreateIssueAction {
 pub struct CreateIssueView {
     /// Summary text input.
     summary_input: TextInput,
+    /// Parent issue key text input (for subtasks).
+    parent_input: TextInput,
     /// Description text editor.
     description_editor: TextEditor,
     /// Project picker index (for navigating through projects).
@@ -86,8 +88,12 @@ impl CreateIssueView {
         let mut summary_input = TextInput::new();
         summary_input.set_placeholder("Enter issue summary...");
 
+        let mut parent_input = TextInput::new();
+        parent_input.set_placeholder("e.g., PROJ-123");
+
         Self {
             summary_input,
+            parent_input,
             description_editor: TextEditor::empty(),
             project_picker_index: 0,
             issue_type_picker_index: 0,
@@ -98,6 +104,7 @@ impl CreateIssueView {
     /// Reset the view to initial state.
     pub fn reset(&mut self) {
         self.summary_input.clear();
+        self.parent_input.clear();
         self.description_editor = TextEditor::empty();
         self.project_picker_index = 0;
         self.issue_type_picker_index = 0;
@@ -164,6 +171,21 @@ impl CreateIssueView {
         self.description_editor.handle_input(key);
     }
 
+    /// Set the parent issue key value.
+    pub fn set_parent(&mut self, value: &str) {
+        self.parent_input.set_value(value);
+    }
+
+    /// Get the parent issue key value.
+    pub fn parent(&self) -> &str {
+        self.parent_input.value()
+    }
+
+    /// Handle input for the parent issue field.
+    pub fn handle_parent_input(&mut self, key: KeyEvent) {
+        self.parent_input.handle_input(key);
+    }
+
     /// Handle keyboard input.
     ///
     /// Returns an optional action to be handled by the parent.
@@ -228,6 +250,10 @@ impl CreateIssueView {
         match focus {
             CreateIssueFormField::Project => self.handle_project_input(app, key),
             CreateIssueFormField::IssueType => self.handle_issue_type_input(app, key),
+            CreateIssueFormField::Parent => {
+                self.parent_input.handle_input(key);
+                None
+            }
             CreateIssueFormField::Summary => {
                 self.summary_input.handle_input(key);
                 None
@@ -249,16 +275,25 @@ impl CreateIssueView {
             return None;
         }
 
+        // Check if no project is currently selected
+        let no_selection = app.create_issue_form().project_key.is_empty();
+
         match key.code {
             KeyCode::Left | KeyCode::Char('h') => {
                 if self.project_picker_index > 0 {
                     self.project_picker_index -= 1;
                     self.update_selected_project(app, &projects);
+                } else if no_selection {
+                    // Select the first project if none is selected
+                    self.update_selected_project(app, &projects);
                 }
                 None
             }
             KeyCode::Right | KeyCode::Char('l') => {
-                if self.project_picker_index < projects.len() - 1 {
+                if no_selection {
+                    // Select the current project if none is selected
+                    self.update_selected_project(app, &projects);
+                } else if self.project_picker_index < projects.len() - 1 {
                     self.project_picker_index += 1;
                     self.update_selected_project(app, &projects);
                 }
@@ -279,16 +314,25 @@ impl CreateIssueView {
             return None;
         }
 
+        // Check if no issue type is currently selected
+        let no_selection = app.create_issue_form().issue_type_id.is_empty();
+
         match key.code {
             KeyCode::Left | KeyCode::Char('h') => {
                 if self.issue_type_picker_index > 0 {
                     self.issue_type_picker_index -= 1;
                     self.update_selected_issue_type(app);
+                } else if no_selection {
+                    // Select the first issue type if none is selected
+                    self.update_selected_issue_type(app);
                 }
                 None
             }
             KeyCode::Right | KeyCode::Char('l') => {
-                if self.issue_type_picker_index < issue_types.len() - 1 {
+                if no_selection {
+                    // Select the current issue type if none is selected
+                    self.update_selected_issue_type(app);
+                } else if self.issue_type_picker_index < issue_types.len() - 1 {
                     self.issue_type_picker_index += 1;
                     self.update_selected_issue_type(app);
                 }
@@ -402,9 +446,12 @@ impl CreateIssueView {
 
     /// Render the create issue view as a modal overlay.
     pub fn render(&mut self, data: &CreateIssueRenderData, frame: &mut Frame, area: Rect) {
-        // Calculate dialog size - form needs more height for description
+        // Calculate dialog size - form needs height for all fields:
+        // Project(3) + IssueType(3) + Parent(3 if subtask) + Summary(3) + Description(6) + Assignee(3) + Priority(3) + Errors(2) + Submit(1)
+        // Plus borders(2) and margin(2)
         let dialog_width = 70u16.min(area.width.saturating_sub(4));
-        let dialog_height = 24u16.min(area.height.saturating_sub(4));
+        let base_height = if data.form.is_subtask { 33u16 } else { 30u16 };
+        let dialog_height = base_height.min(area.height.saturating_sub(4));
 
         let dialog_area = centered_rect(area, dialog_width, dialog_height);
 
@@ -424,57 +471,62 @@ impl CreateIssueView {
         let inner = block.inner(dialog_area);
         frame.render_widget(block, dialog_area);
 
-        // Create layout for form fields
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .margin(1)
-            .constraints([
-                Constraint::Length(3), // Project
-                Constraint::Length(3), // Issue Type
-                Constraint::Length(3), // Summary
-                Constraint::Length(6), // Description (multi-line)
-                Constraint::Length(3), // Assignee (optional)
-                Constraint::Length(3), // Priority (optional)
-                Constraint::Length(2), // Errors
-                Constraint::Length(1), // Submit button
-            ])
-            .split(inner);
-
         let focus = data.focus;
 
-        // Render fields
-        self.render_project_field(
-            data,
-            frame,
-            chunks[0],
-            focus == CreateIssueFormField::Project,
-        );
-        self.render_issue_type_field(
-            data,
-            frame,
-            chunks[1],
-            focus == CreateIssueFormField::IssueType,
-        );
-        self.render_summary_field(frame, chunks[2], focus == CreateIssueFormField::Summary);
-        self.render_description_field(frame, chunks[3], focus == CreateIssueFormField::Description);
-        self.render_assignee_field(
-            data,
-            frame,
-            chunks[4],
-            focus == CreateIssueFormField::Assignee,
-        );
-        self.render_priority_field(
-            data,
-            frame,
-            chunks[5],
-            focus == CreateIssueFormField::Priority,
-        );
+        // Create layout for form fields - different layout for subtasks
+        if data.form.is_subtask {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .margin(1)
+                .constraints([
+                    Constraint::Length(3), // Project
+                    Constraint::Length(3), // Issue Type
+                    Constraint::Length(3), // Parent Issue (for subtasks)
+                    Constraint::Length(3), // Summary
+                    Constraint::Length(6), // Description (multi-line)
+                    Constraint::Length(3), // Assignee (optional)
+                    Constraint::Length(3), // Priority (optional)
+                    Constraint::Length(2), // Errors
+                    Constraint::Length(1), // Submit button
+                ])
+                .split(inner);
 
-        // Render errors if present
-        self.render_errors(data, frame, chunks[6]);
+            // Render fields
+            self.render_project_field(data, frame, chunks[0], focus == CreateIssueFormField::Project);
+            self.render_issue_type_field(data, frame, chunks[1], focus == CreateIssueFormField::IssueType);
+            self.render_parent_field(data, frame, chunks[2], focus == CreateIssueFormField::Parent);
+            self.render_summary_field(frame, chunks[3], focus == CreateIssueFormField::Summary);
+            self.render_description_field(frame, chunks[4], focus == CreateIssueFormField::Description);
+            self.render_assignee_field(data, frame, chunks[5], focus == CreateIssueFormField::Assignee);
+            self.render_priority_field(data, frame, chunks[6], focus == CreateIssueFormField::Priority);
+            self.render_errors(data, frame, chunks[7]);
+            self.render_submit_button(frame, chunks[8], focus == CreateIssueFormField::Submit);
+        } else {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .margin(1)
+                .constraints([
+                    Constraint::Length(3), // Project
+                    Constraint::Length(3), // Issue Type
+                    Constraint::Length(3), // Summary
+                    Constraint::Length(6), // Description (multi-line)
+                    Constraint::Length(3), // Assignee (optional)
+                    Constraint::Length(3), // Priority (optional)
+                    Constraint::Length(2), // Errors
+                    Constraint::Length(1), // Submit button
+                ])
+                .split(inner);
 
-        // Render submit button
-        self.render_submit_button(frame, chunks[7], focus == CreateIssueFormField::Submit);
+            // Render fields
+            self.render_project_field(data, frame, chunks[0], focus == CreateIssueFormField::Project);
+            self.render_issue_type_field(data, frame, chunks[1], focus == CreateIssueFormField::IssueType);
+            self.render_summary_field(frame, chunks[2], focus == CreateIssueFormField::Summary);
+            self.render_description_field(frame, chunks[3], focus == CreateIssueFormField::Description);
+            self.render_assignee_field(data, frame, chunks[4], focus == CreateIssueFormField::Assignee);
+            self.render_priority_field(data, frame, chunks[5], focus == CreateIssueFormField::Priority);
+            self.render_errors(data, frame, chunks[6]);
+            self.render_submit_button(frame, chunks[7], focus == CreateIssueFormField::Submit);
+        }
     }
 
     /// Render the project picker field.
@@ -583,6 +635,18 @@ impl CreateIssueView {
         let paragraph = Paragraph::new(display_value).style(style).block(block);
 
         frame.render_widget(paragraph, area);
+    }
+
+    /// Render the parent issue input field (for subtasks).
+    fn render_parent_field(
+        &self,
+        _data: &CreateIssueRenderData,
+        frame: &mut Frame,
+        area: Rect,
+        focused: bool,
+    ) {
+        self.parent_input
+            .render_with_label(frame, area, "Parent Issue *", focused);
     }
 
     /// Render the summary input field.

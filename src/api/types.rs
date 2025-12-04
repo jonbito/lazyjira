@@ -523,6 +523,9 @@ pub struct CreateIssueFields {
     /// The priority of the issue.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub priority: Option<PriorityRef>,
+    /// The parent issue (required for subtasks).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent: Option<ParentRef>,
 }
 
 /// Reference to a project by key.
@@ -541,6 +544,15 @@ pub struct ProjectRef {
 pub struct IssueTypeRef {
     /// The issue type ID.
     pub id: String,
+}
+
+/// Reference to a parent issue by key.
+///
+/// Used when creating subtasks to specify the parent issue.
+#[derive(Debug, Clone, Serialize)]
+pub struct ParentRef {
+    /// The parent issue key (e.g., "PROJ-123").
+    pub key: String,
 }
 
 /// Response from creating a new JIRA issue.

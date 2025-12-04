@@ -14,9 +14,10 @@ use super::types::{
     AddCommentRequest, BoardsResponse, Changelog, Comment, CommentsResponse,
     CreateIssueLinkRequest, CreateIssueRequest, CreateIssueResponse, CurrentUser, FieldUpdates,
     FilterOption, FilterOptions, Issue, IssueKeyRef, IssueLinkType, IssueLinkTypeRef,
-    IssueLinkTypesResponse, IssuePickerResponse, IssueSuggestion, IssueUpdateRequest,
-    LabelOperation, LabelsResponse, Priority, Project, SearchResult, SprintsResponse, Status,
-    Transition, TransitionRef, TransitionRequest, TransitionsResponse, UpdateOperations, User,
+    IssueLinkTypesResponse, IssuePickerResponse, IssueSuggestion, IssueTypeMeta,
+    IssueTypeMetaResponse, IssueUpdateRequest, LabelOperation, LabelsResponse, Priority, Project,
+    SearchResult, SprintsResponse, Status, Transition, TransitionRef, TransitionRequest,
+    TransitionsResponse, UpdateOperations, User,
 };
 use crate::config::Profile;
 
@@ -1164,6 +1165,58 @@ impl JiraClient {
 
         info!("Successfully created issue {}", response.key);
         Ok(response)
+    }
+
+    /// Get available issue types for a project.
+    ///
+    /// Fetches the issue types that can be used when creating issues in the specified project.
+    /// This is useful for populating issue type dropdowns in create issue forms.
+    ///
+    /// # Arguments
+    ///
+    /// * `project_key` - The project key (e.g., "PROJ")
+    ///
+    /// # Returns
+    ///
+    /// A list of `IssueTypeMeta` containing issue type metadata for the project.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The project doesn't exist (404)
+    /// - Permission is denied (403)
+    /// - The API call fails
+    #[allow(dead_code)] // Will be used by CreateIssueView in future task
+    #[instrument(skip(self), fields(project = %project_key))]
+    pub async fn get_project_issue_types(&self, project_key: &str) -> Result<Vec<IssueTypeMeta>> {
+        debug!("Fetching issue types for project {}", project_key);
+
+        let url = format!(
+            "{}/rest/api/3/issue/createmeta/{}/issuetypes",
+            self.base_url,
+            urlencoding::encode(project_key)
+        );
+
+        let response: IssueTypeMetaResponse = self.get(&url).await.map_err(|e| {
+            error!(
+                "Failed to get issue types for project {}: {}",
+                project_key, e
+            );
+            match e {
+                ApiError::NotFound(_) => {
+                    ApiError::NotFound(format!("Project '{}' not found", project_key))
+                }
+                ApiError::Forbidden => ApiError::PermissionDenied,
+                other => other,
+            }
+        })?;
+
+        debug!(
+            "Found {} issue types for project {}",
+            response.issue_types.len(),
+            project_key
+        );
+        Ok(response.issue_types)
     }
 
     // ========================================================================

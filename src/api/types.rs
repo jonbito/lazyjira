@@ -457,6 +457,73 @@ impl IssueSuggestion {
     }
 }
 
+// ============================================================================
+// Issue Creation Types
+// ============================================================================
+
+/// Request body for creating a new JIRA issue.
+///
+/// Used with `POST /rest/api/3/issue`.
+#[derive(Debug, Clone, Serialize)]
+pub struct CreateIssueRequest {
+    /// The fields for the new issue.
+    pub fields: CreateIssueFields,
+}
+
+/// Fields for creating a new JIRA issue.
+///
+/// Contains all the data needed to create an issue via the JIRA API.
+#[derive(Debug, Clone, Serialize)]
+pub struct CreateIssueFields {
+    /// The project to create the issue in.
+    pub project: ProjectRef,
+    /// The type of issue to create.
+    pub issuetype: IssueTypeRef,
+    /// The issue summary/title.
+    pub summary: String,
+    /// The issue description in Atlassian Document Format.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<AtlassianDoc>,
+    /// The user to assign the issue to.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assignee: Option<UserRef>,
+    /// The priority of the issue.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub priority: Option<PriorityRef>,
+}
+
+/// Reference to a project by key.
+///
+/// Used when creating issues to specify which project they belong to.
+#[derive(Debug, Clone, Serialize)]
+pub struct ProjectRef {
+    /// The project key (e.g., "PROJ").
+    pub key: String,
+}
+
+/// Reference to an issue type by ID.
+///
+/// Used when creating issues to specify the type (Bug, Story, Task, etc.).
+#[derive(Debug, Clone, Serialize)]
+pub struct IssueTypeRef {
+    /// The issue type ID.
+    pub id: String,
+}
+
+/// Response from creating a new JIRA issue.
+///
+/// Returned by `POST /rest/api/3/issue`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct CreateIssueResponse {
+    /// The new issue's ID.
+    pub id: String,
+    /// The new issue's key (e.g., "PROJ-123").
+    pub key: String,
+    /// URL to the new issue.
+    #[serde(rename = "self")]
+    pub self_url: String,
+}
+
 /// Issue status.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]

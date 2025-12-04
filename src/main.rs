@@ -566,6 +566,26 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
                         app.handle_delete_link_failure(&e);
                     }
                 },
+                ApiMessage::IssueCreated(result) => match result {
+                    Ok(response) => {
+                        info!("Issue created successfully: {}", response.key);
+                        app.handle_create_issue_success(response);
+                    }
+                    Err(e) => {
+                        error!("Failed to create issue: {}", e);
+                        app.handle_create_issue_failure(&e);
+                    }
+                },
+                ApiMessage::IssueTypesFetched(result) => match result {
+                    Ok(issue_types) => {
+                        debug!("Loaded {} issue types", issue_types.len());
+                        app.handle_issue_types_fetched(issue_types);
+                    }
+                    Err(e) => {
+                        error!("Failed to fetch issue types: {}", e);
+                        app.handle_fetch_issue_types_failure(&e);
+                    }
+                },
             }
         }
 

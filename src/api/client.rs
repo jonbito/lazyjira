@@ -12,11 +12,11 @@ use super::auth::Auth;
 use super::error::{ApiError, Result};
 use super::types::{
     AddCommentRequest, BoardsResponse, Changelog, Comment, CommentsResponse,
-    CreateIssueLinkRequest, CurrentUser, FieldUpdates, FilterOption, FilterOptions, Issue,
-    IssueKeyRef, IssueLinkType, IssueLinkTypeRef, IssueLinkTypesResponse, IssuePickerResponse,
-    IssueSuggestion, IssueUpdateRequest, LabelOperation, LabelsResponse, Priority, Project,
-    SearchResult, SprintsResponse, Status, Transition, TransitionRef, TransitionRequest,
-    TransitionsResponse, UpdateOperations, User,
+    CreateIssueLinkRequest, CreateIssueRequest, CreateIssueResponse, CurrentUser, FieldUpdates,
+    FilterOption, FilterOptions, Issue, IssueKeyRef, IssueLinkType, IssueLinkTypeRef,
+    IssueLinkTypesResponse, IssuePickerResponse, IssueSuggestion, IssueUpdateRequest,
+    LabelOperation, LabelsResponse, Priority, Project, SearchResult, SprintsResponse, Status,
+    Transition, TransitionRef, TransitionRequest, TransitionsResponse, UpdateOperations, User,
 };
 use crate::config::Profile;
 
@@ -1116,6 +1116,54 @@ impl JiraClient {
             update: None,
         };
         self.update_issue(key, update).await
+    }
+
+    // ========================================================================
+    // Issue Creation Operations
+    // ========================================================================
+
+    /// Create a new JIRA issue.
+    ///
+    /// # Arguments
+    ///
+    /// * `request` - The create issue request containing all issue fields
+    ///
+    /// # Returns
+    ///
+    /// A `CreateIssueResponse` containing the new issue's ID, key, and URL.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Permission is denied (403)
+    /// - Validation fails (400) - e.g., required fields missing
+    /// - The project or issue type doesn't exist
+    #[allow(dead_code)] // Will be used by CreateIssueView in future task
+    #[instrument(skip(self, request))]
+    pub async fn create_issue(&self, request: CreateIssueRequest) -> Result<CreateIssueResponse> {
+        let url = format!("{}/rest/api/3/issue", self.base_url);
+        info!(
+            "Creating issue in project {} with type {}",
+            request.fields.project.key, request.fields.issuetype.id
+        );
+
+        let json_value = serde_json::to_value(&request).map_err(|e| {
+            ApiError::InvalidResponse(format!("Failed to serialize create issue request: {}", e))
+        })?;
+
+        let response: CreateIssueResponse = self.post(&url, &json_value).await.map_err(|e| {
+            error!("Failed to create issue: {}", e);
+            match e {
+                ApiError::Forbidden => ApiError::PermissionDenied,
+                ApiError::NotFound(msg) => {
+                    ApiError::CreateFailed(format!("Project or issue type not found: {}", msg))
+                }
+                other => ApiError::CreateFailed(other.to_string()),
+            }
+        })?;
+
+        info!("Successfully created issue {}", response.key);
+        Ok(response)
     }
 
     // ========================================================================

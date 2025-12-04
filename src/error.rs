@@ -111,6 +111,7 @@ impl AppError {
                 }
                 ApiError::UpdateFailed(msg) => format!("Failed to update issue: {}", msg),
                 ApiError::TransitionFailed(msg) => format!("Failed to change issue status: {}", msg),
+                ApiError::CreateFailed(msg) => format!("Failed to create issue: {}", msg),
                 ApiError::Conflict => {
                     "This issue was modified by someone else. Please refresh and try again."
                         .to_string()
@@ -151,6 +152,7 @@ impl AppError {
                 | AppError::Api(ApiError::NotFound(_))
                 | AppError::Api(ApiError::UpdateFailed(_))
                 | AppError::Api(ApiError::TransitionFailed(_))
+                | AppError::Api(ApiError::CreateFailed(_))
                 | AppError::Api(ApiError::Conflict)
         )
     }

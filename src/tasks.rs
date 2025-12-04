@@ -132,11 +132,9 @@ pub enum ApiMessage {
     },
 
     /// Issue created
-    #[allow(dead_code)] // Will be used by CreateIssueView in future task
     IssueCreated(Result<CreateIssueResponse, String>),
 
     /// Issue types fetched for a project
-    #[allow(dead_code)] // Will be used by CreateIssueView in future task
     IssueTypesFetched(Result<Vec<IssueTypeMeta>, String>),
 }
 
@@ -599,7 +597,6 @@ impl TaskSpawner {
     }
 
     /// Spawn a task to create a new issue.
-    #[allow(dead_code)] // Will be used by CreateIssueView in future task
     pub fn spawn_create_issue(&self, client: &JiraClient, request: CreateIssueRequest) {
         let tx = self.tx.clone();
         let client = client.clone();
@@ -613,7 +610,6 @@ impl TaskSpawner {
     }
 
     /// Spawn a task to fetch issue types for a project.
-    #[allow(dead_code)] // Will be used by CreateIssueView in future task
     pub fn spawn_fetch_issue_types(&self, client: &JiraClient, project_key: String) {
         let tx = self.tx.clone();
         let client = client.clone();

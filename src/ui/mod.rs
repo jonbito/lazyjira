@@ -14,7 +14,8 @@ pub use components::{
 };
 pub use theme::{init_theme, load_theme};
 pub use views::{
-    DeleteProfileDialog, DetailAction, DetailView, FilterPanelAction, FilterPanelView, FormField,
-    HelpAction, HelpView, ListAction, ListView, ProfileFormAction, ProfileFormData,
-    ProfileFormView, ProfileListAction, ProfileListView, ProfileSummary,
+    CreateIssueAction, CreateIssueRenderData, CreateIssueView, DeleteProfileDialog, DetailAction,
+    DetailView, FilterPanelAction, FilterPanelView, FormField, HelpAction, HelpView, ListAction,
+    ListView, ProfileFormAction, ProfileFormData, ProfileFormView, ProfileListAction,
+    ProfileListView, ProfileSummary,
 };

@@ -54,6 +54,11 @@ pub enum ApiError {
     #[error("Failed to transition issue: {0}")]
     TransitionFailed(String),
 
+    /// Failed to create an issue.
+    #[allow(dead_code)] // Will be used by create_issue() method
+    #[error("Failed to create issue: {0}")]
+    CreateFailed(String),
+
     /// Conflict error - issue was modified by another user.
     #[error("Conflict: issue was modified by another user. Please refresh and try again")]
     Conflict,

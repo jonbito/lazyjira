@@ -1191,7 +1191,7 @@ impl ListView {
         } else if !self.search.is_empty() {
             "n/N:next/prev match  /:new search  Esc:clear"
         } else {
-            "j/k:nav  /:search  s:sort  f:filter  ^L:more  o:open  ?:help"
+            "j/k:nav  /:search  s:sort  f:filter  ^L:more  o:open  n:new  ?:help"
         };
         spans.push(Span::styled(help_text, Style::default().fg(t.dim)));
 

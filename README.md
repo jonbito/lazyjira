@@ -108,6 +108,7 @@ cargo build --release
 | `:` / `/` | Enter JQL query |
 | `o` | Open issue in browser |
 | `Ctrl+L` | Load more issues (pagination) |
+| `n` | Create new issue |
 | `q` | Quit |
 
 ### Issue Detail

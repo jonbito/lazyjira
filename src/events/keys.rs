@@ -144,6 +144,12 @@ pub fn get_keybindings() -> Vec<Keybinding> {
             KeyContext::IssueList,
         ),
         Keybinding::new("q", "quit", "Quit application", KeyContext::IssueList),
+        Keybinding::new(
+            "n",
+            "new_issue",
+            "Create new issue",
+            KeyContext::IssueList,
+        ),
         // Issue Detail keybindings
         Keybinding::new(
             "j / ↓",
@@ -278,7 +284,7 @@ pub fn get_context_hints(context: KeyContext) -> &'static str {
     match context {
         KeyContext::Global => "[?] help",
         KeyContext::IssueList => {
-            "[j/k] navigate  [Enter] open  [f] filter  [F] saved  [/] search  [?] help"
+            "[j/k] navigate  [Enter] open  [n] new  [f] filter  [F] saved  [/] search  [?] help"
         }
         KeyContext::IssueDetail => {
             "[e] edit  [c] comment  [s] status  [a] assign  [q] back  [?] help"

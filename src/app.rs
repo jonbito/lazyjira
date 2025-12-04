@@ -18,8 +18,9 @@ use ratatui::{
 
 use crate::api::auth;
 use crate::api::types::{
-    Changelog, FieldUpdates, FilterOptions, FilterState, Issue, IssueUpdateRequest, Priority,
-    SavedFilter, Transition, User,
+    AtlassianDoc, Changelog, CreateIssueFields, CreateIssueRequest, FieldUpdates, FilterOptions,
+    FilterState, Issue, IssueTypeRef, IssueUpdateRequest, Priority, PriorityRef, ProjectRef,
+    SavedFilter, Transition, User, UserRef,
 };
 use crate::commands::CommandAction;
 use crate::config::{Config, ConfigError, Profile};
@@ -27,12 +28,12 @@ use crate::error::AppError;
 use crate::events::Event;
 use crate::events::KeyContext;
 use crate::ui::{
-    render_context_help, CommandPalette, CommandPaletteAction, ConfirmDialog, DeleteProfileDialog,
-    DetailAction, DetailView, ErrorDialog, FilterPanelAction, FilterPanelView, FormField,
-    HelpAction, HelpView, JqlAction, JqlInput, ListAction, ListView, LoadingIndicator,
-    Notification, NotificationManager, ProfileFormAction, ProfileFormData, ProfileFormView,
-    ProfileListAction, ProfileListView, ProfilePicker, ProfilePickerAction, ProfileSummary,
-    SavedFiltersAction, SavedFiltersDialog,
+    render_context_help, CommandPalette, CommandPaletteAction, ConfirmDialog, CreateIssueAction,
+    CreateIssueRenderData, CreateIssueView, DeleteProfileDialog, DetailAction, DetailView,
+    ErrorDialog, FilterPanelAction, FilterPanelView, FormField, HelpAction, HelpView, JqlAction,
+    JqlInput, ListAction, ListView, LoadingIndicator, Notification, NotificationManager,
+    ProfileFormAction, ProfileFormData, ProfileFormView, ProfileListAction, ProfileListView,
+    ProfilePicker, ProfilePickerAction, ProfileSummary, SavedFiltersAction, SavedFiltersDialog,
 };
 
 /// The current view/screen state of the application.
@@ -285,6 +286,8 @@ pub struct App {
     // -------------------------------------------------------------------------
     // Create Issue Form State
     // -------------------------------------------------------------------------
+    /// Create issue view component.
+    create_issue_view: CreateIssueView,
     /// Create issue form data.
     create_issue_form: CreateIssueFormData,
     /// Currently focused field in the create issue form.
@@ -378,6 +381,7 @@ impl App {
             previous_state: None,
             command_palette: CommandPalette::new(),
             // Create issue form state
+            create_issue_view: CreateIssueView::new(),
             create_issue_form: CreateIssueFormData::new(),
             create_issue_focus: CreateIssueFormField::default(),
             create_issue_errors: Vec::new(),
@@ -463,6 +467,7 @@ impl App {
             previous_state: None,
             command_palette: CommandPalette::new(),
             // Create issue form state
+            create_issue_view: CreateIssueView::new(),
             create_issue_form: CreateIssueFormData::new(),
             create_issue_focus: CreateIssueFormField::default(),
             create_issue_errors: Vec::new(),
@@ -970,6 +975,31 @@ impl App {
         &self.create_issue_errors
     }
 
+    /// Create the render data for the create issue view.
+    ///
+    /// This extracts all necessary data from the App to pass to the CreateIssueView
+    /// for rendering, avoiding borrow checker issues by cloning the data.
+    pub fn create_issue_render_data(&self) -> CreateIssueRenderData {
+        let projects = if let Some(options) = self.filter_options() {
+            options
+                .projects
+                .iter()
+                .map(|p| (p.id.clone(), p.label.clone()))
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        CreateIssueRenderData {
+            focus: self.create_issue_focus,
+            form: self.create_issue_form.clone(),
+            issue_types: self.available_issue_types.clone(),
+            is_fetching_issue_types: self.pending_fetch_issue_types,
+            projects,
+            errors: self.create_issue_errors.clone(),
+        }
+    }
+
     /// Validate the create issue form and update error state.
     ///
     /// Returns true if the form is valid, false otherwise.
@@ -1028,6 +1058,198 @@ impl App {
         self.state = AppState::CreateIssue;
     }
 
+    /// Handle keyboard input for the create issue form.
+    ///
+    /// This method handles input directly in App to avoid borrow conflicts
+    /// with CreateIssueView (which is a field of App).
+    fn handle_create_issue_input(
+        &mut self,
+        key: crossterm::event::KeyEvent,
+    ) -> Option<CreateIssueAction> {
+        use crossterm::event::{KeyCode, KeyModifiers};
+
+        // Don't handle input while submitting
+        if self.create_issue_view.is_submitting() {
+            return None;
+        }
+
+        let focus = self.create_issue_focus;
+
+        match (key.code, key.modifiers) {
+            // Tab - next field
+            (KeyCode::Tab, KeyModifiers::NONE) => {
+                self.sync_create_issue_from_view();
+                self.create_issue_focus_next();
+                self.sync_create_issue_to_view();
+                None
+            }
+            // Shift+Tab or BackTab - previous field
+            (KeyCode::BackTab, _) | (KeyCode::Tab, KeyModifiers::SHIFT) => {
+                self.sync_create_issue_from_view();
+                self.create_issue_focus_prev();
+                self.sync_create_issue_to_view();
+                None
+            }
+            // Escape - cancel
+            (KeyCode::Esc, _) => {
+                self.create_issue_view.reset();
+                Some(CreateIssueAction::Cancel)
+            }
+            // Enter on submit button - validate and submit
+            (KeyCode::Enter, KeyModifiers::NONE) if focus == CreateIssueFormField::Submit => {
+                self.sync_create_issue_from_view();
+                if self.validate_create_issue_form() {
+                    self.create_issue_view.set_submitting(true);
+                    self.set_pending_create_issue(true);
+                    Some(CreateIssueAction::Submit)
+                } else {
+                    None
+                }
+            }
+            // Enter in other fields - move to next field (except description which uses Enter)
+            (KeyCode::Enter, KeyModifiers::NONE) if focus != CreateIssueFormField::Description => {
+                self.sync_create_issue_from_view();
+                self.create_issue_focus_next();
+                self.sync_create_issue_to_view();
+                None
+            }
+            // Handle field-specific input
+            _ => self.handle_create_issue_field_input(key, focus),
+        }
+    }
+
+    /// Handle input for specific fields in the create issue form.
+    fn handle_create_issue_field_input(
+        &mut self,
+        key: crossterm::event::KeyEvent,
+        focus: CreateIssueFormField,
+    ) -> Option<CreateIssueAction> {
+        use crossterm::event::KeyCode;
+
+        match focus {
+            CreateIssueFormField::Project => {
+                let projects = self.get_available_projects_for_create_issue();
+                if projects.is_empty() {
+                    return None;
+                }
+
+                match key.code {
+                    KeyCode::Left | KeyCode::Char('h') => {
+                        let idx = self.create_issue_view.project_picker_index();
+                        if idx > 0 {
+                            self.create_issue_view.set_project_picker_index(idx - 1);
+                            self.update_selected_project_from_picker(&projects);
+                        }
+                    }
+                    KeyCode::Right | KeyCode::Char('l') => {
+                        let idx = self.create_issue_view.project_picker_index();
+                        if idx < projects.len() - 1 {
+                            self.create_issue_view.set_project_picker_index(idx + 1);
+                            self.update_selected_project_from_picker(&projects);
+                        }
+                    }
+                    _ => {}
+                }
+                None
+            }
+            CreateIssueFormField::IssueType => {
+                let issue_types_len = self.available_issue_types.len();
+                if issue_types_len == 0 {
+                    return None;
+                }
+
+                match key.code {
+                    KeyCode::Left | KeyCode::Char('h') => {
+                        let idx = self.create_issue_view.issue_type_picker_index();
+                        if idx > 0 {
+                            self.create_issue_view.set_issue_type_picker_index(idx - 1);
+                            self.update_selected_issue_type_from_picker();
+                        }
+                    }
+                    KeyCode::Right | KeyCode::Char('l') => {
+                        let idx = self.create_issue_view.issue_type_picker_index();
+                        if idx < issue_types_len - 1 {
+                            self.create_issue_view.set_issue_type_picker_index(idx + 1);
+                            self.update_selected_issue_type_from_picker();
+                        }
+                    }
+                    _ => {}
+                }
+                None
+            }
+            CreateIssueFormField::Summary => {
+                self.create_issue_view.handle_summary_input(key);
+                None
+            }
+            CreateIssueFormField::Description => {
+                self.create_issue_view.handle_description_input(key);
+                None
+            }
+            CreateIssueFormField::Assignee | CreateIssueFormField::Priority => {
+                // TODO: Implement assignee/priority pickers in future task
+                None
+            }
+            CreateIssueFormField::Submit => None,
+        }
+    }
+
+    /// Get available projects for the create issue form.
+    fn get_available_projects_for_create_issue(&self) -> Vec<(String, String)> {
+        if let Some(options) = self.filter_options() {
+            options
+                .projects
+                .iter()
+                .map(|p| (p.id.clone(), p.label.clone()))
+                .collect()
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// Update the selected project from the picker index.
+    fn update_selected_project_from_picker(&mut self, projects: &[(String, String)]) {
+        let idx = self.create_issue_view.project_picker_index();
+        if let Some((key, name)) = projects.get(idx) {
+            let old_project = self.create_issue_form.project_key.clone();
+            self.create_issue_form.project_key = key.clone();
+            self.create_issue_form.project_name = name.clone();
+
+            // If project changed, clear issue type and fetch new ones
+            if old_project != *key {
+                self.create_issue_form.issue_type_id.clear();
+                self.create_issue_form.issue_type_name.clear();
+                self.available_issue_types.clear();
+                self.create_issue_view.set_issue_type_picker_index(0);
+                // Trigger fetch of issue types for the new project
+                // (take_pending_fetch_issue_types will use create_issue_form.project_key)
+                self.pending_fetch_issue_types = true;
+            }
+        }
+    }
+
+    /// Update the selected issue type from the picker index.
+    fn update_selected_issue_type_from_picker(&mut self) {
+        let idx = self.create_issue_view.issue_type_picker_index();
+        if let Some(issue_type) = self.available_issue_types.get(idx) {
+            self.create_issue_form.issue_type_id = issue_type.id.clone();
+            self.create_issue_form.issue_type_name = issue_type.name.clone();
+        }
+    }
+
+    /// Sync form data from the view's text inputs to app state.
+    fn sync_create_issue_from_view(&mut self) {
+        self.create_issue_form.summary = self.create_issue_view.summary().to_string();
+        self.create_issue_form.description = self.create_issue_view.description();
+    }
+
+    /// Sync app state to the view's text inputs.
+    fn sync_create_issue_to_view(&mut self) {
+        self.create_issue_view
+            .set_summary(&self.create_issue_form.summary);
+        self.create_issue_view
+            .set_description(&self.create_issue_form.description);
+    }
+
     /// Close the create issue form and return to the issue list.
     ///
     /// If `refresh_list` is true, the issue list will be refreshed after closing.
@@ -1042,6 +1264,73 @@ impl App {
             self.list_view.set_loading(true);
             // Note: The actual async refresh will be triggered by the main loop
             // when it detects list_view.is_loading()
+        }
+    }
+
+    /// Build a CreateIssueRequest from the current form data.
+    ///
+    /// This converts the form state into the API request format.
+    pub fn build_create_issue_request(&self) -> CreateIssueRequest {
+        let form = &self.create_issue_form;
+
+        // Convert plain text description to Atlassian Document Format if present
+        let description = if form.description.trim().is_empty() {
+            None
+        } else {
+            Some(AtlassianDoc::from_plain_text(&form.description))
+        };
+
+        // Build optional assignee reference
+        let assignee = form.assignee_id.as_ref().map(|id| UserRef::new(id.clone()));
+
+        // Build optional priority reference
+        let priority = form
+            .priority_id
+            .as_ref()
+            .map(|id| PriorityRef::new(id.clone()));
+
+        CreateIssueRequest {
+            fields: CreateIssueFields {
+                project: ProjectRef {
+                    key: form.project_key.clone(),
+                },
+                issuetype: IssueTypeRef {
+                    id: form.issue_type_id.clone(),
+                },
+                summary: form.summary.clone(),
+                description,
+                assignee,
+                priority,
+            },
+        }
+    }
+
+    /// Take the pending create issue request if set.
+    ///
+    /// Returns the CreateIssueRequest if creation is pending, clearing the flag.
+    pub fn take_pending_create_issue(&mut self) -> Option<CreateIssueRequest> {
+        if self.pending_create_issue {
+            self.pending_create_issue = false;
+            Some(self.build_create_issue_request())
+        } else {
+            None
+        }
+    }
+
+    /// Take the pending fetch issue types request if set.
+    ///
+    /// Returns the project key if a fetch is pending, clearing the flag.
+    pub fn take_pending_fetch_issue_types(&mut self) -> Option<String> {
+        if self.pending_fetch_issue_types {
+            self.pending_fetch_issue_types = false;
+            let project_key = self.create_issue_form.project_key.clone();
+            if project_key.is_empty() {
+                None
+            } else {
+                Some(project_key)
+            }
+        } else {
+            None
         }
     }
 
@@ -2004,8 +2293,7 @@ impl App {
     ) {
         debug!(count = issue_types.len(), "Loaded issue types");
         self.stop_loading();
-        // TODO: Task 5 will add logic to store issue types in the create issue form
-        let _ = issue_types; // Suppress unused warning until Task 5
+        self.available_issue_types = issue_types;
     }
 
     /// Handle failure to fetch issue types.
@@ -2700,8 +2988,24 @@ impl App {
                 // when jql_input.is_visible() is checked
             }
             AppState::CreateIssue => {
-                // Create issue form input handling will be implemented
-                // in a future task (Task 4.1/4.2)
+                // Handle create issue form input directly to avoid borrow issues
+                // (CreateIssueView is part of App, so we can't pass &mut self to it)
+                if let Some(action) = self.handle_create_issue_input(key_event) {
+                    match action {
+                        CreateIssueAction::Cancel => {
+                            self.close_create_issue_form(false);
+                        }
+                        CreateIssueAction::Submit => {
+                            // Form submission sets pending_create_issue flag
+                            // which is handled by the main loop
+                            self.start_loading("Creating issue...");
+                        }
+                        CreateIssueAction::FetchIssueTypes(_project_key) => {
+                            // Fetch is triggered by set_pending_fetch_issue_types
+                            // which is handled by the main loop
+                        }
+                    }
+                }
             }
             AppState::Exiting => {
                 // No input handling while exiting
@@ -2778,6 +3082,12 @@ impl App {
 
         // Render delete link confirmation dialog
         self.delete_link_confirm_dialog.render(frame, area);
+
+        // Render create issue view (on top of issue list)
+        if self.state == AppState::CreateIssue {
+            let render_data = self.create_issue_render_data();
+            self.create_issue_view.render(&render_data, frame, area);
+        }
 
         // Render error dialog (on top of everything)
         self.error_dialog.render(frame, area);
@@ -2882,6 +3192,22 @@ impl App {
             AppState::FilterPanel => {
                 // Render contextual help for filter panel
                 render_context_help(frame, area, KeyContext::FilterPanel);
+            }
+            AppState::CreateIssue => {
+                // Create issue form status bar
+                let footer = Line::from(vec![
+                    Span::styled(
+                        " Create Issue ",
+                        Style::default().fg(Color::Black).bg(Color::Cyan),
+                    ),
+                    Span::raw(" "),
+                    Span::styled(
+                        "[Tab] next field  [Shift+Tab] prev  [Enter] submit  [Esc] cancel",
+                        Style::default().fg(Color::DarkGray),
+                    ),
+                ]);
+                let paragraph = Paragraph::new(footer);
+                frame.render_widget(paragraph, area);
             }
             _ => {
                 // Default status bar for other states

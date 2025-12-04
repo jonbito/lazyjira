@@ -1046,6 +1046,26 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
             }
         }
 
+        // Handle pending create issue request - spawn in background
+        if let Some(request) = app.take_pending_create_issue() {
+            if let Some(ref c) = client {
+                debug!("Creating issue in project: {}", request.fields.project.key);
+                task_spawner.spawn_create_issue(c, request);
+            } else {
+                app.handle_create_issue_failure("No JIRA connection");
+            }
+        }
+
+        // Handle pending fetch issue types request - spawn in background
+        if let Some(project_key) = app.take_pending_fetch_issue_types() {
+            if let Some(ref c) = client {
+                debug!("Fetching issue types for project: {}", project_key);
+                task_spawner.spawn_fetch_issue_types(c, project_key);
+            } else {
+                app.handle_fetch_issue_types_failure("No JIRA connection");
+            }
+        }
+
         // Check if we should quit
         if app.should_quit() {
             break;

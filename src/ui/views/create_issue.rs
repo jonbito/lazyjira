@@ -13,9 +13,33 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, CreateIssueFormField};
+use crate::api::types::IssueTypeMeta;
+use crate::app::{App, CreateIssueFormData, CreateIssueFormField};
 use crate::ui::components::{TextEditor, TextInput};
 use crate::ui::theme::theme;
+
+// ============================================================================
+// Render Data
+// ============================================================================
+
+/// Data needed to render the create issue view.
+///
+/// This struct owns all its data to avoid borrow checker issues when
+/// rendering from App::view() method. The data is cloned from App fields.
+pub struct CreateIssueRenderData {
+    /// Current focused field.
+    pub focus: CreateIssueFormField,
+    /// Form data (cloned).
+    pub form: CreateIssueFormData,
+    /// Available issue types for the selected project (cloned).
+    pub issue_types: Vec<IssueTypeMeta>,
+    /// Whether issue types are currently being fetched.
+    pub is_fetching_issue_types: bool,
+    /// Available projects as (key, name) pairs.
+    pub projects: Vec<(String, String)>,
+    /// Validation errors (cloned).
+    pub errors: Vec<String>,
+}
 
 // ============================================================================
 // Create Issue View
@@ -108,6 +132,36 @@ impl CreateIssueView {
     /// Check if currently submitting.
     pub fn is_submitting(&self) -> bool {
         self.submitting
+    }
+
+    /// Get the project picker index.
+    pub fn project_picker_index(&self) -> usize {
+        self.project_picker_index
+    }
+
+    /// Set the project picker index.
+    pub fn set_project_picker_index(&mut self, index: usize) {
+        self.project_picker_index = index;
+    }
+
+    /// Get the issue type picker index.
+    pub fn issue_type_picker_index(&self) -> usize {
+        self.issue_type_picker_index
+    }
+
+    /// Set the issue type picker index.
+    pub fn set_issue_type_picker_index(&mut self, index: usize) {
+        self.issue_type_picker_index = index;
+    }
+
+    /// Handle input for the summary field.
+    pub fn handle_summary_input(&mut self, key: KeyEvent) {
+        self.summary_input.handle_input(key);
+    }
+
+    /// Handle input for the description field.
+    pub fn handle_description_input(&mut self, key: KeyEvent) {
+        self.description_editor.handle_input(key);
     }
 
     /// Handle keyboard input.
@@ -347,7 +401,7 @@ impl CreateIssueView {
     }
 
     /// Render the create issue view as a modal overlay.
-    pub fn render(&mut self, app: &App, frame: &mut Frame, area: Rect) {
+    pub fn render(&mut self, data: &CreateIssueRenderData, frame: &mut Frame, area: Rect) {
         // Calculate dialog size - form needs more height for description
         let dialog_width = 70u16.min(area.width.saturating_sub(4));
         let dialog_height = 24u16.min(area.height.saturating_sub(4));
@@ -386,17 +440,17 @@ impl CreateIssueView {
             ])
             .split(inner);
 
-        let focus = app.create_issue_focus();
+        let focus = data.focus;
 
         // Render fields
         self.render_project_field(
-            app,
+            data,
             frame,
             chunks[0],
             focus == CreateIssueFormField::Project,
         );
         self.render_issue_type_field(
-            app,
+            data,
             frame,
             chunks[1],
             focus == CreateIssueFormField::IssueType,
@@ -404,33 +458,38 @@ impl CreateIssueView {
         self.render_summary_field(frame, chunks[2], focus == CreateIssueFormField::Summary);
         self.render_description_field(frame, chunks[3], focus == CreateIssueFormField::Description);
         self.render_assignee_field(
-            app,
+            data,
             frame,
             chunks[4],
             focus == CreateIssueFormField::Assignee,
         );
         self.render_priority_field(
-            app,
+            data,
             frame,
             chunks[5],
             focus == CreateIssueFormField::Priority,
         );
 
         // Render errors if present
-        self.render_errors(app, frame, chunks[6]);
+        self.render_errors(data, frame, chunks[6]);
 
         // Render submit button
         self.render_submit_button(frame, chunks[7], focus == CreateIssueFormField::Submit);
     }
 
     /// Render the project picker field.
-    fn render_project_field(&self, app: &App, frame: &mut Frame, area: Rect, focused: bool) {
+    fn render_project_field(
+        &self,
+        data: &CreateIssueRenderData,
+        frame: &mut Frame,
+        area: Rect,
+        focused: bool,
+    ) {
         let t = theme();
-        let projects = Self::get_available_projects(app);
-        let form = app.create_issue_form();
+        let form = &data.form;
 
         let display_value = if form.project_key.is_empty() {
-            if projects.is_empty() {
+            if data.projects.is_empty() {
                 "No projects available".to_string()
             } else {
                 "← Select project →".to_string()
@@ -470,16 +529,21 @@ impl CreateIssueView {
     }
 
     /// Render the issue type picker field.
-    fn render_issue_type_field(&self, app: &App, frame: &mut Frame, area: Rect, focused: bool) {
+    fn render_issue_type_field(
+        &self,
+        data: &CreateIssueRenderData,
+        frame: &mut Frame,
+        area: Rect,
+        focused: bool,
+    ) {
         let t = theme();
-        let issue_types = app.available_issue_types();
-        let form = app.create_issue_form();
+        let form = &data.form;
 
         let display_value = if form.issue_type_id.is_empty() {
             if form.project_key.is_empty() {
                 "Select a project first".to_string()
-            } else if issue_types.is_empty() {
-                if app.is_fetch_issue_types_pending() {
+            } else if data.issue_types.is_empty() {
+                if data.is_fetching_issue_types {
                     "Loading...".to_string()
                 } else {
                     "No issue types available".to_string()
@@ -534,9 +598,15 @@ impl CreateIssueView {
     }
 
     /// Render the assignee picker field (optional).
-    fn render_assignee_field(&self, app: &App, frame: &mut Frame, area: Rect, focused: bool) {
+    fn render_assignee_field(
+        &self,
+        data: &CreateIssueRenderData,
+        frame: &mut Frame,
+        area: Rect,
+        focused: bool,
+    ) {
         let t = theme();
-        let form = app.create_issue_form();
+        let form = &data.form;
 
         let display_value = if let Some(ref name) = form.assignee_name {
             name.clone()
@@ -575,9 +645,15 @@ impl CreateIssueView {
     }
 
     /// Render the priority picker field (optional).
-    fn render_priority_field(&self, app: &App, frame: &mut Frame, area: Rect, focused: bool) {
+    fn render_priority_field(
+        &self,
+        data: &CreateIssueRenderData,
+        frame: &mut Frame,
+        area: Rect,
+        focused: bool,
+    ) {
         let t = theme();
-        let form = app.create_issue_form();
+        let form = &data.form;
 
         let display_value = if let Some(ref name) = form.priority_name {
             name.clone()
@@ -616,12 +692,11 @@ impl CreateIssueView {
     }
 
     /// Render validation errors.
-    fn render_errors(&self, app: &App, frame: &mut Frame, area: Rect) {
+    fn render_errors(&self, data: &CreateIssueRenderData, frame: &mut Frame, area: Rect) {
         let t = theme();
-        let errors = app.create_issue_errors();
 
-        if !errors.is_empty() {
-            let error_text = errors.join(", ");
+        if !data.errors.is_empty() {
+            let error_text = data.errors.join(", ");
             let paragraph = Paragraph::new(Span::styled(error_text, Style::default().fg(t.error)))
                 .alignment(Alignment::Center);
             frame.render_widget(paragraph, area);

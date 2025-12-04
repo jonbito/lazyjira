@@ -11,9 +11,7 @@ mod history;
 mod list;
 mod profile;
 
-// CreateIssueView will be used by Task 4.2 (keybinding) and Task 5 (main loop integration)
-#[allow(unused_imports)]
-pub use create_issue::{CreateIssueAction, CreateIssueView};
+pub use create_issue::{CreateIssueAction, CreateIssueRenderData, CreateIssueView};
 pub use detail::{DetailAction, DetailView};
 pub use filter::{FilterPanelAction, FilterPanelView};
 pub use help::{HelpAction, HelpView};

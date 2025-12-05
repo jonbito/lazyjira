@@ -2772,9 +2772,10 @@ impl App {
                 self.state = AppState::Exiting;
                 return;
             }
-            // Help on '?' (unless in detail view where we handle it there)
-            (KeyCode::Char('?'), KeyModifiers::NONE) if self.state != AppState::IssueDetail => {
-                if self.state != AppState::Help {
+            // Help on '?' - available in all views except text editing modes
+            (KeyCode::Char('?'), KeyModifiers::NONE) => {
+                // Don't open help when in text editing mode or already in help
+                if self.state != AppState::Help && self.state != AppState::CreateIssue {
                     self.previous_state = Some(self.state);
                     let current_context = KeyContext::from_app_state(&self.state);
                     self.help_view = HelpView::new(current_context);
@@ -3534,6 +3535,66 @@ mod tests {
         let key_event = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
         app.update(Event::Key(key_event));
         assert_eq!(app.state(), AppState::IssueList);
+    }
+
+    #[test]
+    fn test_help_opens_from_issue_detail() {
+        let mut app = App::new();
+        app.update(Event::Tick); // Transition to IssueList
+
+        // Add an issue and open detail view
+        app.list_view
+            .set_issues(vec![create_test_issue("TEST-1", "Test")]);
+        let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        app.update(Event::Key(key));
+        assert_eq!(app.state(), AppState::IssueDetail);
+
+        // Press '?' to open help
+        let key = KeyEvent::new(KeyCode::Char('?'), KeyModifiers::NONE);
+        app.update(Event::Key(key));
+        assert_eq!(app.state(), AppState::Help);
+
+        // previous_state should be IssueDetail so we return correctly
+        assert_eq!(app.previous_state, Some(AppState::IssueDetail));
+    }
+
+    #[test]
+    fn test_help_closes_to_issue_detail() {
+        let mut app = App::new();
+        app.update(Event::Tick); // Transition to IssueList
+
+        // Add an issue and open detail view
+        app.list_view
+            .set_issues(vec![create_test_issue("TEST-1", "Test")]);
+        let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        app.update(Event::Key(key));
+        assert_eq!(app.state(), AppState::IssueDetail);
+
+        // Open help
+        let key = KeyEvent::new(KeyCode::Char('?'), KeyModifiers::NONE);
+        app.update(Event::Key(key));
+        assert_eq!(app.state(), AppState::Help);
+
+        // Close help - should return to IssueDetail
+        let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+        app.update(Event::Key(key));
+        assert_eq!(app.state(), AppState::IssueDetail);
+    }
+
+    #[test]
+    fn test_help_does_not_open_in_create_issue() {
+        let mut app = App::new();
+        app.update(Event::Tick); // Transition to IssueList
+
+        // Open create issue form
+        app.open_create_issue_form();
+        assert_eq!(app.state(), AppState::CreateIssue);
+
+        // Press '?' - should NOT open help (it's text input mode)
+        let key = KeyEvent::new(KeyCode::Char('?'), KeyModifiers::NONE);
+        app.update(Event::Key(key));
+        // State should still be CreateIssue, not Help
+        assert_eq!(app.state(), AppState::CreateIssue);
     }
 
     #[test]

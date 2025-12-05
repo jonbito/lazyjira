@@ -439,7 +439,7 @@ impl App {
             delete_link_confirm_dialog: ConfirmDialog::new(),
             pending_external_edit: None,
             pending_load_more: false,
-            help_view: HelpView::new(),
+            help_view: HelpView::default(),
             previous_state: None,
             command_palette: CommandPalette::new(),
             // Create issue form state
@@ -525,7 +525,7 @@ impl App {
             delete_link_confirm_dialog: ConfirmDialog::new(),
             pending_external_edit: None,
             pending_load_more: false,
-            help_view: HelpView::new(),
+            help_view: HelpView::default(),
             previous_state: None,
             command_palette: CommandPalette::new(),
             // Create issue form state
@@ -1697,7 +1697,8 @@ impl App {
                 debug!("Command: Show help");
                 if self.state != AppState::Help {
                     self.previous_state = Some(self.state);
-                    self.help_view.reset_scroll();
+                    let current_context = KeyContext::from_app_state(&self.state);
+                    self.help_view = HelpView::new(current_context);
                     self.state = AppState::Help;
                 }
             }
@@ -2775,7 +2776,8 @@ impl App {
             (KeyCode::Char('?'), KeyModifiers::NONE) if self.state != AppState::IssueDetail => {
                 if self.state != AppState::Help {
                     self.previous_state = Some(self.state);
-                    self.help_view.reset_scroll();
+                    let current_context = KeyContext::from_app_state(&self.state);
+                    self.help_view = HelpView::new(current_context);
                     self.state = AppState::Help;
                 }
                 return;

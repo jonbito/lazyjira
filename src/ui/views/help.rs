@@ -25,7 +25,9 @@ pub enum HelpAction {
 
 /// The help panel view.
 pub struct HelpView {
-    /// Keybindings grouped by context.
+    /// The current context when help was opened.
+    current_context: KeyContext,
+    /// Keybindings grouped by context (reordered based on current context).
     grouped_bindings: Vec<(KeyContext, Vec<Keybinding>)>,
     /// Current scroll position.
     scroll: usize,
@@ -36,12 +38,30 @@ pub struct HelpView {
 }
 
 impl HelpView {
-    /// Create a new help view.
-    pub fn new() -> Self {
-        let grouped_bindings = get_keybindings_grouped();
+    /// Create a new help view with context-aware keybinding ordering.
+    ///
+    /// The keybindings are reordered so that:
+    /// 1. Current context keybindings appear first
+    /// 2. Global keybindings appear second (unless Global is the current context)
+    /// 3. All other contexts appear in their original order
+    pub fn new(current_context: KeyContext) -> Self {
+        let mut grouped_bindings = get_keybindings_grouped();
+
+        // Reorder: current context first, Global second, then rest
+        grouped_bindings.sort_by_key(|(ctx, _)| {
+            if *ctx == current_context {
+                0
+            } else if *ctx == KeyContext::Global {
+                1
+            } else {
+                2
+            }
+        });
+
         let total_lines = Self::calculate_total_lines(&grouped_bindings);
 
         Self {
+            current_context,
             grouped_bindings,
             scroll: 0,
             total_lines,
@@ -220,7 +240,7 @@ impl HelpView {
 
 impl Default for HelpView {
     fn default() -> Self {
-        Self::new()
+        Self::new(KeyContext::Global)
     }
 }
 
@@ -239,22 +259,73 @@ mod tests {
     }
 
     #[test]
-    fn test_help_view_new() {
-        let view = HelpView::new();
+    fn test_help_view_new_with_global_context() {
+        let view = HelpView::new(KeyContext::Global);
         assert_eq!(view.scroll, 0);
+        assert_eq!(view.current_context, KeyContext::Global);
         assert!(view.total_lines > 0);
         assert!(!view.grouped_bindings.is_empty());
     }
 
     #[test]
-    fn test_help_view_default() {
+    fn test_help_view_new_stores_current_context() {
+        let view = HelpView::new(KeyContext::IssueList);
+        assert_eq!(view.current_context, KeyContext::IssueList);
+    }
+
+    #[test]
+    fn test_help_view_default_uses_global_context() {
         let view = HelpView::default();
         assert_eq!(view.scroll, 0);
+        assert_eq!(view.current_context, KeyContext::Global);
+    }
+
+    #[test]
+    fn test_current_context_appears_first_issue_list() {
+        let view = HelpView::new(KeyContext::IssueList);
+        // First context should be IssueList
+        assert_eq!(view.grouped_bindings[0].0, KeyContext::IssueList);
+        // Global should be second
+        assert_eq!(view.grouped_bindings[1].0, KeyContext::Global);
+    }
+
+    #[test]
+    fn test_current_context_appears_first_issue_detail() {
+        let view = HelpView::new(KeyContext::IssueDetail);
+        // First context should be IssueDetail
+        assert_eq!(view.grouped_bindings[0].0, KeyContext::IssueDetail);
+        // Global should be second
+        assert_eq!(view.grouped_bindings[1].0, KeyContext::Global);
+    }
+
+    #[test]
+    fn test_current_context_appears_first_filter_panel() {
+        let view = HelpView::new(KeyContext::FilterPanel);
+        // First context should be FilterPanel
+        assert_eq!(view.grouped_bindings[0].0, KeyContext::FilterPanel);
+        // Global should be second
+        assert_eq!(view.grouped_bindings[1].0, KeyContext::Global);
+    }
+
+    #[test]
+    fn test_current_context_appears_first_profile_management() {
+        let view = HelpView::new(KeyContext::ProfileManagement);
+        // First context should be ProfileManagement
+        assert_eq!(view.grouped_bindings[0].0, KeyContext::ProfileManagement);
+        // Global should be second
+        assert_eq!(view.grouped_bindings[1].0, KeyContext::Global);
+    }
+
+    #[test]
+    fn test_global_context_first_when_current() {
+        let view = HelpView::new(KeyContext::Global);
+        // When Global is current, it should be first
+        assert_eq!(view.grouped_bindings[0].0, KeyContext::Global);
     }
 
     #[test]
     fn test_reset_scroll() {
-        let mut view = HelpView::new();
+        let mut view = HelpView::new(KeyContext::Global);
         view.scroll = 10;
         view.reset_scroll();
         assert_eq!(view.scroll, 0);
@@ -262,7 +333,7 @@ mod tests {
 
     #[test]
     fn test_handle_input_close_question_mark() {
-        let mut view = HelpView::new();
+        let mut view = HelpView::new(KeyContext::Global);
         let key = KeyEvent::new(KeyCode::Char('?'), KeyModifiers::NONE);
         let action = view.handle_input(key);
         assert_eq!(action, Some(HelpAction::Close));
@@ -270,7 +341,7 @@ mod tests {
 
     #[test]
     fn test_handle_input_close_q() {
-        let mut view = HelpView::new();
+        let mut view = HelpView::new(KeyContext::Global);
         let key = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE);
         let action = view.handle_input(key);
         assert_eq!(action, Some(HelpAction::Close));
@@ -278,7 +349,7 @@ mod tests {
 
     #[test]
     fn test_handle_input_close_escape() {
-        let mut view = HelpView::new();
+        let mut view = HelpView::new(KeyContext::Global);
         let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
         let action = view.handle_input(key);
         assert_eq!(action, Some(HelpAction::Close));
@@ -286,7 +357,7 @@ mod tests {
 
     #[test]
     fn test_handle_input_scroll_down() {
-        let mut view = HelpView::new();
+        let mut view = HelpView::new(KeyContext::Global);
         view.visible_height = 10; // Simulate visible area
         let key = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
         let _ = view.handle_input(key);
@@ -295,7 +366,7 @@ mod tests {
 
     #[test]
     fn test_handle_input_scroll_up() {
-        let mut view = HelpView::new();
+        let mut view = HelpView::new(KeyContext::Global);
         view.scroll = 5;
         let key = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE);
         let _ = view.handle_input(key);
@@ -304,7 +375,7 @@ mod tests {
 
     #[test]
     fn test_handle_input_go_top() {
-        let mut view = HelpView::new();
+        let mut view = HelpView::new(KeyContext::Global);
         view.scroll = 10;
         let key = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::NONE);
         let _ = view.handle_input(key);
@@ -313,7 +384,7 @@ mod tests {
 
     #[test]
     fn test_handle_input_go_bottom() {
-        let mut view = HelpView::new();
+        let mut view = HelpView::new(KeyContext::Global);
         view.visible_height = 10;
         let key = KeyEvent::new(KeyCode::Char('G'), KeyModifiers::NONE);
         let _ = view.handle_input(key);
@@ -323,14 +394,14 @@ mod tests {
     #[test]
     fn test_build_content_lines() {
         init_test_theme();
-        let view = HelpView::new();
+        let view = HelpView::new(KeyContext::Global);
         let lines = view.build_content_lines();
         assert!(!lines.is_empty());
     }
 
     #[test]
     fn test_scroll_does_not_exceed_max() {
-        let mut view = HelpView::new();
+        let mut view = HelpView::new(KeyContext::Global);
         view.visible_height = 100; // Large visible area
                                    // Try to scroll past max
         for _ in 0..200 {
@@ -342,7 +413,7 @@ mod tests {
 
     #[test]
     fn test_scroll_does_not_go_negative() {
-        let mut view = HelpView::new();
+        let mut view = HelpView::new(KeyContext::Global);
         view.scroll = 0;
         // Try to scroll up past 0
         for _ in 0..10 {

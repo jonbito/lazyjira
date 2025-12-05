@@ -575,13 +575,42 @@ impl CreateIssueView {
             // Render fields
             let project_area = chunks[0];
             let issue_type_area = chunks[1];
-            self.render_project_field(data, frame, project_area, focus == CreateIssueFormField::Project);
-            self.render_issue_type_field(data, frame, issue_type_area, focus == CreateIssueFormField::IssueType);
-            self.render_parent_field(data, frame, chunks[2], focus == CreateIssueFormField::Parent);
+            self.render_project_field(
+                data,
+                frame,
+                project_area,
+                focus == CreateIssueFormField::Project,
+            );
+            self.render_issue_type_field(
+                data,
+                frame,
+                issue_type_area,
+                focus == CreateIssueFormField::IssueType,
+            );
+            self.render_parent_field(
+                data,
+                frame,
+                chunks[2],
+                focus == CreateIssueFormField::Parent,
+            );
             self.render_summary_field(frame, chunks[3], focus == CreateIssueFormField::Summary);
-            self.render_description_field(frame, chunks[4], focus == CreateIssueFormField::Description);
-            self.render_assignee_field(data, frame, chunks[5], focus == CreateIssueFormField::Assignee);
-            self.render_priority_field(data, frame, chunks[6], focus == CreateIssueFormField::Priority);
+            self.render_description_field(
+                frame,
+                chunks[4],
+                focus == CreateIssueFormField::Description,
+            );
+            self.render_assignee_field(
+                data,
+                frame,
+                chunks[5],
+                focus == CreateIssueFormField::Assignee,
+            );
+            self.render_priority_field(
+                data,
+                frame,
+                chunks[6],
+                focus == CreateIssueFormField::Priority,
+            );
             self.render_errors(data, frame, chunks[7]);
             self.render_submit_button(frame, chunks[8], focus == CreateIssueFormField::Submit);
 
@@ -609,13 +638,41 @@ impl CreateIssueView {
             // Render fields
             let project_area = chunks[0];
             let issue_type_area = chunks[1];
-            self.render_project_field(data, frame, project_area, focus == CreateIssueFormField::Project);
-            self.render_issue_type_field(data, frame, issue_type_area, focus == CreateIssueFormField::IssueType);
-            self.render_epic_parent_field(frame, chunks[2], focus == CreateIssueFormField::EpicParent);
+            self.render_project_field(
+                data,
+                frame,
+                project_area,
+                focus == CreateIssueFormField::Project,
+            );
+            self.render_issue_type_field(
+                data,
+                frame,
+                issue_type_area,
+                focus == CreateIssueFormField::IssueType,
+            );
+            self.render_epic_parent_field(
+                frame,
+                chunks[2],
+                focus == CreateIssueFormField::EpicParent,
+            );
             self.render_summary_field(frame, chunks[3], focus == CreateIssueFormField::Summary);
-            self.render_description_field(frame, chunks[4], focus == CreateIssueFormField::Description);
-            self.render_assignee_field(data, frame, chunks[5], focus == CreateIssueFormField::Assignee);
-            self.render_priority_field(data, frame, chunks[6], focus == CreateIssueFormField::Priority);
+            self.render_description_field(
+                frame,
+                chunks[4],
+                focus == CreateIssueFormField::Description,
+            );
+            self.render_assignee_field(
+                data,
+                frame,
+                chunks[5],
+                focus == CreateIssueFormField::Assignee,
+            );
+            self.render_priority_field(
+                data,
+                frame,
+                chunks[6],
+                focus == CreateIssueFormField::Priority,
+            );
             self.render_errors(data, frame, chunks[7]);
             self.render_submit_button(frame, chunks[8], focus == CreateIssueFormField::Submit);
 
@@ -642,12 +699,36 @@ impl CreateIssueView {
             // Render fields
             let project_area = chunks[0];
             let issue_type_area = chunks[1];
-            self.render_project_field(data, frame, project_area, focus == CreateIssueFormField::Project);
-            self.render_issue_type_field(data, frame, issue_type_area, focus == CreateIssueFormField::IssueType);
+            self.render_project_field(
+                data,
+                frame,
+                project_area,
+                focus == CreateIssueFormField::Project,
+            );
+            self.render_issue_type_field(
+                data,
+                frame,
+                issue_type_area,
+                focus == CreateIssueFormField::IssueType,
+            );
             self.render_summary_field(frame, chunks[2], focus == CreateIssueFormField::Summary);
-            self.render_description_field(frame, chunks[3], focus == CreateIssueFormField::Description);
-            self.render_assignee_field(data, frame, chunks[4], focus == CreateIssueFormField::Assignee);
-            self.render_priority_field(data, frame, chunks[5], focus == CreateIssueFormField::Priority);
+            self.render_description_field(
+                frame,
+                chunks[3],
+                focus == CreateIssueFormField::Description,
+            );
+            self.render_assignee_field(
+                data,
+                frame,
+                chunks[4],
+                focus == CreateIssueFormField::Assignee,
+            );
+            self.render_priority_field(
+                data,
+                frame,
+                chunks[5],
+                focus == CreateIssueFormField::Priority,
+            );
             self.render_errors(data, frame, chunks[6]);
             self.render_submit_button(frame, chunks[7], focus == CreateIssueFormField::Submit);
 
@@ -687,7 +768,12 @@ impl CreateIssueView {
 
     /// Render the expanded project dropdown overlay.
     /// This should be called LAST after all other fields are rendered.
-    fn render_project_dropdown_overlay(&self, frame: &mut Frame, dropdown_area: Rect, screen_area: Rect) {
+    fn render_project_dropdown_overlay(
+        &self,
+        frame: &mut Frame,
+        dropdown_area: Rect,
+        screen_area: Rect,
+    ) {
         if self.project_dropdown.is_expanded() {
             self.project_dropdown
                 .render_expanded_list(frame, dropdown_area, screen_area);
@@ -696,7 +782,12 @@ impl CreateIssueView {
 
     /// Render the expanded issue type dropdown overlay.
     /// This should be called LAST after all other fields are rendered.
-    fn render_issue_type_dropdown_overlay(&self, frame: &mut Frame, dropdown_area: Rect, screen_area: Rect) {
+    fn render_issue_type_dropdown_overlay(
+        &self,
+        frame: &mut Frame,
+        dropdown_area: Rect,
+        screen_area: Rect,
+    ) {
         if self.issue_type_dropdown.is_expanded() {
             self.issue_type_dropdown
                 .render_expanded_list(frame, dropdown_area, screen_area);
@@ -730,15 +821,18 @@ impl CreateIssueView {
 
         // Update placeholder based on state
         if form.project_key.is_empty() {
-            self.issue_type_dropdown.set_placeholder("Select a project first");
+            self.issue_type_dropdown
+                .set_placeholder("Select a project first");
         } else if data.issue_types.is_empty() {
             if data.is_fetching_issue_types {
                 self.issue_type_dropdown.set_placeholder("Loading...");
             } else {
-                self.issue_type_dropdown.set_placeholder("No issue types available");
+                self.issue_type_dropdown
+                    .set_placeholder("No issue types available");
             }
         } else {
-            self.issue_type_dropdown.set_placeholder("Select issue type...");
+            self.issue_type_dropdown
+                .set_placeholder("Select issue type...");
         }
 
         // Render the dropdown (collapsed view only)

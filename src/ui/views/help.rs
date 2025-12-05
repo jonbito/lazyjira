@@ -157,9 +157,10 @@ impl HelpView {
         // Clear the area first
         frame.render_widget(Clear, area);
 
-        // Create the help panel block
+        // Create the help panel block with dynamic title based on current context
+        let title = format!(" Help - {} ", self.current_context.display());
         let block = Block::default()
-            .title(" Help - Keyboard Shortcuts ")
+            .title(title)
             .title_alignment(Alignment::Center)
             .borders(Borders::ALL)
             .border_style(Style::default().fg(t.accent));
@@ -421,5 +422,63 @@ mod tests {
             let _ = view.handle_input(key);
         }
         assert_eq!(view.scroll, 0);
+    }
+
+    #[test]
+    fn test_dynamic_title_global_context() {
+        let view = HelpView::new(KeyContext::Global);
+        let expected_title = format!(" Help - {} ", view.current_context.display());
+        assert_eq!(expected_title, " Help - Global ");
+    }
+
+    #[test]
+    fn test_dynamic_title_issue_list_context() {
+        let view = HelpView::new(KeyContext::IssueList);
+        let expected_title = format!(" Help - {} ", view.current_context.display());
+        assert_eq!(expected_title, " Help - Issue List ");
+    }
+
+    #[test]
+    fn test_dynamic_title_issue_detail_context() {
+        let view = HelpView::new(KeyContext::IssueDetail);
+        let expected_title = format!(" Help - {} ", view.current_context.display());
+        assert_eq!(expected_title, " Help - Issue Detail ");
+    }
+
+    #[test]
+    fn test_dynamic_title_profile_management_context() {
+        let view = HelpView::new(KeyContext::ProfileManagement);
+        let expected_title = format!(" Help - {} ", view.current_context.display());
+        assert_eq!(expected_title, " Help - Profile Management ");
+    }
+
+    #[test]
+    fn test_dynamic_title_filter_panel_context() {
+        let view = HelpView::new(KeyContext::FilterPanel);
+        let expected_title = format!(" Help - {} ", view.current_context.display());
+        assert_eq!(expected_title, " Help - Filter Panel ");
+    }
+
+    #[test]
+    fn test_dynamic_title_editor_context() {
+        let view = HelpView::new(KeyContext::Editor);
+        let expected_title = format!(" Help - {} ", view.current_context.display());
+        assert_eq!(expected_title, " Help - Editor ");
+    }
+
+    #[test]
+    fn test_dynamic_title_jql_input_context() {
+        let view = HelpView::new(KeyContext::JqlInput);
+        let expected_title = format!(" Help - {} ", view.current_context.display());
+        assert_eq!(expected_title, " Help - JQL Input ");
+    }
+
+    #[test]
+    fn test_dynamic_title_format_has_padding() {
+        // Verify the title format includes visual padding (leading and trailing spaces)
+        let view = HelpView::new(KeyContext::IssueList);
+        let title = format!(" Help - {} ", view.current_context.display());
+        assert!(title.starts_with(' '));
+        assert!(title.ends_with(' '));
     }
 }

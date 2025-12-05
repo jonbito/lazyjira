@@ -2,6 +2,8 @@
 //!
 //! Provides a centralized registry of all keyboard shortcuts organized by context.
 
+use crate::app::AppState;
+
 /// Key binding configuration.
 pub struct KeyBindings {
     /// Whether vim-style bindings are enabled.
@@ -51,6 +53,19 @@ impl KeyContext {
             Self::FilterPanel => "Filter Panel",
             Self::Editor => "Editor",
             Self::JqlInput => "JQL Input",
+        }
+    }
+
+    /// Map an AppState to its corresponding KeyContext.
+    pub fn from_app_state(state: &AppState) -> Self {
+        match state {
+            AppState::IssueList | AppState::Loading => KeyContext::IssueList,
+            AppState::IssueDetail => KeyContext::IssueDetail,
+            AppState::ProfileManagement | AppState::ProfileSelect => KeyContext::ProfileManagement,
+            AppState::FilterPanel => KeyContext::FilterPanel,
+            AppState::JqlInput => KeyContext::JqlInput,
+            AppState::CreateIssue => KeyContext::Editor,
+            AppState::Help | AppState::Exiting => KeyContext::Global,
         }
     }
 }
@@ -144,12 +159,7 @@ pub fn get_keybindings() -> Vec<Keybinding> {
             KeyContext::IssueList,
         ),
         Keybinding::new("q", "quit", "Quit application", KeyContext::IssueList),
-        Keybinding::new(
-            "n",
-            "new_issue",
-            "Create new issue",
-            KeyContext::IssueList,
-        ),
+        Keybinding::new("n", "new_issue", "Create new issue", KeyContext::IssueList),
         // Issue Detail keybindings
         Keybinding::new(
             "j / ↓",
@@ -377,5 +387,85 @@ mod tests {
         let hints = get_context_hints(KeyContext::IssueList);
         assert!(hints.contains("navigate"));
         assert!(hints.contains("help"));
+    }
+
+    #[test]
+    fn test_from_app_state_issue_list() {
+        assert_eq!(
+            KeyContext::from_app_state(&AppState::IssueList),
+            KeyContext::IssueList
+        );
+    }
+
+    #[test]
+    fn test_from_app_state_loading_maps_to_issue_list() {
+        assert_eq!(
+            KeyContext::from_app_state(&AppState::Loading),
+            KeyContext::IssueList
+        );
+    }
+
+    #[test]
+    fn test_from_app_state_issue_detail() {
+        assert_eq!(
+            KeyContext::from_app_state(&AppState::IssueDetail),
+            KeyContext::IssueDetail
+        );
+    }
+
+    #[test]
+    fn test_from_app_state_profile_management() {
+        assert_eq!(
+            KeyContext::from_app_state(&AppState::ProfileManagement),
+            KeyContext::ProfileManagement
+        );
+    }
+
+    #[test]
+    fn test_from_app_state_profile_select_maps_to_profile_management() {
+        assert_eq!(
+            KeyContext::from_app_state(&AppState::ProfileSelect),
+            KeyContext::ProfileManagement
+        );
+    }
+
+    #[test]
+    fn test_from_app_state_filter_panel() {
+        assert_eq!(
+            KeyContext::from_app_state(&AppState::FilterPanel),
+            KeyContext::FilterPanel
+        );
+    }
+
+    #[test]
+    fn test_from_app_state_jql_input() {
+        assert_eq!(
+            KeyContext::from_app_state(&AppState::JqlInput),
+            KeyContext::JqlInput
+        );
+    }
+
+    #[test]
+    fn test_from_app_state_create_issue_maps_to_editor() {
+        assert_eq!(
+            KeyContext::from_app_state(&AppState::CreateIssue),
+            KeyContext::Editor
+        );
+    }
+
+    #[test]
+    fn test_from_app_state_help_maps_to_global() {
+        assert_eq!(
+            KeyContext::from_app_state(&AppState::Help),
+            KeyContext::Global
+        );
+    }
+
+    #[test]
+    fn test_from_app_state_exiting_maps_to_global() {
+        assert_eq!(
+            KeyContext::from_app_state(&AppState::Exiting),
+            KeyContext::Global
+        );
     }
 }

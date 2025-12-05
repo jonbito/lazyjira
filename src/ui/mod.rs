@@ -9,8 +9,8 @@ mod views;
 
 pub use components::{
     render_context_help, CommandPalette, CommandPaletteAction, ConfirmDialog, DropdownAction,
-    DropdownItem, ErrorDialog, ExternalEditor, JqlAction, JqlInput, LoadingIndicator,
-    Notification, NotificationManager, ProfilePicker, ProfilePickerAction, SavedFiltersAction,
+    DropdownItem, ErrorDialog, ExternalEditor, JqlAction, JqlInput, LoadingIndicator, Notification,
+    NotificationManager, ProfilePicker, ProfilePickerAction, SavedFiltersAction,
     SavedFiltersDialog,
 };
 pub use theme::{init_theme, load_theme};

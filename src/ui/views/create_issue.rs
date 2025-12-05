@@ -15,7 +15,7 @@ use ratatui::{
 
 use crate::api::types::IssueTypeMeta;
 use crate::app::{App, CreateIssueFormData, CreateIssueFormField};
-use crate::ui::components::{TextEditor, TextInput};
+use crate::ui::components::{Dropdown, DropdownAction, DropdownItem, TextEditor, TextInput};
 use crate::ui::theme::theme;
 
 // ============================================================================
@@ -70,10 +70,10 @@ pub struct CreateIssueView {
     epic_parent_input: TextInput,
     /// Description text editor.
     description_editor: TextEditor,
-    /// Project picker index (for navigating through projects).
-    project_picker_index: usize,
-    /// Issue type picker index.
-    issue_type_picker_index: usize,
+    /// Project dropdown.
+    project_dropdown: Dropdown,
+    /// Issue type dropdown.
+    issue_type_dropdown: Dropdown,
     /// Whether the form is submitting.
     submitting: bool,
 }
@@ -96,13 +96,21 @@ impl CreateIssueView {
         let mut epic_parent_input = TextInput::new();
         epic_parent_input.set_placeholder("e.g., PROJ-100 (optional)");
 
+        let mut project_dropdown = Dropdown::new("Project");
+        project_dropdown.set_required(true);
+        project_dropdown.set_placeholder("Select project...");
+
+        let mut issue_type_dropdown = Dropdown::new("Issue Type");
+        issue_type_dropdown.set_required(true);
+        issue_type_dropdown.set_placeholder("Select issue type...");
+
         Self {
             summary_input,
             parent_input,
             epic_parent_input,
             description_editor: TextEditor::empty(),
-            project_picker_index: 0,
-            issue_type_picker_index: 0,
+            project_dropdown,
+            issue_type_dropdown,
             submitting: false,
         }
     }
@@ -113,8 +121,8 @@ impl CreateIssueView {
         self.parent_input.clear();
         self.epic_parent_input.clear();
         self.description_editor = TextEditor::empty();
-        self.project_picker_index = 0;
-        self.issue_type_picker_index = 0;
+        self.project_dropdown.reset();
+        self.issue_type_dropdown.reset();
         self.submitting = false;
     }
 
@@ -148,24 +156,64 @@ impl CreateIssueView {
         self.submitting
     }
 
-    /// Get the project picker index.
-    pub fn project_picker_index(&self) -> usize {
-        self.project_picker_index
+    /// Check if the project dropdown is expanded.
+    pub fn is_project_dropdown_expanded(&self) -> bool {
+        self.project_dropdown.is_expanded()
     }
 
-    /// Set the project picker index.
-    pub fn set_project_picker_index(&mut self, index: usize) {
-        self.project_picker_index = index;
+    /// Get a reference to the project dropdown.
+    pub fn project_dropdown(&self) -> &Dropdown {
+        &self.project_dropdown
     }
 
-    /// Get the issue type picker index.
-    pub fn issue_type_picker_index(&self) -> usize {
-        self.issue_type_picker_index
+    /// Get a mutable reference to the project dropdown.
+    pub fn project_dropdown_mut(&mut self) -> &mut Dropdown {
+        &mut self.project_dropdown
     }
 
-    /// Set the issue type picker index.
-    pub fn set_issue_type_picker_index(&mut self, index: usize) {
-        self.issue_type_picker_index = index;
+    /// Set the items in the project dropdown.
+    pub fn set_project_items(&mut self, items: Vec<DropdownItem>) {
+        self.project_dropdown.set_items(items);
+    }
+
+    /// Select a project by ID in the dropdown.
+    pub fn select_project_by_id(&mut self, id: &str) {
+        self.project_dropdown.select_by_id(id);
+    }
+
+    /// Get the selected project index (for backwards compatibility).
+    pub fn project_picker_index(&self) -> Option<usize> {
+        self.project_dropdown.selected_index()
+    }
+
+    /// Handle input for the project dropdown and return any action.
+    pub fn handle_project_dropdown_input(&mut self, key: KeyEvent) -> Option<DropdownAction> {
+        self.project_dropdown.handle_input(key)
+    }
+
+    /// Check if the issue type dropdown is expanded.
+    pub fn is_issue_type_dropdown_expanded(&self) -> bool {
+        self.issue_type_dropdown.is_expanded()
+    }
+
+    /// Get the selected issue type index.
+    pub fn issue_type_picker_index(&self) -> Option<usize> {
+        self.issue_type_dropdown.selected_index()
+    }
+
+    /// Set the items in the issue type dropdown.
+    pub fn set_issue_type_items(&mut self, items: Vec<DropdownItem>) {
+        self.issue_type_dropdown.set_items(items);
+    }
+
+    /// Select an issue type by ID in the dropdown.
+    pub fn select_issue_type_by_id(&mut self, id: &str) {
+        self.issue_type_dropdown.select_by_id(id);
+    }
+
+    /// Handle input for the issue type dropdown and return any action.
+    pub fn handle_issue_type_dropdown_input(&mut self, key: KeyEvent) -> Option<DropdownAction> {
+        self.issue_type_dropdown.handle_input(key)
     }
 
     /// Handle input for the summary field.
@@ -219,6 +267,16 @@ impl CreateIssueView {
 
         let focus = app.create_issue_focus();
 
+        // If the project dropdown is expanded, handle its input first
+        if self.project_dropdown.is_expanded() {
+            return self.handle_project_input(app, key);
+        }
+
+        // If the issue type dropdown is expanded, handle its input first
+        if self.issue_type_dropdown.is_expanded() {
+            return self.handle_issue_type_input(app, key);
+        }
+
         match (key.code, key.modifiers) {
             // Tab - next field
             (KeyCode::Tab, KeyModifiers::NONE) => {
@@ -250,8 +308,11 @@ impl CreateIssueView {
                     None
                 }
             }
-            // Enter in other fields - move to next field (except description which uses Enter)
-            (KeyCode::Enter, KeyModifiers::NONE) if focus != CreateIssueFormField::Description => {
+            // Enter in other fields - move to next field (except description and project which uses Enter)
+            (KeyCode::Enter, KeyModifiers::NONE)
+                if focus != CreateIssueFormField::Description
+                    && focus != CreateIssueFormField::Project =>
+            {
                 self.sync_to_app(app);
                 app.create_issue_focus_next();
                 self.sync_from_app(app);
@@ -294,78 +355,70 @@ impl CreateIssueView {
         }
     }
 
-    /// Handle project picker input.
+    /// Handle project dropdown input.
     fn handle_project_input(&mut self, app: &mut App, key: KeyEvent) -> Option<CreateIssueAction> {
-        let projects = Self::get_available_projects(app);
-        if projects.is_empty() {
-            return None;
+        // Sync projects to the dropdown if not already set
+        if self.project_dropdown.is_empty() {
+            let projects = Self::get_available_projects(app);
+            let items: Vec<DropdownItem> = projects
+                .into_iter()
+                .map(|(key, name)| DropdownItem::new(key, name))
+                .collect();
+            self.project_dropdown.set_items(items);
+
+            // Sync current selection if exists
+            let current_key = app.create_issue_form().project_key.clone();
+            if !current_key.is_empty() {
+                self.project_dropdown.select_by_id(&current_key);
+            }
         }
 
-        // Check if no project is currently selected
-        let no_selection = app.create_issue_form().project_key.is_empty();
-
-        match key.code {
-            KeyCode::Left | KeyCode::Char('h') => {
-                if self.project_picker_index > 0 {
-                    self.project_picker_index -= 1;
-                    self.update_selected_project(app, &projects);
-                } else if no_selection {
-                    // Select the first project if none is selected
-                    self.update_selected_project(app, &projects);
+        if let Some(action) = self.project_dropdown.handle_input(key) {
+            match action {
+                DropdownAction::Select(key, name) => {
+                    self.update_selected_project(app, &key, &name);
                 }
-                None
-            }
-            KeyCode::Right | KeyCode::Char('l') => {
-                if no_selection {
-                    // Select the current project if none is selected
-                    self.update_selected_project(app, &projects);
-                } else if self.project_picker_index < projects.len() - 1 {
-                    self.project_picker_index += 1;
-                    self.update_selected_project(app, &projects);
+                DropdownAction::Cancel => {
+                    // Just close the dropdown, no action needed
                 }
-                None
             }
-            _ => None,
         }
+        None
     }
 
-    /// Handle issue type picker input.
+    /// Handle issue type dropdown input.
     fn handle_issue_type_input(
         &mut self,
         app: &mut App,
         key: KeyEvent,
     ) -> Option<CreateIssueAction> {
+        // Sync issue types to the dropdown if not already set or if they've changed
         let issue_types = app.available_issue_types();
-        if issue_types.is_empty() {
-            return None;
+        if self.issue_type_dropdown.item_count() != issue_types.len() {
+            let items: Vec<DropdownItem> = issue_types
+                .iter()
+                .map(|t| DropdownItem::new(t.id.clone(), t.name.clone()))
+                .collect();
+            self.issue_type_dropdown.set_items(items);
+
+            // Sync current selection if exists
+            let current_id = app.create_issue_form().issue_type_id.clone();
+            if !current_id.is_empty() {
+                self.issue_type_dropdown.select_by_id(&current_id);
+            }
         }
 
-        // Check if no issue type is currently selected
-        let no_selection = app.create_issue_form().issue_type_id.is_empty();
-
-        match key.code {
-            KeyCode::Left | KeyCode::Char('h') => {
-                if self.issue_type_picker_index > 0 {
-                    self.issue_type_picker_index -= 1;
-                    self.update_selected_issue_type(app);
-                } else if no_selection {
-                    // Select the first issue type if none is selected
-                    self.update_selected_issue_type(app);
+        if let Some(action) = self.issue_type_dropdown.handle_input(key) {
+            match action {
+                DropdownAction::Select(id, name) => {
+                    self.update_selected_issue_type_by_id(app, &id, &name);
                 }
-                None
-            }
-            KeyCode::Right | KeyCode::Char('l') => {
-                if no_selection {
-                    // Select the current issue type if none is selected
-                    self.update_selected_issue_type(app);
-                } else if self.issue_type_picker_index < issue_types.len() - 1 {
-                    self.issue_type_picker_index += 1;
-                    self.update_selected_issue_type(app);
+                DropdownAction::Cancel => {
+                    // Just close the dropdown, no action needed
                 }
-                None
             }
-            _ => None,
         }
+        None
     }
 
     /// Handle assignee picker input (placeholder - optional field).
@@ -407,35 +460,25 @@ impl CreateIssueView {
     }
 
     /// Update the selected project in app state.
-    fn update_selected_project(&mut self, app: &mut App, projects: &[(String, String)]) {
-        if let Some((key, name)) = projects.get(self.project_picker_index) {
-            let form = app.create_issue_form_mut();
-            form.project_key = key.clone();
-            form.project_name = name.clone();
+    fn update_selected_project(&mut self, app: &mut App, key: &str, name: &str) {
+        let form = app.create_issue_form_mut();
+        form.project_key = key.to_string();
+        form.project_name = name.to_string();
 
-            // Clear issue type when project changes
-            form.issue_type_id.clear();
-            form.issue_type_name.clear();
-            self.issue_type_picker_index = 0;
+        // Clear issue type when project changes
+        form.issue_type_id.clear();
+        form.issue_type_name.clear();
+        self.issue_type_dropdown.reset();
 
-            // Request to fetch issue types for this project
-            app.set_pending_fetch_issue_types(true);
-        }
+        // Request to fetch issue types for this project
+        app.set_pending_fetch_issue_types(true);
     }
 
-    /// Update the selected issue type in app state.
-    fn update_selected_issue_type(&mut self, app: &mut App) {
-        // Clone the values first to avoid borrow issues
-        let selected = app
-            .available_issue_types()
-            .get(self.issue_type_picker_index)
-            .map(|t| (t.id.clone(), t.name.clone()));
-
-        if let Some((id, name)) = selected {
-            let form = app.create_issue_form_mut();
-            form.issue_type_id = id;
-            form.issue_type_name = name;
-        }
+    /// Update the selected issue type in app state by ID.
+    fn update_selected_issue_type_by_id(&mut self, app: &mut App, id: &str, name: &str) {
+        let form = app.create_issue_form_mut();
+        form.issue_type_id = id.to_string();
+        form.issue_type_name = name.to_string();
     }
 
     /// Sync local state to app state.
@@ -455,18 +498,26 @@ impl CreateIssueView {
             self.description_editor = TextEditor::new(&form.description);
         }
 
-        // Update picker indices based on selected values
+        // Update project dropdown items and selection
         let projects = Self::get_available_projects(app);
-        if let Some(idx) = projects
-            .iter()
-            .position(|(key, _)| key == &form.project_key)
-        {
-            self.project_picker_index = idx;
+        let items: Vec<DropdownItem> = projects
+            .into_iter()
+            .map(|(key, name)| DropdownItem::new(key, name))
+            .collect();
+        self.project_dropdown.set_items(items);
+        if !form.project_key.is_empty() {
+            self.project_dropdown.select_by_id(&form.project_key);
         }
 
+        // Update issue type dropdown items and selection
         let issue_types = app.available_issue_types();
-        if let Some(idx) = issue_types.iter().position(|t| t.id == form.issue_type_id) {
-            self.issue_type_picker_index = idx;
+        let type_items: Vec<DropdownItem> = issue_types
+            .iter()
+            .map(|t| DropdownItem::new(t.id.clone(), t.name.clone()))
+            .collect();
+        self.issue_type_dropdown.set_items(type_items);
+        if !form.issue_type_id.is_empty() {
+            self.issue_type_dropdown.select_by_id(&form.issue_type_id);
         }
     }
 
@@ -522,8 +573,10 @@ impl CreateIssueView {
                 .split(inner);
 
             // Render fields
-            self.render_project_field(data, frame, chunks[0], focus == CreateIssueFormField::Project);
-            self.render_issue_type_field(data, frame, chunks[1], focus == CreateIssueFormField::IssueType);
+            let project_area = chunks[0];
+            let issue_type_area = chunks[1];
+            self.render_project_field(data, frame, project_area, focus == CreateIssueFormField::Project);
+            self.render_issue_type_field(data, frame, issue_type_area, focus == CreateIssueFormField::IssueType);
             self.render_parent_field(data, frame, chunks[2], focus == CreateIssueFormField::Parent);
             self.render_summary_field(frame, chunks[3], focus == CreateIssueFormField::Summary);
             self.render_description_field(frame, chunks[4], focus == CreateIssueFormField::Description);
@@ -531,6 +584,10 @@ impl CreateIssueView {
             self.render_priority_field(data, frame, chunks[6], focus == CreateIssueFormField::Priority);
             self.render_errors(data, frame, chunks[7]);
             self.render_submit_button(frame, chunks[8], focus == CreateIssueFormField::Submit);
+
+            // Render dropdown overlays LAST so they appear on top
+            self.render_project_dropdown_overlay(frame, project_area, area);
+            self.render_issue_type_dropdown_overlay(frame, issue_type_area, area);
         } else if data.form.can_have_epic_parent {
             // Standard issue layout with optional Epic field
             let chunks = Layout::default()
@@ -550,8 +607,10 @@ impl CreateIssueView {
                 .split(inner);
 
             // Render fields
-            self.render_project_field(data, frame, chunks[0], focus == CreateIssueFormField::Project);
-            self.render_issue_type_field(data, frame, chunks[1], focus == CreateIssueFormField::IssueType);
+            let project_area = chunks[0];
+            let issue_type_area = chunks[1];
+            self.render_project_field(data, frame, project_area, focus == CreateIssueFormField::Project);
+            self.render_issue_type_field(data, frame, issue_type_area, focus == CreateIssueFormField::IssueType);
             self.render_epic_parent_field(frame, chunks[2], focus == CreateIssueFormField::EpicParent);
             self.render_summary_field(frame, chunks[3], focus == CreateIssueFormField::Summary);
             self.render_description_field(frame, chunks[4], focus == CreateIssueFormField::Description);
@@ -559,6 +618,10 @@ impl CreateIssueView {
             self.render_priority_field(data, frame, chunks[6], focus == CreateIssueFormField::Priority);
             self.render_errors(data, frame, chunks[7]);
             self.render_submit_button(frame, chunks[8], focus == CreateIssueFormField::Submit);
+
+            // Render dropdown overlays LAST so they appear on top
+            self.render_project_dropdown_overlay(frame, project_area, area);
+            self.render_issue_type_dropdown_overlay(frame, issue_type_area, area);
         } else {
             // Epic or other top-level type layout without parent field
             let chunks = Layout::default()
@@ -577,123 +640,109 @@ impl CreateIssueView {
                 .split(inner);
 
             // Render fields
-            self.render_project_field(data, frame, chunks[0], focus == CreateIssueFormField::Project);
-            self.render_issue_type_field(data, frame, chunks[1], focus == CreateIssueFormField::IssueType);
+            let project_area = chunks[0];
+            let issue_type_area = chunks[1];
+            self.render_project_field(data, frame, project_area, focus == CreateIssueFormField::Project);
+            self.render_issue_type_field(data, frame, issue_type_area, focus == CreateIssueFormField::IssueType);
             self.render_summary_field(frame, chunks[2], focus == CreateIssueFormField::Summary);
             self.render_description_field(frame, chunks[3], focus == CreateIssueFormField::Description);
             self.render_assignee_field(data, frame, chunks[4], focus == CreateIssueFormField::Assignee);
             self.render_priority_field(data, frame, chunks[5], focus == CreateIssueFormField::Priority);
             self.render_errors(data, frame, chunks[6]);
             self.render_submit_button(frame, chunks[7], focus == CreateIssueFormField::Submit);
+
+            // Render dropdown overlays LAST so they appear on top
+            self.render_project_dropdown_overlay(frame, project_area, area);
+            self.render_issue_type_dropdown_overlay(frame, issue_type_area, area);
         }
     }
 
-    /// Render the project picker field.
+    /// Render the project dropdown field.
+    /// Returns the area where the dropdown was rendered (for overlay positioning).
     fn render_project_field(
-        &self,
+        &mut self,
         data: &CreateIssueRenderData,
         frame: &mut Frame,
         area: Rect,
         focused: bool,
     ) {
-        let t = theme();
-        let form = &data.form;
+        // Ensure dropdown items are synced from data
+        if self.project_dropdown.item_count() != data.projects.len() {
+            let items: Vec<DropdownItem> = data
+                .projects
+                .iter()
+                .map(|(key, name)| DropdownItem::new(key.clone(), name.clone()))
+                .collect();
+            self.project_dropdown.set_items(items);
+        }
 
-        let display_value = if form.project_key.is_empty() {
-            if data.projects.is_empty() {
-                "No projects available".to_string()
-            } else {
-                "← Select project →".to_string()
-            }
-        } else {
-            format!("{} ({})", form.project_name, form.project_key)
-        };
+        // Sync selection only when collapsed (don't interfere with navigation when expanded)
+        if !data.form.project_key.is_empty() && !self.project_dropdown.is_expanded() {
+            self.project_dropdown.select_by_id(&data.form.project_key);
+        }
 
-        let style = if focused {
-            Style::default().fg(t.accent)
-        } else if form.project_key.is_empty() {
-            Style::default().fg(t.input_placeholder)
-        } else {
-            Style::default().fg(t.input_fg)
-        };
-
-        let border_style = if focused {
-            Style::default().fg(t.border_focused)
-        } else {
-            Style::default().fg(t.border)
-        };
-
-        let title_style = if focused {
-            Style::default().fg(t.accent).add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(t.fg)
-        };
-
-        let block = Block::default()
-            .title(Span::styled(" Project * ", title_style))
-            .borders(Borders::ALL)
-            .border_style(border_style);
-
-        let paragraph = Paragraph::new(display_value).style(style).block(block);
-
-        frame.render_widget(paragraph, area);
+        // Render the dropdown (collapsed view only)
+        self.project_dropdown.render(frame, area, focused);
     }
 
-    /// Render the issue type picker field.
+    /// Render the expanded project dropdown overlay.
+    /// This should be called LAST after all other fields are rendered.
+    fn render_project_dropdown_overlay(&self, frame: &mut Frame, dropdown_area: Rect, screen_area: Rect) {
+        if self.project_dropdown.is_expanded() {
+            self.project_dropdown
+                .render_expanded_list(frame, dropdown_area, screen_area);
+        }
+    }
+
+    /// Render the expanded issue type dropdown overlay.
+    /// This should be called LAST after all other fields are rendered.
+    fn render_issue_type_dropdown_overlay(&self, frame: &mut Frame, dropdown_area: Rect, screen_area: Rect) {
+        if self.issue_type_dropdown.is_expanded() {
+            self.issue_type_dropdown
+                .render_expanded_list(frame, dropdown_area, screen_area);
+        }
+    }
+
+    /// Render the issue type dropdown field.
     fn render_issue_type_field(
-        &self,
+        &mut self,
         data: &CreateIssueRenderData,
         frame: &mut Frame,
         area: Rect,
         focused: bool,
     ) {
-        let t = theme();
         let form = &data.form;
 
-        let display_value = if form.issue_type_id.is_empty() {
-            if form.project_key.is_empty() {
-                "Select a project first".to_string()
-            } else if data.issue_types.is_empty() {
-                if data.is_fetching_issue_types {
-                    "Loading...".to_string()
-                } else {
-                    "No issue types available".to_string()
-                }
+        // Ensure dropdown items are synced from data
+        if self.issue_type_dropdown.item_count() != data.issue_types.len() {
+            let items: Vec<DropdownItem> = data
+                .issue_types
+                .iter()
+                .map(|t| DropdownItem::new(t.id.clone(), t.name.clone()))
+                .collect();
+            self.issue_type_dropdown.set_items(items);
+        }
+
+        // Sync selection only when collapsed (don't interfere with navigation when expanded)
+        if !form.issue_type_id.is_empty() && !self.issue_type_dropdown.is_expanded() {
+            self.issue_type_dropdown.select_by_id(&form.issue_type_id);
+        }
+
+        // Update placeholder based on state
+        if form.project_key.is_empty() {
+            self.issue_type_dropdown.set_placeholder("Select a project first");
+        } else if data.issue_types.is_empty() {
+            if data.is_fetching_issue_types {
+                self.issue_type_dropdown.set_placeholder("Loading...");
             } else {
-                "← Select issue type →".to_string()
+                self.issue_type_dropdown.set_placeholder("No issue types available");
             }
         } else {
-            form.issue_type_name.clone()
-        };
+            self.issue_type_dropdown.set_placeholder("Select issue type...");
+        }
 
-        let style = if focused {
-            Style::default().fg(t.accent)
-        } else if form.issue_type_id.is_empty() {
-            Style::default().fg(t.input_placeholder)
-        } else {
-            Style::default().fg(t.input_fg)
-        };
-
-        let border_style = if focused {
-            Style::default().fg(t.border_focused)
-        } else {
-            Style::default().fg(t.border)
-        };
-
-        let title_style = if focused {
-            Style::default().fg(t.accent).add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(t.fg)
-        };
-
-        let block = Block::default()
-            .title(Span::styled(" Issue Type * ", title_style))
-            .borders(Borders::ALL)
-            .border_style(border_style);
-
-        let paragraph = Paragraph::new(display_value).style(style).block(block);
-
-        frame.render_widget(paragraph, area);
+        // Render the dropdown (collapsed view only)
+        self.issue_type_dropdown.render(frame, area, focused);
     }
 
     /// Render the parent issue input field (for subtasks).

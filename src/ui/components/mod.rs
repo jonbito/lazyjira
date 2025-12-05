@@ -6,6 +6,7 @@
 mod assignee_picker;
 mod command_palette;
 mod comments;
+mod dropdown;
 mod external_editor;
 mod help_bar;
 mod input;
@@ -28,6 +29,7 @@ mod transition_picker;
 
 pub use assignee_picker::{AssigneeAction, AssigneePicker};
 pub use command_palette::{CommandPalette, CommandPaletteAction};
+pub use dropdown::{Dropdown, DropdownAction, DropdownItem};
 pub use comments::{CommentAction, CommentsPanel};
 pub use external_editor::ExternalEditor;
 pub use help_bar::render_context_help;

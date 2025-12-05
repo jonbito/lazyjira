@@ -30,10 +30,11 @@ use crate::events::KeyContext;
 use crate::ui::{
     render_context_help, CommandPalette, CommandPaletteAction, ConfirmDialog, CreateIssueAction,
     CreateIssueRenderData, CreateIssueView, DeleteProfileDialog, DetailAction, DetailView,
-    ErrorDialog, FilterPanelAction, FilterPanelView, FormField, HelpAction, HelpView, JqlAction,
-    JqlInput, ListAction, ListView, LoadingIndicator, Notification, NotificationManager,
-    ProfileFormAction, ProfileFormData, ProfileFormView, ProfileListAction, ProfileListView,
-    ProfilePicker, ProfilePickerAction, ProfileSummary, SavedFiltersAction, SavedFiltersDialog,
+    DropdownAction, DropdownItem, ErrorDialog, FilterPanelAction, FilterPanelView, FormField,
+    HelpAction, HelpView, JqlAction, JqlInput, ListAction, ListView, LoadingIndicator,
+    Notification, NotificationManager, ProfileFormAction, ProfileFormData, ProfileFormView,
+    ProfileListAction, ProfileListView, ProfilePicker, ProfilePickerAction, ProfileSummary,
+    SavedFiltersAction, SavedFiltersDialog,
 };
 
 /// The current view/screen state of the application.
@@ -1145,6 +1146,16 @@ impl App {
 
         let focus = self.create_issue_focus;
 
+        // If the project dropdown is expanded, route all input to it
+        if self.create_issue_view.is_project_dropdown_expanded() {
+            return self.handle_create_issue_field_input(key, CreateIssueFormField::Project);
+        }
+
+        // If the issue type dropdown is expanded, route all input to it
+        if self.create_issue_view.is_issue_type_dropdown_expanded() {
+            return self.handle_create_issue_field_input(key, CreateIssueFormField::IssueType);
+        }
+
         match (key.code, key.modifiers) {
             // Tab - next field
             (KeyCode::Tab, KeyModifiers::NONE) => {
@@ -1176,8 +1187,12 @@ impl App {
                     None
                 }
             }
-            // Enter in other fields - move to next field (except description which uses Enter)
-            (KeyCode::Enter, KeyModifiers::NONE) if focus != CreateIssueFormField::Description => {
+            // Enter in other fields - move to next field (except description, project, and issue type which use Enter)
+            (KeyCode::Enter, KeyModifiers::NONE)
+                if focus != CreateIssueFormField::Description
+                    && focus != CreateIssueFormField::Project
+                    && focus != CreateIssueFormField::IssueType =>
+            {
                 self.sync_create_issue_from_view();
                 self.create_issue_focus_next();
                 self.sync_create_issue_to_view();
@@ -1194,74 +1209,69 @@ impl App {
         key: crossterm::event::KeyEvent,
         focus: CreateIssueFormField,
     ) -> Option<CreateIssueAction> {
-        use crossterm::event::KeyCode;
-
         match focus {
             CreateIssueFormField::Project => {
-                let projects = self.get_available_projects_for_create_issue();
-                if projects.is_empty() {
-                    return None;
+                // Ensure dropdown has items (only when collapsed to not interfere with navigation)
+                if !self.create_issue_view.is_project_dropdown_expanded() {
+                    let projects = self.get_available_projects_for_create_issue();
+                    if self.create_issue_view.project_dropdown().is_empty() && !projects.is_empty()
+                    {
+                        let items: Vec<DropdownItem> = projects
+                            .iter()
+                            .map(|(key, name)| DropdownItem::new(key.clone(), name.clone()))
+                            .collect();
+                        self.create_issue_view.set_project_items(items);
+
+                        // Sync current selection if exists
+                        if !self.create_issue_form.project_key.is_empty() {
+                            self.create_issue_view
+                                .select_project_by_id(&self.create_issue_form.project_key);
+                        }
+                    }
                 }
 
-                // Check if no project is currently selected
-                let no_selection = self.create_issue_form.project_key.is_empty();
-
-                match key.code {
-                    KeyCode::Left | KeyCode::Char('h') => {
-                        let idx = self.create_issue_view.project_picker_index();
-                        if idx > 0 {
-                            self.create_issue_view.set_project_picker_index(idx - 1);
-                            self.update_selected_project_from_picker(&projects);
-                        } else if no_selection {
-                            // Select the first project if none is selected
-                            self.update_selected_project_from_picker(&projects);
+                // Handle dropdown input
+                if let Some(action) = self.create_issue_view.handle_project_dropdown_input(key) {
+                    match action {
+                        DropdownAction::Select(key, name) => {
+                            self.update_selected_project(&key, &name);
+                        }
+                        DropdownAction::Cancel => {
+                            // Just close the dropdown, no action needed
                         }
                     }
-                    KeyCode::Right | KeyCode::Char('l') => {
-                        let idx = self.create_issue_view.project_picker_index();
-                        if no_selection {
-                            // Select the current project if none is selected
-                            self.update_selected_project_from_picker(&projects);
-                        } else if idx < projects.len() - 1 {
-                            self.create_issue_view.set_project_picker_index(idx + 1);
-                            self.update_selected_project_from_picker(&projects);
-                        }
-                    }
-                    _ => {}
                 }
                 None
             }
             CreateIssueFormField::IssueType => {
-                let issue_types_len = self.available_issue_types.len();
-                if issue_types_len == 0 {
-                    return None;
+                // Ensure dropdown has items (only when collapsed to not interfere with navigation)
+                if !self.create_issue_view.is_issue_type_dropdown_expanded() {
+                    let issue_types = self.available_issue_types.clone();
+                    if !issue_types.is_empty() {
+                        let items: Vec<DropdownItem> = issue_types
+                            .iter()
+                            .map(|t| DropdownItem::new(t.id.clone(), t.name.clone()))
+                            .collect();
+                        self.create_issue_view.set_issue_type_items(items);
+
+                        // Sync current selection if exists
+                        if !self.create_issue_form.issue_type_id.is_empty() {
+                            self.create_issue_view
+                                .select_issue_type_by_id(&self.create_issue_form.issue_type_id);
+                        }
+                    }
                 }
 
-                // Check if no issue type is currently selected
-                let no_selection = self.create_issue_form.issue_type_id.is_empty();
-
-                match key.code {
-                    KeyCode::Left | KeyCode::Char('h') => {
-                        let idx = self.create_issue_view.issue_type_picker_index();
-                        if idx > 0 {
-                            self.create_issue_view.set_issue_type_picker_index(idx - 1);
-                            self.update_selected_issue_type_from_picker();
-                        } else if no_selection {
-                            // Select the first issue type if none is selected
-                            self.update_selected_issue_type_from_picker();
+                // Handle dropdown input
+                if let Some(action) = self.create_issue_view.handle_issue_type_dropdown_input(key) {
+                    match action {
+                        DropdownAction::Select(id, name) => {
+                            self.update_selected_issue_type(&id, &name);
+                        }
+                        DropdownAction::Cancel => {
+                            // Dropdown closed without selection
                         }
                     }
-                    KeyCode::Right | KeyCode::Char('l') => {
-                        let idx = self.create_issue_view.issue_type_picker_index();
-                        if no_selection {
-                            // Select the current issue type if none is selected
-                            self.update_selected_issue_type_from_picker();
-                        } else if idx < issue_types_len - 1 {
-                            self.create_issue_view.set_issue_type_picker_index(idx + 1);
-                            self.update_selected_issue_type_from_picker();
-                        }
-                    }
-                    _ => {}
                 }
                 None
             }
@@ -1302,33 +1312,30 @@ impl App {
         }
     }
 
-    /// Update the selected project from the picker index.
-    fn update_selected_project_from_picker(&mut self, projects: &[(String, String)]) {
-        let idx = self.create_issue_view.project_picker_index();
-        if let Some((key, name)) = projects.get(idx) {
-            let old_project = self.create_issue_form.project_key.clone();
-            self.create_issue_form.project_key = key.clone();
-            self.create_issue_form.project_name = name.clone();
+    /// Update the selected project.
+    fn update_selected_project(&mut self, key: &str, name: &str) {
+        let old_project = self.create_issue_form.project_key.clone();
+        self.create_issue_form.project_key = key.to_string();
+        self.create_issue_form.project_name = name.to_string();
 
-            // If project changed, clear issue type and fetch new ones
-            if old_project != *key {
-                self.create_issue_form.issue_type_id.clear();
-                self.create_issue_form.issue_type_name.clear();
-                self.available_issue_types.clear();
-                self.create_issue_view.set_issue_type_picker_index(0);
-                // Trigger fetch of issue types for the new project
-                // (take_pending_fetch_issue_types will use create_issue_form.project_key)
-                self.pending_fetch_issue_types = true;
-            }
+        // If project changed, clear issue type and fetch new ones
+        if old_project != key {
+            self.create_issue_form.issue_type_id.clear();
+            self.create_issue_form.issue_type_name.clear();
+            self.available_issue_types.clear();
+            self.create_issue_view.set_issue_type_items(Vec::new());
+            // Trigger fetch of issue types for the new project
+            // (take_pending_fetch_issue_types will use create_issue_form.project_key)
+            self.pending_fetch_issue_types = true;
         }
     }
 
-    /// Update the selected issue type from the picker index.
-    fn update_selected_issue_type_from_picker(&mut self) {
-        let idx = self.create_issue_view.issue_type_picker_index();
-        if let Some(issue_type) = self.available_issue_types.get(idx) {
+    /// Update the selected issue type by ID.
+    fn update_selected_issue_type(&mut self, id: &str, name: &str) {
+        // Find the issue type in available types to get full metadata
+        if let Some(issue_type) = self.available_issue_types.iter().find(|t| t.id == id) {
             self.create_issue_form.issue_type_id = issue_type.id.clone();
-            self.create_issue_form.issue_type_name = issue_type.name.clone();
+            self.create_issue_form.issue_type_name = name.to_string();
             self.create_issue_form.is_subtask = issue_type.subtask;
             self.create_issue_form.can_have_epic_parent = issue_type.can_have_epic_parent();
 

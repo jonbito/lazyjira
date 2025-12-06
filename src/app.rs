@@ -302,8 +302,10 @@ pub struct App {
     assignee_fetch_for_create_issue: bool,
     /// Pending assignee change request (issue key, account_id or None for unassign).
     pending_assignee_change: Option<(String, Option<String>)>,
-    /// Pending fetch priorities request (issue key).
+    /// Pending fetch priorities request (issue key or "__create_issue__" for create form).
     pending_fetch_priorities: Option<String>,
+    /// Tracks if the current priority fetch is for create issue context.
+    priority_fetch_for_create_issue: bool,
     /// Pending priority change request (issue key, priority_id).
     pending_priority_change: Option<(String, String)>,
     /// Pending fetch comments request (issue key).
@@ -424,6 +426,7 @@ impl App {
             assignee_fetch_for_create_issue: false,
             pending_assignee_change: None,
             pending_fetch_priorities: None,
+            priority_fetch_for_create_issue: false,
             pending_priority_change: None,
             pending_fetch_comments: None,
             pending_submit_comment: None,
@@ -511,6 +514,7 @@ impl App {
             assignee_fetch_for_create_issue: false,
             pending_assignee_change: None,
             pending_fetch_priorities: None,
+            priority_fetch_for_create_issue: false,
             pending_priority_change: None,
             pending_fetch_comments: None,
             pending_submit_comment: None,
@@ -1178,6 +1182,11 @@ impl App {
             return self.handle_create_issue_assignee_picker_input(key);
         }
 
+        // If the priority picker is visible, route all input to it
+        if self.create_issue_view.is_priority_picker_visible() {
+            return self.handle_create_issue_priority_picker_input(key);
+        }
+
         match (key.code, key.modifiers) {
             // Tab - next field
             (KeyCode::Tab, KeyModifiers::NONE) => {
@@ -1215,7 +1224,8 @@ impl App {
                     && focus != CreateIssueFormField::Project
                     && focus != CreateIssueFormField::IssueType
                     && focus != CreateIssueFormField::EpicParent
-                    && focus != CreateIssueFormField::Assignee =>
+                    && focus != CreateIssueFormField::Assignee
+                    && focus != CreateIssueFormField::Priority =>
             {
                 self.sync_create_issue_from_view();
                 self.create_issue_focus_next();
@@ -1373,7 +1383,23 @@ impl App {
                 None
             }
             CreateIssueFormField::Priority => {
-                // TODO: Implement priority picker in future task
+                use crossterm::event::{KeyCode, KeyModifiers};
+
+                if let (KeyCode::Enter, KeyModifiers::NONE) = (key.code, key.modifiers) {
+                    // Get current priority name for display
+                    let current_priority = self
+                        .create_issue_form
+                        .priority_name
+                        .clone()
+                        .unwrap_or_else(|| "Default".to_string());
+
+                    // Show picker in loading state
+                    self.create_issue_view
+                        .show_priority_picker_loading(&current_priority);
+
+                    // Return action to fetch priorities
+                    return Some(CreateIssueAction::FetchPriorities);
+                }
                 None
             }
             CreateIssueFormField::Submit => None,
@@ -1401,6 +1427,29 @@ impl App {
                     self.create_issue_form.assignee_name = None;
                 }
                 AssigneeAction::Cancel => {
+                    // Just close the picker, no changes
+                }
+            }
+        }
+        None
+    }
+
+    /// Handle input for the create issue priority picker.
+    fn handle_create_issue_priority_picker_input(
+        &mut self,
+        key: crossterm::event::KeyEvent,
+    ) -> Option<CreateIssueAction> {
+        use crate::ui::PriorityAction;
+
+        // Delegate to the view's priority picker
+        if let Some(action) = self.create_issue_view.handle_priority_picker_input(key) {
+            match action {
+                PriorityAction::Select(id, name) => {
+                    // Update form with selected priority
+                    self.create_issue_form.priority_id = Some(id);
+                    self.create_issue_form.priority_name = Some(name);
+                }
+                PriorityAction::Cancel => {
                     // Just close the picker, no changes
                 }
             }
@@ -2161,9 +2210,16 @@ impl App {
 
     /// Take the pending fetch priorities request, if any.
     ///
-    /// Returns the issue_key.
+    /// Returns the issue_key (or "__create_issue__" for create form context).
+    /// Also sets the `priority_fetch_for_create_issue` flag based on the key.
     pub fn take_pending_fetch_priorities(&mut self) -> Option<String> {
-        self.pending_fetch_priorities.take()
+        if let Some(key) = self.pending_fetch_priorities.take() {
+            // Check if this fetch is for create issue context
+            self.priority_fetch_for_create_issue = key == "__create_issue__";
+            Some(key)
+        } else {
+            None
+        }
     }
 
     /// Check if there is a pending fetch priorities request.
@@ -2171,9 +2227,30 @@ impl App {
         self.pending_fetch_priorities.is_some()
     }
 
+    /// Check if the current/last priority fetch was for create issue context.
+    pub fn is_priority_fetch_for_create_issue(&self) -> bool {
+        self.priority_fetch_for_create_issue
+    }
+
     /// Set the available priorities in the detail view.
     pub fn set_priorities(&mut self, priorities: Vec<Priority>) {
         self.detail_view.set_priorities(priorities);
+    }
+
+    /// Set the available priorities in the create issue view.
+    pub fn set_create_issue_priorities(&mut self, priorities: Vec<Priority>) {
+        let current_priority = self
+            .create_issue_form
+            .priority_name
+            .clone()
+            .unwrap_or_else(|| "Default".to_string());
+        self.create_issue_view
+            .set_priorities(priorities, &current_priority);
+    }
+
+    /// Hide the priority picker in the create issue view.
+    pub fn hide_create_issue_priority_picker(&mut self) {
+        self.create_issue_view.hide_priority_picker();
     }
 
     /// Take the pending priority change request, if any.
@@ -3323,6 +3400,12 @@ impl App {
                             // Store request with special marker to indicate create issue context
                             self.pending_fetch_assignees =
                                 Some(("__create_issue__".to_string(), project_key));
+                        }
+                        CreateIssueAction::FetchPriorities => {
+                            debug!("Fetching priorities for create issue");
+                            // Store request with special marker to indicate create issue context
+                            self.pending_fetch_priorities =
+                                Some("__create_issue__".to_string());
                         }
                     }
                 }

@@ -13,10 +13,11 @@ use ratatui::{
     Frame,
 };
 
-use crate::api::types::{IssueTypeMeta, User};
+use crate::api::types::{IssueTypeMeta, Priority, User};
 use crate::app::{App, CreateIssueFormData, CreateIssueFormField};
 use crate::ui::components::{
-    AssigneeAction, AssigneePicker, Dropdown, DropdownAction, DropdownItem, TextEditor, TextInput,
+    AssigneeAction, AssigneePicker, Dropdown, DropdownAction, DropdownItem, PriorityAction,
+    PriorityPicker, TextEditor, TextInput,
 };
 use crate::ui::theme::theme;
 
@@ -60,6 +61,8 @@ pub enum CreateIssueAction {
     FetchIssueTypes(String),
     /// Request to fetch assignable users for the selected project.
     FetchAssignableUsers(String),
+    /// Request to fetch available priorities.
+    FetchPriorities,
 }
 
 /// The create issue view for adding new JIRA issues.
@@ -82,6 +85,8 @@ pub struct CreateIssueView {
     issue_type_dropdown: Dropdown,
     /// Assignee picker.
     assignee_picker: AssigneePicker,
+    /// Priority picker.
+    priority_picker: PriorityPicker,
     /// Whether the form is submitting.
     submitting: bool,
 }
@@ -121,6 +126,7 @@ impl CreateIssueView {
             project_dropdown,
             issue_type_dropdown,
             assignee_picker: AssigneePicker::new(),
+            priority_picker: PriorityPicker::new(),
             submitting: false,
         }
     }
@@ -134,6 +140,7 @@ impl CreateIssueView {
         self.project_dropdown.reset();
         self.issue_type_dropdown.reset();
         self.assignee_picker.hide();
+        self.priority_picker.hide();
         self.submitting = false;
     }
 
@@ -316,6 +323,47 @@ impl CreateIssueView {
     /// Hide the assignee picker.
     pub fn hide_assignee_picker(&mut self) {
         self.assignee_picker.hide();
+    }
+
+    // ========================================================================
+    // Priority Picker Methods
+    // ========================================================================
+
+    /// Check if the priority picker is visible.
+    pub fn is_priority_picker_visible(&self) -> bool {
+        self.priority_picker.is_visible()
+    }
+
+    /// Check if priorities are loading.
+    pub fn is_priorities_loading(&self) -> bool {
+        self.priority_picker.is_loading()
+    }
+
+    /// Show the priority picker in loading state.
+    ///
+    /// This should be called when the user presses Enter on the priority field,
+    /// and then the API call to get priorities should be made.
+    pub fn show_priority_picker_loading(&mut self, current_priority: &str) {
+        self.priority_picker.show_loading(current_priority);
+    }
+
+    /// Set the available priorities in the priority picker.
+    ///
+    /// Call this after receiving the priorities from the API.
+    pub fn set_priorities(&mut self, priorities: Vec<Priority>, current_priority: &str) {
+        self.priority_picker.show(priorities, current_priority);
+    }
+
+    /// Hide the priority picker.
+    pub fn hide_priority_picker(&mut self) {
+        self.priority_picker.hide();
+    }
+
+    /// Handle input when the priority picker is visible.
+    ///
+    /// Returns the action from the picker (if any) for the caller to handle.
+    pub fn handle_priority_picker_input(&mut self, key: KeyEvent) -> Option<PriorityAction> {
+        self.priority_picker.handle_input(key)
     }
 
     /// Handle keyboard input.
@@ -558,15 +606,29 @@ impl CreateIssueView {
         self.assignee_picker.handle_input(key)
     }
 
-    /// Handle priority picker input (placeholder - optional field).
+    /// Handle priority field input - opens the picker on Enter.
     fn handle_priority_input(
         &mut self,
-        _app: &mut App,
-        _key: KeyEvent,
+        app: &mut App,
+        key: KeyEvent,
     ) -> Option<CreateIssueAction> {
-        // TODO: Implement priority picker in future task
-        // For now, priority is optional and can be left empty
-        None
+        match (key.code, key.modifiers) {
+            (KeyCode::Enter, KeyModifiers::NONE) => {
+                // Get current priority name for display
+                let form = app.create_issue_form();
+                let current_priority = form
+                    .priority_name
+                    .clone()
+                    .unwrap_or_else(|| "Default".to_string());
+
+                // Show picker in loading state
+                self.priority_picker.show_loading(&current_priority);
+
+                // Return action to fetch priorities
+                Some(CreateIssueAction::FetchPriorities)
+            }
+            _ => None,
+        }
     }
 
     /// Get available projects from the filter options.
@@ -595,6 +657,10 @@ impl CreateIssueView {
         form.issue_type_id.clear();
         form.issue_type_name.clear();
         self.issue_type_dropdown.reset();
+
+        // Clear assignee when project changes (assignees are project-specific)
+        form.assignee_id = None;
+        form.assignee_name = None;
 
         // Request to fetch issue types for this project
         app.set_pending_fetch_issue_types(true);
@@ -780,8 +846,9 @@ impl CreateIssueView {
             self.render_project_dropdown_overlay(frame, project_area, area);
             self.render_issue_type_dropdown_overlay(frame, issue_type_area, area);
 
-            // Render assignee picker overlay (on top of everything)
+            // Render picker overlays (on top of everything)
             self.assignee_picker.render(frame, area);
+            self.priority_picker.render(frame, area);
         } else if data.form.can_have_epic_parent {
             // Standard issue layout with optional Epic field
             let chunks = Layout::default()
@@ -848,8 +915,9 @@ impl CreateIssueView {
             self.render_issue_type_dropdown_overlay(frame, issue_type_area, area);
             self.render_epic_dropdown_overlay(frame, epic_area, area);
 
-            // Render assignee picker overlay (on top of everything)
+            // Render picker overlays (on top of everything)
             self.assignee_picker.render(frame, area);
+            self.priority_picker.render(frame, area);
         } else {
             // Epic or other top-level type layout without parent field
             let chunks = Layout::default()
@@ -907,8 +975,9 @@ impl CreateIssueView {
             self.render_project_dropdown_overlay(frame, project_area, area);
             self.render_issue_type_dropdown_overlay(frame, issue_type_area, area);
 
-            // Render assignee picker overlay (on top of everything)
+            // Render picker overlays (on top of everything)
             self.assignee_picker.render(frame, area);
+            self.priority_picker.render(frame, area);
         }
     }
 

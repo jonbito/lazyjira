@@ -429,11 +429,22 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
                 ApiMessage::PrioritiesFetched(result) => match result {
                     Ok(priorities) => {
                         debug!("Loaded {} priorities", priorities.len());
-                        app.set_priorities(priorities);
+                        // Route to appropriate view based on context
+                        if app.is_priority_fetch_for_create_issue() {
+                            app.set_create_issue_priorities(priorities);
+                        } else {
+                            app.set_priorities(priorities);
+                        }
                     }
                     Err(e) => {
                         error!("Failed to fetch priorities: {}", e);
-                        app.handle_fetch_priorities_failure(&e);
+                        // Route error to appropriate view based on context
+                        if app.is_priority_fetch_for_create_issue() {
+                            app.hide_create_issue_priority_picker();
+                            app.notify_error(format!("Failed to fetch priorities: {}", e));
+                        } else {
+                            app.handle_fetch_priorities_failure(&e);
+                        }
                     }
                 },
                 ApiMessage::PriorityChanged { result } => match result {

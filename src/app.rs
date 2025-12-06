@@ -3417,8 +3417,7 @@ impl App {
                         CreateIssueAction::FetchPriorities => {
                             debug!("Fetching priorities for create issue");
                             // Store request with special marker to indicate create issue context
-                            self.pending_fetch_priorities =
-                                Some("__create_issue__".to_string());
+                            self.pending_fetch_priorities = Some("__create_issue__".to_string());
                         }
                     }
                 }

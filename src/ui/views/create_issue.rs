@@ -569,11 +569,7 @@ impl CreateIssueView {
     }
 
     /// Handle assignee field input - opens the picker on Enter.
-    fn handle_assignee_input(
-        &mut self,
-        app: &mut App,
-        key: KeyEvent,
-    ) -> Option<CreateIssueAction> {
+    fn handle_assignee_input(&mut self, app: &mut App, key: KeyEvent) -> Option<CreateIssueAction> {
         match (key.code, key.modifiers) {
             (KeyCode::Enter, KeyModifiers::NONE) => {
                 // Check if a project is selected
@@ -607,11 +603,7 @@ impl CreateIssueView {
     }
 
     /// Handle priority field input - opens the picker on Enter.
-    fn handle_priority_input(
-        &mut self,
-        app: &mut App,
-        key: KeyEvent,
-    ) -> Option<CreateIssueAction> {
+    fn handle_priority_input(&mut self, app: &mut App, key: KeyEvent) -> Option<CreateIssueAction> {
         match (key.code, key.modifiers) {
             (KeyCode::Enter, KeyModifiers::NONE) => {
                 // Get current priority name for display

@@ -1073,7 +1073,8 @@ impl DetailView {
                     // Show the issue search picker in loading state and fetch recent issues
                     if let Some(issue) = &self.issue {
                         let issue_key = issue.key.clone();
-                        self.issue_search_picker.show_loading(Some(issue_key.clone()));
+                        self.issue_search_picker
+                            .show_loading(Some(issue_key.clone()));
                         Some(DetailAction::FetchRecentIssuesForLink(issue_key))
                     } else {
                         self.issue_search_picker.show_loading(None);

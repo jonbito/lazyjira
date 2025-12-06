@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2025-12-06
+
+### Added
+
+- Create issue form with project and issue type dropdowns
+- Assignee and priority pickers for new issue creation
+- Epic parent field with dropdown selector
+- Parent issue field for creating subtasks
+- Vim-style keybindings in link picker (`j`/`k` navigation, `/` search, `Esc` close)
+- Recent issues list in link picker for quick linking
+- Alternative `n` key for creating new links
+- Configurable `page_size` setting for issue list pagination
+- Scroll-to-bottom auto-load for seamless pagination
+- Manual load-more with `Ctrl+L` keybinding
+- Loading indicator and pagination error display
+- Context-aware keybinding prioritization in help system
+- Help panel available in Issue Detail view (`?`)
+- Dynamic help panel title showing current context
+
+### Changed
+
+- Improved dropdown component for project and issue type selection
+
 ## [0.1.0] - 2025-12-03
 
 Initial release of LazyJira - a terminal-based JIRA TUI application built with Rust.
@@ -75,4 +98,5 @@ Initial release of LazyJira - a terminal-based JIRA TUI application built with R
 - Standardized input modes across picker components
 - Use Ctrl+S instead of Ctrl+Enter for comment submission
 
+[0.2.0]: https://github.com/jonbito/lazyjira/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/jonbito/lazyjira/releases/tag/v0.1.0

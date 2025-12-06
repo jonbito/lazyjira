@@ -342,8 +342,9 @@ impl LinkManager {
                 None
             }
             // Create new link
-            (KeyCode::Char('c'), KeyModifiers::NONE)
-            | (KeyCode::Char('n'), KeyModifiers::NONE) => Some(LinkManagerAction::CreateNew),
+            (KeyCode::Char('c'), KeyModifiers::NONE) | (KeyCode::Char('n'), KeyModifiers::NONE) => {
+                Some(LinkManagerAction::CreateNew)
+            }
             // Delete selected link
             (KeyCode::Char('d'), KeyModifiers::NONE) => {
                 if let Some(item) = self.items.get(self.selected) {

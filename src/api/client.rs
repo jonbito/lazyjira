@@ -1387,6 +1387,47 @@ impl JiraClient {
         Ok(())
     }
 
+    /// Get recent issues for the picker, sorted by last update.
+    ///
+    /// Uses JQL search to get more results than the issue picker endpoint.
+    ///
+    /// # Arguments
+    ///
+    /// * `exclude_key` - Optional key of the current issue (to exclude from results)
+    /// * `max_results` - Maximum number of results to return (default 20)
+    #[instrument(skip(self))]
+    pub async fn get_recent_issues_for_picker(
+        &self,
+        exclude_key: Option<&str>,
+        max_results: u32,
+    ) -> Result<Vec<IssueSuggestion>> {
+        debug!("Fetching recent issues for picker");
+
+        // Build JQL to get recent issues, excluding the current one
+        let jql = if let Some(key) = exclude_key {
+            format!("key != {} ORDER BY updated DESC", key)
+        } else {
+            "ORDER BY updated DESC".to_string()
+        };
+
+        let result = self.search_issues(&jql, 0, max_results).await?;
+
+        // Convert Issue to IssueSuggestion
+        let suggestions: Vec<IssueSuggestion> = result
+            .issues
+            .into_iter()
+            .map(|issue| IssueSuggestion {
+                key: issue.key,
+                summary_text: Some(issue.fields.summary.clone()),
+                summary: Some(issue.fields.summary),
+                id: issue.id.parse().ok(),
+            })
+            .collect();
+
+        debug!("Found {} recent issues", suggestions.len());
+        Ok(suggestions)
+    }
+
     /// Search for issues using the issue picker endpoint.
     ///
     /// This endpoint is optimized for autocomplete/typeahead scenarios and returns

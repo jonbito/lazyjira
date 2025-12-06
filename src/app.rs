@@ -330,6 +330,8 @@ pub struct App {
     pending_navigate_to_issue: Option<String>,
     /// Pending fetch link types request (issue key).
     pending_fetch_link_types: Option<String>,
+    /// Pending fetch recent issues for link picker (issue key to exclude).
+    pending_fetch_recent_issues_for_link: Option<String>,
     /// Pending search issues for linking request (issue key, query).
     pending_search_issues_for_link: Option<(String, String)>,
     /// Pending create link request (current issue key, target issue key, link type name, is_outward).
@@ -439,6 +441,7 @@ impl App {
             pending_fetch_changelog: None,
             pending_navigate_to_issue: None,
             pending_fetch_link_types: None,
+            pending_fetch_recent_issues_for_link: None,
             pending_search_issues_for_link: None,
             pending_create_link: None,
             pending_confirm_delete_link: None,
@@ -527,6 +530,7 @@ impl App {
             pending_fetch_changelog: None,
             pending_navigate_to_issue: None,
             pending_fetch_link_types: None,
+            pending_fetch_recent_issues_for_link: None,
             pending_search_issues_for_link: None,
             pending_create_link: None,
             pending_confirm_delete_link: None,
@@ -2570,6 +2574,11 @@ impl App {
         self.notify_error(format!("Failed to load link types: {}", error));
     }
 
+    /// Take the pending fetch recent issues for link request.
+    pub fn take_pending_fetch_recent_issues_for_link(&mut self) -> Option<String> {
+        self.pending_fetch_recent_issues_for_link.take()
+    }
+
     /// Take the pending search issues for link request.
     pub fn take_pending_search_issues_for_link(&mut self) -> Option<(String, String)> {
         self.pending_search_issues_for_link.take()
@@ -3252,6 +3261,10 @@ impl App {
                         DetailAction::FetchLinkTypes(issue_key) => {
                             info!(key = %issue_key, "Fetching link types");
                             self.pending_fetch_link_types = Some(issue_key);
+                        }
+                        DetailAction::FetchRecentIssuesForLink(issue_key) => {
+                            info!(key = %issue_key, "Fetching recent issues for linking");
+                            self.pending_fetch_recent_issues_for_link = Some(issue_key);
                         }
                         DetailAction::SearchIssuesForLink(issue_key, query) => {
                             info!(key = %issue_key, query = %query, "Searching issues for linking");

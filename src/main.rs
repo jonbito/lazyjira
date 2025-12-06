@@ -1031,6 +1031,16 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
             }
         }
 
+        // Handle fetch recent issues for linking request - spawn in background
+        if let Some(exclude_key) = app.take_pending_fetch_recent_issues_for_link() {
+            if let Some(ref c) = client {
+                debug!("Fetching recent issues for linking");
+                task_spawner.spawn_fetch_recent_issues_for_link(c, exclude_key);
+            } else {
+                app.handle_issue_search_failure("No JIRA connection");
+            }
+        }
+
         // Handle search issues for linking request - spawn in background
         if let Some((issue_key, query)) = app.take_pending_search_issues_for_link() {
             if let Some(ref c) = client {

@@ -553,6 +553,19 @@ impl TaskSpawner {
         });
     }
 
+    /// Spawn a task to fetch recent issues for the link picker.
+    pub fn spawn_fetch_recent_issues_for_link(&self, client: &JiraClient, exclude_key: String) {
+        let tx = self.tx.clone();
+        let client = client.clone();
+        tokio::spawn(async move {
+            let result = client
+                .get_recent_issues_for_picker(Some(&exclude_key), 20)
+                .await
+                .map_err(|e| e.to_string());
+            let _ = tx.send(ApiMessage::IssueSearchResults { result });
+        });
+    }
+
     /// Spawn a task to create an issue link.
     pub fn spawn_create_link(
         &self,

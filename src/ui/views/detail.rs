@@ -83,6 +83,8 @@ pub enum DetailAction {
     StartCreateLink,
     /// Fetch available link types for the create link workflow (issue key).
     FetchLinkTypes(String),
+    /// Fetch recent issues for link picker (issue key to exclude).
+    FetchRecentIssuesForLink(String),
     /// Search for issues to link (issue key, query).
     SearchIssuesForLink(String, String),
     /// Create a link between issues (current issue key, target issue key, link type name, is_outward).
@@ -1068,13 +1070,15 @@ impl DetailView {
                 LinkManagerAction::SelectLinkType(link_type, is_outward) => {
                     // Store the selected link type and direction
                     self.pending_link_type = Some((link_type, is_outward));
-                    // Show the issue search picker
+                    // Show the issue search picker in loading state and fetch recent issues
                     if let Some(issue) = &self.issue {
-                        self.issue_search_picker.show(Some(issue.key.clone()));
+                        let issue_key = issue.key.clone();
+                        self.issue_search_picker.show_loading(Some(issue_key.clone()));
+                        Some(DetailAction::FetchRecentIssuesForLink(issue_key))
                     } else {
-                        self.issue_search_picker.show(None);
+                        self.issue_search_picker.show_loading(None);
+                        None
                     }
-                    None
                 }
                 LinkManagerAction::Cancel => None,
             }

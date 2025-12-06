@@ -342,6 +342,12 @@ pub struct App {
     pending_delete_link: Option<(String, String)>,
     /// Delete link confirmation dialog.
     delete_link_confirm_dialog: ConfirmDialog,
+    /// Pending confirm delete issue (issue key).
+    pending_confirm_delete_issue: Option<String>,
+    /// Pending delete issue request (issue key).
+    pending_delete_issue: Option<String>,
+    /// Delete issue confirmation dialog.
+    delete_issue_confirm_dialog: ConfirmDialog,
     /// Pending external editor request (issue key, current description).
     pending_external_edit: Option<(String, String)>,
     /// Pending load more issues request (pagination).
@@ -447,6 +453,9 @@ impl App {
             pending_confirm_delete_link: None,
             pending_delete_link: None,
             delete_link_confirm_dialog: ConfirmDialog::new(),
+            pending_confirm_delete_issue: None,
+            pending_delete_issue: None,
+            delete_issue_confirm_dialog: ConfirmDialog::new(),
             pending_external_edit: None,
             pending_load_more: false,
             help_view: HelpView::default(),
@@ -536,6 +545,9 @@ impl App {
             pending_confirm_delete_link: None,
             pending_delete_link: None,
             delete_link_confirm_dialog: ConfirmDialog::new(),
+            pending_confirm_delete_issue: None,
+            pending_delete_issue: None,
+            delete_issue_confirm_dialog: ConfirmDialog::new(),
             pending_external_edit: None,
             pending_load_more: false,
             help_view: HelpView::default(),
@@ -2661,6 +2673,48 @@ impl App {
     }
 
     // ========================================================================
+    // Delete Issue methods
+    // ========================================================================
+
+    /// Show the delete issue confirmation dialog.
+    pub fn show_delete_issue_confirmation(&mut self, issue_key: String) {
+        self.delete_issue_confirm_dialog.show_destructive(
+            "Delete Issue",
+            format!("Are you sure you want to delete {}? This cannot be undone.", issue_key),
+        );
+        self.pending_confirm_delete_issue = Some(issue_key);
+    }
+
+    /// Check if the delete issue confirm dialog is visible.
+    pub fn is_delete_issue_confirm_visible(&self) -> bool {
+        self.delete_issue_confirm_dialog.is_visible()
+    }
+
+    /// Take the pending delete issue request.
+    pub fn take_pending_delete_issue(&mut self) -> Option<String> {
+        self.pending_delete_issue.take()
+    }
+
+    /// Handle successful issue deletion.
+    pub fn handle_delete_issue_success(&mut self, issue_key: &str) {
+        info!(key = %issue_key, "Issue deleted successfully");
+        self.stop_loading();
+        self.notify_success(format!("Issue {} deleted successfully", issue_key));
+        // Go back to the issue list and refresh
+        self.detail_view.clear();
+        self.selected_issue_key = None;
+        self.state = AppState::IssueList;
+        self.list_view.set_loading(true);
+    }
+
+    /// Handle failure to delete issue.
+    pub fn handle_delete_issue_failure(&mut self, error: &str) {
+        warn!(error = %error, "Failed to delete issue");
+        self.stop_loading();
+        self.notify_error(format!("Failed to delete issue: {}", error));
+    }
+
+    // ========================================================================
     // Create Issue methods
     // ========================================================================
 
@@ -2883,6 +2937,24 @@ impl App {
                 } else {
                     debug!("Delete link cancelled");
                     self.pending_confirm_delete_link = None;
+                }
+            }
+            return;
+        }
+
+        // Handle delete issue confirmation dialog (blocks other input)
+        if self.delete_issue_confirm_dialog.is_visible() {
+            if let Some(confirmed) = self.delete_issue_confirm_dialog.handle_input(key_event) {
+                if confirmed {
+                    debug!("Delete issue confirmed");
+                    // Move from pending_confirm to pending_delete to trigger the actual deletion
+                    if let Some(issue_key) = self.pending_confirm_delete_issue.take() {
+                        self.pending_delete_issue = Some(issue_key);
+                        self.start_loading("Deleting issue...".to_string());
+                    }
+                } else {
+                    debug!("Delete issue cancelled");
+                    self.pending_confirm_delete_issue = None;
                 }
             }
             return;
@@ -3310,6 +3382,15 @@ impl App {
                         DetailAction::OpenInBrowser(issue_key) => {
                             self.open_issue_in_browser(&issue_key);
                         }
+                        DetailAction::ConfirmDeleteIssue(issue_key) => {
+                            info!(key = %issue_key, "Confirming issue deletion");
+                            self.show_delete_issue_confirmation(issue_key);
+                        }
+                        DetailAction::DeleteIssue(issue_key) => {
+                            info!(key = %issue_key, "Deleting issue");
+                            self.pending_delete_issue = Some(issue_key);
+                            self.start_loading("Deleting issue...".to_string());
+                        }
                     }
                 }
             }
@@ -3497,6 +3578,9 @@ impl App {
 
         // Render delete link confirmation dialog
         self.delete_link_confirm_dialog.render(frame, area);
+
+        // Render delete issue confirmation dialog
+        self.delete_issue_confirm_dialog.render(frame, area);
 
         // Render create issue view (on top of issue list)
         if self.state == AppState::CreateIssue {

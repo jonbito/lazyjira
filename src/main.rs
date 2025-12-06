@@ -591,6 +591,16 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
                         app.handle_delete_link_failure(&e);
                     }
                 },
+                ApiMessage::IssueDeleted { issue_key, result } => match result {
+                    Ok(()) => {
+                        info!("Issue {} deleted successfully", issue_key);
+                        app.handle_delete_issue_success(&issue_key);
+                    }
+                    Err(e) => {
+                        error!("Failed to delete issue: {}", e);
+                        app.handle_delete_issue_failure(&e);
+                    }
+                },
                 ApiMessage::IssueCreated(result) => match result {
                     Ok(response) => {
                         info!("Issue created successfully: {}", response.key);
@@ -1079,6 +1089,16 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
                 task_spawner.spawn_delete_link(c, link_id, issue_key);
             } else {
                 app.handle_delete_link_failure("No JIRA connection");
+            }
+        }
+
+        // Handle delete issue request (after confirmation) - spawn in background
+        if let Some(issue_key) = app.take_pending_delete_issue() {
+            if let Some(ref c) = client {
+                debug!("Deleting issue: {}", issue_key);
+                task_spawner.spawn_delete_issue(c, issue_key);
+            } else {
+                app.handle_delete_issue_failure("No JIRA connection");
             }
         }
 

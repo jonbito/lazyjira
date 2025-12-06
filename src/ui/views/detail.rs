@@ -97,6 +97,10 @@ pub enum DetailAction {
     OpenExternalEditor(String),
     /// Open the issue in the browser (issue key).
     OpenInBrowser(String),
+    /// Confirm deletion of the current issue (issue key).
+    ConfirmDeleteIssue(String),
+    /// Delete the current issue (issue key).
+    DeleteIssue(String),
 }
 
 /// Which field is currently being edited.
@@ -902,6 +906,11 @@ impl DetailView {
                 .issue
                 .as_ref()
                 .map(|issue| DetailAction::OpenInBrowser(issue.key.clone())),
+            // Delete issue (with confirmation)
+            (KeyCode::Char('D'), KeyModifiers::SHIFT) => self
+                .issue
+                .as_ref()
+                .map(|issue| DetailAction::ConfirmDeleteIssue(issue.key.clone())),
             _ => None,
         }
     }
@@ -1709,7 +1718,7 @@ impl DetailView {
             Span::styled(scroll_info, Style::default().fg(t.dim)),
             Span::raw(" | "),
             Span::styled(
-                "j/k:scroll  q:back  e:edit  E:ext-edit  c:comment  s:status  o:open  a:assignee  h:history  l:labels  L:link  p:priority",
+                "j/k:scroll  q:back  e:edit  c:comment  s:status  a:assignee  h:history  l:labels  L:link  p:priority  D:delete",
                 Style::default().fg(t.dim),
             ),
         ]);

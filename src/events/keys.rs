@@ -185,6 +185,7 @@ pub fn get_keybindings() -> Vec<Keybinding> {
             KeyContext::IssueDetail,
         ),
         Keybinding::new("L", "link", "Link issue", KeyContext::IssueDetail),
+        Keybinding::new("D", "delete", "Delete issue", KeyContext::IssueDetail),
         Keybinding::new(
             "q / Esc",
             "back",

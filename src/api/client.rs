@@ -1387,6 +1387,33 @@ impl JiraClient {
         Ok(())
     }
 
+    /// Delete an issue.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The issue key (e.g., "PROJ-123")
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The issue doesn't exist
+    /// - Permission is denied
+    #[instrument(skip(self), fields(issue_key = %key))]
+    pub async fn delete_issue(&self, key: &str) -> Result<()> {
+        info!("Deleting issue {}", key);
+        let url = format!("{}/rest/api/3/issue/{}", self.base_url, key);
+        self.delete(&url).await.map_err(|e| {
+            error!("Failed to delete issue {}: {}", key, e);
+            match e {
+                ApiError::NotFound(_) => ApiError::NotFound(format!("Issue '{}' not found", key)),
+                ApiError::Forbidden => ApiError::PermissionDenied,
+                other => other,
+            }
+        })?;
+        info!("Successfully deleted issue {}", key);
+        Ok(())
+    }
+
     /// Get recent issues for the picker, sorted by last update.
     ///
     /// Uses JQL search to get more results than the issue picker endpoint.

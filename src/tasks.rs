@@ -131,6 +131,12 @@ pub enum ApiMessage {
         result: Result<(), String>,
     },
 
+    /// Issue deleted
+    IssueDeleted {
+        issue_key: String,
+        result: Result<(), String>,
+    },
+
     /// Issue created
     IssueCreated(Result<CreateIssueResponse, String>),
 
@@ -603,6 +609,20 @@ impl TaskSpawner {
                 .await
                 .map_err(|e| e.to_string());
             let _ = tx.send(ApiMessage::LinkDeleted {
+                issue_key: key,
+                result,
+            });
+        });
+    }
+
+    /// Spawn a task to delete an issue.
+    pub fn spawn_delete_issue(&self, client: &JiraClient, issue_key: String) {
+        let tx = self.tx.clone();
+        let client = client.clone();
+        let key = issue_key.clone();
+        tokio::spawn(async move {
+            let result = client.delete_issue(&key).await.map_err(|e| e.to_string());
+            let _ = tx.send(ApiMessage::IssueDeleted {
                 issue_key: key,
                 result,
             });

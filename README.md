@@ -146,6 +146,7 @@ cargo build --release
 | `y` | Change priority |
 | `l` | Edit labels |
 | `L` | Link issue |
+| `D` | Delete issue (with confirmation) |
 | `o` | Open in browser |
 | `q` / `Esc` | Go back to list |
 

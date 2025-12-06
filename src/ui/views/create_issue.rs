@@ -37,6 +37,8 @@ pub struct CreateIssueRenderData {
     pub is_fetching_issue_types: bool,
     /// Available projects as (key, name) pairs.
     pub projects: Vec<(String, String)>,
+    /// Available epics as (key, display_label) pairs.
+    pub epics: Vec<(String, String)>,
     /// Validation errors (cloned).
     pub errors: Vec<String>,
 }
@@ -66,8 +68,8 @@ pub struct CreateIssueView {
     summary_input: TextInput,
     /// Parent issue key text input (for subtasks).
     parent_input: TextInput,
-    /// Epic parent key text input (for standard issues).
-    epic_parent_input: TextInput,
+    /// Epic dropdown (for standard issues).
+    epic_dropdown: Dropdown,
     /// Description text editor.
     description_editor: TextEditor,
     /// Project dropdown.
@@ -93,8 +95,9 @@ impl CreateIssueView {
         let mut parent_input = TextInput::new();
         parent_input.set_placeholder("e.g., PROJ-123");
 
-        let mut epic_parent_input = TextInput::new();
-        epic_parent_input.set_placeholder("e.g., PROJ-100 (optional)");
+        let mut epic_dropdown = Dropdown::new("Epic");
+        epic_dropdown.set_required(false);
+        epic_dropdown.set_placeholder("None (optional)");
 
         let mut project_dropdown = Dropdown::new("Project");
         project_dropdown.set_required(true);
@@ -107,7 +110,7 @@ impl CreateIssueView {
         Self {
             summary_input,
             parent_input,
-            epic_parent_input,
+            epic_dropdown,
             description_editor: TextEditor::empty(),
             project_dropdown,
             issue_type_dropdown,
@@ -119,7 +122,7 @@ impl CreateIssueView {
     pub fn reset(&mut self) {
         self.summary_input.clear();
         self.parent_input.clear();
-        self.epic_parent_input.clear();
+        self.epic_dropdown.reset();
         self.description_editor = TextEditor::empty();
         self.project_dropdown.reset();
         self.issue_type_dropdown.reset();
@@ -241,19 +244,36 @@ impl CreateIssueView {
         self.parent_input.handle_input(key);
     }
 
-    /// Set the epic parent key value.
-    pub fn set_epic_parent(&mut self, value: &str) {
-        self.epic_parent_input.set_value(value);
+    /// Check if the epic dropdown is expanded.
+    pub fn is_epic_dropdown_expanded(&self) -> bool {
+        self.epic_dropdown.is_expanded()
     }
 
-    /// Get the epic parent key value.
-    pub fn epic_parent(&self) -> &str {
-        self.epic_parent_input.value()
+    /// Get the selected epic key.
+    pub fn selected_epic_key(&self) -> Option<String> {
+        self.epic_dropdown
+            .selected_item()
+            .map(|item| item.id.clone())
     }
 
-    /// Handle input for the epic parent field.
-    pub fn handle_epic_parent_input(&mut self, key: KeyEvent) {
-        self.epic_parent_input.handle_input(key);
+    /// Set the items in the epic dropdown.
+    pub fn set_epic_items(&mut self, items: Vec<DropdownItem>) {
+        self.epic_dropdown.set_items(items);
+    }
+
+    /// Select an epic by key in the dropdown.
+    pub fn select_epic_by_id(&mut self, id: &str) {
+        self.epic_dropdown.select_by_id(id);
+    }
+
+    /// Clear the epic selection.
+    pub fn clear_epic_selection(&mut self) {
+        self.epic_dropdown.reset();
+    }
+
+    /// Handle input for the epic dropdown and return any action.
+    pub fn handle_epic_dropdown_input(&mut self, key: KeyEvent) -> Option<DropdownAction> {
+        self.epic_dropdown.handle_input(key)
     }
 
     /// Handle keyboard input.
@@ -275,6 +295,11 @@ impl CreateIssueView {
         // If the issue type dropdown is expanded, handle its input first
         if self.issue_type_dropdown.is_expanded() {
             return self.handle_issue_type_input(app, key);
+        }
+
+        // If the epic dropdown is expanded, handle its input first
+        if self.epic_dropdown.is_expanded() {
+            return self.handle_epic_input(app, key);
         }
 
         match (key.code, key.modifiers) {
@@ -308,10 +333,12 @@ impl CreateIssueView {
                     None
                 }
             }
-            // Enter in other fields - move to next field (except description and project which uses Enter)
+            // Enter in other fields - move to next field (except description and dropdowns which use Enter)
             (KeyCode::Enter, KeyModifiers::NONE)
                 if focus != CreateIssueFormField::Description
-                    && focus != CreateIssueFormField::Project =>
+                    && focus != CreateIssueFormField::Project
+                    && focus != CreateIssueFormField::IssueType
+                    && focus != CreateIssueFormField::EpicParent =>
             {
                 self.sync_to_app(app);
                 app.create_issue_focus_next();
@@ -337,10 +364,7 @@ impl CreateIssueView {
                 self.parent_input.handle_input(key);
                 None
             }
-            CreateIssueFormField::EpicParent => {
-                self.epic_parent_input.handle_input(key);
-                None
-            }
+            CreateIssueFormField::EpicParent => self.handle_epic_input(app, key),
             CreateIssueFormField::Summary => {
                 self.summary_input.handle_input(key);
                 None
@@ -421,6 +445,36 @@ impl CreateIssueView {
         None
     }
 
+    /// Handle epic dropdown input.
+    fn handle_epic_input(&mut self, app: &mut App, key: KeyEvent) -> Option<CreateIssueAction> {
+        // Sync epics to the dropdown if not already set
+        if self.epic_dropdown.is_empty() {
+            let epics = Self::get_available_epics(app);
+            let items: Vec<DropdownItem> = epics
+                .into_iter()
+                .map(|(key, label)| DropdownItem::new(key, label))
+                .collect();
+            self.epic_dropdown.set_items(items);
+
+            // Sync current selection if exists
+            if let Some(ref current_key) = app.create_issue_form().epic_parent_key {
+                self.epic_dropdown.select_by_id(current_key);
+            }
+        }
+
+        if let Some(action) = self.epic_dropdown.handle_input(key) {
+            match action {
+                DropdownAction::Select(key, _label) => {
+                    self.update_selected_epic(app, &key);
+                }
+                DropdownAction::Cancel => {
+                    // Just close the dropdown, no action needed
+                }
+            }
+        }
+        None
+    }
+
     /// Handle assignee picker input (placeholder - optional field).
     fn handle_assignee_input(
         &mut self,
@@ -481,6 +535,31 @@ impl CreateIssueView {
         form.issue_type_name = name.to_string();
     }
 
+    /// Get available epics from the filter options.
+    ///
+    /// Returns a vector of (epic_key, display_label) tuples.
+    fn get_available_epics(app: &App) -> Vec<(String, String)> {
+        if let Some(options) = app.filter_options() {
+            options
+                .epics
+                .iter()
+                .map(|e| (e.id.clone(), e.label.clone()))
+                .collect()
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// Update the selected epic in app state.
+    fn update_selected_epic(&mut self, app: &mut App, key: &str) {
+        let form = app.create_issue_form_mut();
+        if key.is_empty() {
+            form.epic_parent_key = None;
+        } else {
+            form.epic_parent_key = Some(key.to_string());
+        }
+    }
+
     /// Sync local state to app state.
     fn sync_to_app(&self, app: &mut App) {
         let form = app.create_issue_form_mut();
@@ -518,6 +597,17 @@ impl CreateIssueView {
         self.issue_type_dropdown.set_items(type_items);
         if !form.issue_type_id.is_empty() {
             self.issue_type_dropdown.select_by_id(&form.issue_type_id);
+        }
+
+        // Update epic dropdown items and selection
+        let epics = Self::get_available_epics(app);
+        let epic_items: Vec<DropdownItem> = epics
+            .into_iter()
+            .map(|(key, label)| DropdownItem::new(key, label))
+            .collect();
+        self.epic_dropdown.set_items(epic_items);
+        if let Some(ref epic_key) = form.epic_parent_key {
+            self.epic_dropdown.select_by_id(epic_key);
         }
     }
 
@@ -650,9 +740,11 @@ impl CreateIssueView {
                 issue_type_area,
                 focus == CreateIssueFormField::IssueType,
             );
+            let epic_area = chunks[2];
             self.render_epic_parent_field(
+                data,
                 frame,
-                chunks[2],
+                epic_area,
                 focus == CreateIssueFormField::EpicParent,
             );
             self.render_summary_field(frame, chunks[3], focus == CreateIssueFormField::Summary);
@@ -679,6 +771,7 @@ impl CreateIssueView {
             // Render dropdown overlays LAST so they appear on top
             self.render_project_dropdown_overlay(frame, project_area, area);
             self.render_issue_type_dropdown_overlay(frame, issue_type_area, area);
+            self.render_epic_dropdown_overlay(frame, epic_area, area);
         } else {
             // Epic or other top-level type layout without parent field
             let chunks = Layout::default()
@@ -851,10 +944,47 @@ impl CreateIssueView {
             .render_with_label(frame, area, "Parent Issue *", focused);
     }
 
-    /// Render the epic parent input field (optional).
-    fn render_epic_parent_field(&self, frame: &mut Frame, area: Rect, focused: bool) {
-        self.epic_parent_input
-            .render_with_label(frame, area, "Epic", focused);
+    /// Render the epic dropdown field (optional).
+    fn render_epic_parent_field(
+        &mut self,
+        data: &CreateIssueRenderData,
+        frame: &mut Frame,
+        area: Rect,
+        focused: bool,
+    ) {
+        // Ensure dropdown items are synced from data
+        if self.epic_dropdown.item_count() != data.epics.len() {
+            let items: Vec<DropdownItem> = data
+                .epics
+                .iter()
+                .map(|(key, label)| DropdownItem::new(key.clone(), label.clone()))
+                .collect();
+            self.epic_dropdown.set_items(items);
+        }
+
+        // Sync selection only when collapsed (don't interfere with navigation when expanded)
+        if let Some(ref epic_key) = data.form.epic_parent_key {
+            if !self.epic_dropdown.is_expanded() {
+                self.epic_dropdown.select_by_id(epic_key);
+            }
+        }
+
+        // Render the dropdown (collapsed view only)
+        self.epic_dropdown.render(frame, area, focused);
+    }
+
+    /// Render the expanded epic dropdown overlay.
+    /// This should be called LAST after all other fields are rendered.
+    fn render_epic_dropdown_overlay(
+        &self,
+        frame: &mut Frame,
+        dropdown_area: Rect,
+        screen_area: Rect,
+    ) {
+        if self.epic_dropdown.is_expanded() {
+            self.epic_dropdown
+                .render_expanded_list(frame, dropdown_area, screen_area);
+        }
     }
 
     /// Render the summary input field.

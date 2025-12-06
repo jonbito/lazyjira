@@ -1051,14 +1051,20 @@ impl App {
     /// This extracts all necessary data from the App to pass to the CreateIssueView
     /// for rendering, avoiding borrow checker issues by cloning the data.
     pub fn create_issue_render_data(&self) -> CreateIssueRenderData {
-        let projects = if let Some(options) = self.filter_options() {
-            options
+        let (projects, epics) = if let Some(options) = self.filter_options() {
+            let projects = options
                 .projects
                 .iter()
                 .map(|p| (p.id.clone(), p.label.clone()))
-                .collect()
+                .collect();
+            let epics = options
+                .epics
+                .iter()
+                .map(|e| (e.id.clone(), e.label.clone()))
+                .collect();
+            (projects, epics)
         } else {
-            Vec::new()
+            (Vec::new(), Vec::new())
         };
 
         CreateIssueRenderData {
@@ -1067,6 +1073,7 @@ impl App {
             issue_types: self.available_issue_types.clone(),
             is_fetching_issue_types: self.pending_fetch_issue_types,
             projects,
+            epics,
             errors: self.create_issue_errors.clone(),
         }
     }
@@ -1156,6 +1163,11 @@ impl App {
             return self.handle_create_issue_field_input(key, CreateIssueFormField::IssueType);
         }
 
+        // If the epic dropdown is expanded, route all input to it
+        if self.create_issue_view.is_epic_dropdown_expanded() {
+            return self.handle_create_issue_field_input(key, CreateIssueFormField::EpicParent);
+        }
+
         match (key.code, key.modifiers) {
             // Tab - next field
             (KeyCode::Tab, KeyModifiers::NONE) => {
@@ -1187,11 +1199,12 @@ impl App {
                     None
                 }
             }
-            // Enter in other fields - move to next field (except description, project, and issue type which use Enter)
+            // Enter in other fields - move to next field (except description and dropdowns which use Enter)
             (KeyCode::Enter, KeyModifiers::NONE)
                 if focus != CreateIssueFormField::Description
                     && focus != CreateIssueFormField::Project
-                    && focus != CreateIssueFormField::IssueType =>
+                    && focus != CreateIssueFormField::IssueType
+                    && focus != CreateIssueFormField::EpicParent =>
             {
                 self.sync_create_issue_from_view();
                 self.create_issue_focus_next();
@@ -1280,7 +1293,38 @@ impl App {
                 None
             }
             CreateIssueFormField::EpicParent => {
-                self.create_issue_view.handle_epic_parent_input(key);
+                // Ensure dropdown has items (only when collapsed to not interfere with navigation)
+                if !self.create_issue_view.is_epic_dropdown_expanded() {
+                    let epics = self.get_available_epics_for_create_issue();
+                    if !epics.is_empty() {
+                        let items: Vec<DropdownItem> = epics
+                            .iter()
+                            .map(|(key, label)| DropdownItem::new(key.clone(), label.clone()))
+                            .collect();
+                        self.create_issue_view.set_epic_items(items);
+
+                        // Sync current selection if exists
+                        if let Some(ref epic_key) = self.create_issue_form.epic_parent_key {
+                            self.create_issue_view.select_epic_by_id(epic_key);
+                        }
+                    }
+                }
+
+                // Handle epic dropdown input
+                if let Some(action) = self.create_issue_view.handle_epic_dropdown_input(key) {
+                    match action {
+                        DropdownAction::Select(epic_key, _name) => {
+                            self.create_issue_form.epic_parent_key = if epic_key.is_empty() {
+                                None
+                            } else {
+                                Some(epic_key)
+                            };
+                        }
+                        DropdownAction::Cancel => {
+                            // Dropdown closed without selection
+                        }
+                    }
+                }
                 None
             }
             CreateIssueFormField::Summary => {
@@ -1306,6 +1350,19 @@ impl App {
                 .projects
                 .iter()
                 .map(|p| (p.id.clone(), p.label.clone()))
+                .collect()
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// Get available epics for the create issue form.
+    fn get_available_epics_for_create_issue(&self) -> Vec<(String, String)> {
+        if let Some(options) = self.filter_options() {
+            options
+                .epics
+                .iter()
+                .map(|e| (e.id.clone(), e.label.clone()))
                 .collect()
         } else {
             Vec::new()
@@ -1368,12 +1425,7 @@ impl App {
 
         // Sync epic parent key - only if issue type can have epic parent
         if self.create_issue_form.can_have_epic_parent {
-            let epic_value = self.create_issue_view.epic_parent().trim().to_string();
-            self.create_issue_form.epic_parent_key = if epic_value.is_empty() {
-                None
-            } else {
-                Some(epic_value)
-            };
+            self.create_issue_form.epic_parent_key = self.create_issue_view.selected_epic_key();
         }
     }
 
@@ -1393,9 +1445,9 @@ impl App {
 
         // Sync epic parent key
         if let Some(ref key) = self.create_issue_form.epic_parent_key {
-            self.create_issue_view.set_epic_parent(key);
+            self.create_issue_view.select_epic_by_id(key);
         } else {
-            self.create_issue_view.set_epic_parent("");
+            self.create_issue_view.clear_epic_selection();
         }
     }
 

@@ -159,12 +159,26 @@ impl Dropdown {
 
     /// Expand the dropdown.
     pub fn expand(&mut self) {
-        if !self.items.is_empty() {
+        // For optional dropdowns, we can expand even with items to show "None" option
+        if !self.items.is_empty() || !self.required {
             self.expanded = true;
             // Start at the selected item if there is one
+            // For optional dropdowns, index 0 is "None", so actual items start at 1
             if let Some(idx) = self.selected {
-                self.highlighted = idx;
+                self.highlighted = if self.required { idx } else { idx + 1 };
+            } else {
+                // If nothing selected, start at "None" (index 0) for optional, or first item for required
+                self.highlighted = 0;
             }
+        }
+    }
+
+    /// Get the total number of items in the expanded list (including "None" for optional).
+    fn expanded_item_count(&self) -> usize {
+        if self.required {
+            self.items.len()
+        } else {
+            self.items.len() + 1 // +1 for "None" option
         }
     }
 
@@ -240,10 +254,12 @@ impl Dropdown {
 
     /// Handle input when the dropdown is expanded.
     fn handle_expanded_input(&mut self, key: KeyEvent) -> Option<DropdownAction> {
+        let item_count = self.expanded_item_count();
+
         match (key.code, key.modifiers) {
             // Navigation down with j or arrow
             (KeyCode::Char('j'), KeyModifiers::NONE) | (KeyCode::Down, _) => {
-                if !self.items.is_empty() && self.highlighted < self.items.len() - 1 {
+                if item_count > 0 && self.highlighted < item_count - 1 {
                     self.highlighted += 1;
                 }
                 None
@@ -257,12 +273,29 @@ impl Dropdown {
             }
             // Select with Enter
             (KeyCode::Enter, KeyModifiers::NONE) => {
-                if let Some(item) = self.items.get(self.highlighted) {
-                    self.selected = Some(self.highlighted);
-                    self.expanded = false;
-                    Some(DropdownAction::Select(item.id.clone(), item.label.clone()))
+                self.expanded = false;
+
+                // For optional dropdowns, index 0 is the "None" option
+                if !self.required && self.highlighted == 0 {
+                    self.selected = None;
+                    Some(DropdownAction::Select(
+                        String::new(),
+                        self.placeholder.clone(),
+                    ))
                 } else {
-                    None
+                    // Adjust index for optional dropdowns (items start at index 1)
+                    let item_idx = if self.required {
+                        self.highlighted
+                    } else {
+                        self.highlighted - 1
+                    };
+
+                    if let Some(item) = self.items.get(item_idx) {
+                        self.selected = Some(item_idx);
+                        Some(DropdownAction::Select(item.id.clone(), item.label.clone()))
+                    } else {
+                        None
+                    }
                 }
             }
             // Cancel with Esc or q
@@ -352,7 +385,8 @@ impl Dropdown {
     /// * `dropdown_area` - The area of the dropdown field (used to position the list)
     /// * `screen_area` - The full screen area (to determine if list should go above or below)
     pub fn render_expanded_list(&self, frame: &mut Frame, dropdown_area: Rect, screen_area: Rect) {
-        if !self.expanded || self.items.is_empty() {
+        let item_count = self.expanded_item_count();
+        if !self.expanded || item_count == 0 {
             return;
         }
 
@@ -360,7 +394,7 @@ impl Dropdown {
 
         // Calculate list dimensions
         let max_visible_items = 8;
-        let list_height = (self.items.len().min(max_visible_items) + 2) as u16; // +2 for borders
+        let list_height = (item_count.min(max_visible_items) + 2) as u16; // +2 for borders
 
         // Determine if list should go below or above the dropdown
         let space_below = screen_area
@@ -400,22 +434,35 @@ impl Dropdown {
         frame.render_widget(outer_block, list_area);
 
         // Build list items
-        let items: Vec<ListItem> = self
-            .items
-            .iter()
-            .enumerate()
-            .map(|(idx, item)| {
-                let style = if Some(idx) == self.selected {
-                    Style::default()
-                        .fg(t.accent)
-                        .bg(Color::Black)
-                        .add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default().fg(t.fg).bg(Color::Black)
-                };
-                ListItem::new(item.label.clone()).style(style)
-            })
-            .collect();
+        let mut items: Vec<ListItem> = Vec::with_capacity(item_count);
+
+        // For optional dropdowns, add "None" option at the beginning
+        if !self.required {
+            let style = if self.selected.is_none() {
+                // Currently selected - show with accent color
+                Style::default()
+                    .fg(t.accent)
+                    .bg(Color::Black)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                // Not selected - same style as other unselected items
+                Style::default().fg(t.fg).bg(Color::Black)
+            };
+            items.push(ListItem::new(self.placeholder.clone()).style(style));
+        }
+
+        // Add actual items
+        for (idx, item) in self.items.iter().enumerate() {
+            let style = if Some(idx) == self.selected {
+                Style::default()
+                    .fg(t.accent)
+                    .bg(Color::Black)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(t.fg).bg(Color::Black)
+            };
+            items.push(ListItem::new(item.label.clone()).style(style));
+        }
 
         // Render list inside the block
         let list = List::new(items)
@@ -513,9 +560,19 @@ mod tests {
     #[test]
     fn test_expand_empty_dropdown() {
         let mut dropdown = Dropdown::new("Test");
+        dropdown.set_required(true); // Required dropdowns should not expand when empty
         dropdown.expand();
-        // Should not expand when empty
+        // Should not expand when empty and required
         assert!(!dropdown.is_expanded());
+    }
+
+    #[test]
+    fn test_expand_empty_optional_dropdown() {
+        let mut dropdown = Dropdown::new("Test");
+        dropdown.set_required(false); // Optional dropdowns CAN expand to show "None" option
+        dropdown.expand();
+        // Should expand even when empty (to show "None" option)
+        assert!(dropdown.is_expanded());
     }
 
     #[test]
@@ -533,6 +590,7 @@ mod tests {
     #[test]
     fn test_navigation_in_expanded() {
         let mut dropdown = Dropdown::new("Test");
+        dropdown.set_required(true); // Use required dropdown to test without "None" option
         dropdown.set_items(create_test_items());
         dropdown.expand();
 
@@ -570,6 +628,7 @@ mod tests {
     #[test]
     fn test_select_with_enter() {
         let mut dropdown = Dropdown::new("Test");
+        dropdown.set_required(true); // Use required dropdown to test without "None" option
         dropdown.set_items(create_test_items());
         dropdown.expand();
 
@@ -736,12 +795,55 @@ mod tests {
     #[test]
     fn test_expand_starts_at_selected() {
         let mut dropdown = Dropdown::new("Test");
+        dropdown.set_required(true); // Use required dropdown to test without "None" option offset
         dropdown.set_items(create_test_items());
         dropdown.select_index(2);
 
         dropdown.expand();
 
         assert_eq!(dropdown.highlighted, 2);
+    }
+
+    #[test]
+    fn test_expand_starts_at_selected_optional() {
+        let mut dropdown = Dropdown::new("Test");
+        dropdown.set_required(false); // Optional dropdown has "None" at index 0
+        dropdown.set_items(create_test_items());
+        dropdown.select_index(2); // Select "Option 3" (item index 2)
+
+        dropdown.expand();
+
+        // Highlighted should be 3 because "None" is at index 0, so items are offset by 1
+        assert_eq!(dropdown.highlighted, 3);
+    }
+
+    #[test]
+    fn test_select_none_in_optional_dropdown() {
+        let mut dropdown = Dropdown::new("Test");
+        dropdown.set_required(false);
+        dropdown.set_placeholder("None");
+        dropdown.set_items(create_test_items());
+        dropdown.select_index(1); // Select something first
+        dropdown.expand();
+
+        // Highlighted starts at selected item (index 1 + 1 = 2 due to "None" offset)
+        assert_eq!(dropdown.highlighted, 2);
+
+        // Navigate up to "None" option
+        let up = KeyEvent::new(KeyCode::Up, KeyModifiers::NONE);
+        dropdown.handle_input(up);
+        dropdown.handle_input(up);
+        assert_eq!(dropdown.highlighted, 0);
+
+        // Select "None"
+        let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        let action = dropdown.handle_input(enter);
+
+        assert_eq!(
+            action,
+            Some(DropdownAction::Select(String::new(), "None".to_string()))
+        );
+        assert!(dropdown.selected_index().is_none());
     }
 
     #[test]

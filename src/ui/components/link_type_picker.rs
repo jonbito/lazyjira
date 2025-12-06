@@ -3,7 +3,7 @@
 //! Displays existing issue links and allows the user to:
 //! - Navigate and view existing links
 //! - Delete existing links
-//! - Create new links (via 'c' key)
+//! - Create new links (via 'c' or 'n' key)
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
@@ -342,7 +342,8 @@ impl LinkManager {
                 None
             }
             // Create new link
-            (KeyCode::Char('c'), KeyModifiers::NONE) => Some(LinkManagerAction::CreateNew),
+            (KeyCode::Char('c'), KeyModifiers::NONE)
+            | (KeyCode::Char('n'), KeyModifiers::NONE) => Some(LinkManagerAction::CreateNew),
             // Delete selected link
             (KeyCode::Char('d'), KeyModifiers::NONE) => {
                 if let Some(item) = self.items.get(self.selected) {
@@ -511,8 +512,8 @@ impl LinkManager {
             Span::raw(": nav  "),
             Span::styled("Enter", Style::default().fg(Color::Green)),
             Span::raw(": go to  "),
-            Span::styled("c", Style::default().fg(Color::Cyan)),
-            Span::raw(": create  "),
+            Span::styled("c/n", Style::default().fg(Color::Cyan)),
+            Span::raw(": new  "),
             Span::styled("d", Style::default().fg(Color::Red)),
             Span::raw(": delete  "),
             Span::styled("q", Style::default().fg(Color::Gray)),
@@ -919,13 +920,26 @@ mod tests {
     }
 
     #[test]
-    fn test_create_new_link() {
+    fn test_create_new_link_with_c() {
         let mut manager = LinkManager::new();
         let links = vec![create_test_link("1", "PROJ-200", "Linked", "Blocks")];
 
         manager.show(&links, &[], None);
 
         let key = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::NONE);
+        let action = manager.handle_input(key);
+
+        assert_eq!(action, Some(LinkManagerAction::CreateNew));
+    }
+
+    #[test]
+    fn test_create_new_link_with_n() {
+        let mut manager = LinkManager::new();
+        let links = vec![create_test_link("1", "PROJ-200", "Linked", "Blocks")];
+
+        manager.show(&links, &[], None);
+
+        let key = KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE);
         let action = manager.handle_input(key);
 
         assert_eq!(action, Some(LinkManagerAction::CreateNew));

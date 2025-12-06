@@ -398,11 +398,22 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
                 ApiMessage::AssigneesFetched { result } => match result {
                     Ok(users) => {
                         debug!("Loaded {} assignable users", users.len());
-                        app.set_assignable_users(users);
+                        // Route to appropriate view based on context
+                        if app.is_assignee_fetch_for_create_issue() {
+                            app.set_create_issue_assignable_users(users);
+                        } else {
+                            app.set_assignable_users(users);
+                        }
                     }
                     Err(e) => {
                         error!("Failed to fetch assignable users: {}", e);
-                        app.handle_fetch_assignees_failure(&e);
+                        // Route error to appropriate view based on context
+                        if app.is_assignee_fetch_for_create_issue() {
+                            app.hide_create_issue_assignee_picker();
+                            app.notify_error(format!("Failed to fetch assignable users: {}", e));
+                        } else {
+                            app.handle_fetch_assignees_failure(&e);
+                        }
                     }
                 },
                 ApiMessage::AssigneeChanged { result } => match result {

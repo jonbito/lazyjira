@@ -13,9 +13,11 @@ use ratatui::{
     Frame,
 };
 
-use crate::api::types::IssueTypeMeta;
+use crate::api::types::{IssueTypeMeta, User};
 use crate::app::{App, CreateIssueFormData, CreateIssueFormField};
-use crate::ui::components::{Dropdown, DropdownAction, DropdownItem, TextEditor, TextInput};
+use crate::ui::components::{
+    AssigneeAction, AssigneePicker, Dropdown, DropdownAction, DropdownItem, TextEditor, TextInput,
+};
 use crate::ui::theme::theme;
 
 // ============================================================================
@@ -56,6 +58,8 @@ pub enum CreateIssueAction {
     Submit,
     /// Request to fetch issue types for the selected project.
     FetchIssueTypes(String),
+    /// Request to fetch assignable users for the selected project.
+    FetchAssignableUsers(String),
 }
 
 /// The create issue view for adding new JIRA issues.
@@ -76,6 +80,8 @@ pub struct CreateIssueView {
     project_dropdown: Dropdown,
     /// Issue type dropdown.
     issue_type_dropdown: Dropdown,
+    /// Assignee picker.
+    assignee_picker: AssigneePicker,
     /// Whether the form is submitting.
     submitting: bool,
 }
@@ -114,6 +120,7 @@ impl CreateIssueView {
             description_editor: TextEditor::empty(),
             project_dropdown,
             issue_type_dropdown,
+            assignee_picker: AssigneePicker::new(),
             submitting: false,
         }
     }
@@ -126,6 +133,7 @@ impl CreateIssueView {
         self.description_editor = TextEditor::empty();
         self.project_dropdown.reset();
         self.issue_type_dropdown.reset();
+        self.assignee_picker.hide();
         self.submitting = false;
     }
 
@@ -276,6 +284,40 @@ impl CreateIssueView {
         self.epic_dropdown.handle_input(key)
     }
 
+    // ========================================================================
+    // Assignee Picker Methods
+    // ========================================================================
+
+    /// Check if the assignee picker is visible.
+    pub fn is_assignee_picker_visible(&self) -> bool {
+        self.assignee_picker.is_visible()
+    }
+
+    /// Check if assignable users are loading.
+    pub fn is_assignees_loading(&self) -> bool {
+        self.assignee_picker.is_loading()
+    }
+
+    /// Show the assignee picker in loading state.
+    ///
+    /// This should be called when the user presses Enter on the assignee field,
+    /// and then the API call to get assignable users should be made.
+    pub fn show_assignee_picker_loading(&mut self, current_assignee: &str) {
+        self.assignee_picker.show_loading(current_assignee);
+    }
+
+    /// Set the available users in the assignee picker.
+    ///
+    /// Call this after receiving the users from the API.
+    pub fn set_assignable_users(&mut self, users: Vec<User>, current_assignee: &str) {
+        self.assignee_picker.show(users, current_assignee);
+    }
+
+    /// Hide the assignee picker.
+    pub fn hide_assignee_picker(&mut self) {
+        self.assignee_picker.hide();
+    }
+
     /// Handle keyboard input.
     ///
     /// Returns an optional action to be handled by the parent.
@@ -286,6 +328,9 @@ impl CreateIssueView {
         }
 
         let focus = app.create_issue_focus();
+
+        // Note: Assignee picker input is handled by App::handle_create_issue_assignee_picker_input
+        // which is called before this method when the picker is visible.
 
         // If the project dropdown is expanded, handle its input first
         if self.project_dropdown.is_expanded() {
@@ -475,15 +520,42 @@ impl CreateIssueView {
         None
     }
 
-    /// Handle assignee picker input (placeholder - optional field).
+    /// Handle assignee field input - opens the picker on Enter.
     fn handle_assignee_input(
         &mut self,
-        _app: &mut App,
-        _key: KeyEvent,
+        app: &mut App,
+        key: KeyEvent,
     ) -> Option<CreateIssueAction> {
-        // TODO: Implement assignee picker in future task
-        // For now, assignee is optional and can be left empty
-        None
+        match (key.code, key.modifiers) {
+            (KeyCode::Enter, KeyModifiers::NONE) => {
+                // Check if a project is selected
+                let form = app.create_issue_form();
+                if form.project_key.is_empty() {
+                    // Can't fetch assignees without a project
+                    return None;
+                }
+
+                let project_key = form.project_key.clone();
+                let current_assignee = form
+                    .assignee_name
+                    .clone()
+                    .unwrap_or_else(|| "Unassigned".to_string());
+
+                // Show picker in loading state
+                self.assignee_picker.show_loading(&current_assignee);
+
+                // Return action to fetch assignable users
+                Some(CreateIssueAction::FetchAssignableUsers(project_key))
+            }
+            _ => None,
+        }
+    }
+
+    /// Handle input when the assignee picker is visible.
+    ///
+    /// Returns the action from the picker (if any) for the caller to handle.
+    pub fn handle_assignee_picker_input(&mut self, key: KeyEvent) -> Option<AssigneeAction> {
+        self.assignee_picker.handle_input(key)
     }
 
     /// Handle priority picker input (placeholder - optional field).
@@ -707,6 +779,9 @@ impl CreateIssueView {
             // Render dropdown overlays LAST so they appear on top
             self.render_project_dropdown_overlay(frame, project_area, area);
             self.render_issue_type_dropdown_overlay(frame, issue_type_area, area);
+
+            // Render assignee picker overlay (on top of everything)
+            self.assignee_picker.render(frame, area);
         } else if data.form.can_have_epic_parent {
             // Standard issue layout with optional Epic field
             let chunks = Layout::default()
@@ -772,6 +847,9 @@ impl CreateIssueView {
             self.render_project_dropdown_overlay(frame, project_area, area);
             self.render_issue_type_dropdown_overlay(frame, issue_type_area, area);
             self.render_epic_dropdown_overlay(frame, epic_area, area);
+
+            // Render assignee picker overlay (on top of everything)
+            self.assignee_picker.render(frame, area);
         } else {
             // Epic or other top-level type layout without parent field
             let chunks = Layout::default()
@@ -828,6 +906,9 @@ impl CreateIssueView {
             // Render dropdown overlays LAST so they appear on top
             self.render_project_dropdown_overlay(frame, project_area, area);
             self.render_issue_type_dropdown_overlay(frame, issue_type_area, area);
+
+            // Render assignee picker overlay (on top of everything)
+            self.assignee_picker.render(frame, area);
         }
     }
 

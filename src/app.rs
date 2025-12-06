@@ -297,6 +297,9 @@ pub struct App {
     pending_fetch_transitions: Option<String>,
     /// Pending fetch assignable users request (issue key, project key).
     pending_fetch_assignees: Option<(String, String)>,
+    /// Tracks if the current assignee fetch is for create issue context.
+    /// Set when spawning fetch, used when handling result.
+    assignee_fetch_for_create_issue: bool,
     /// Pending assignee change request (issue key, account_id or None for unassign).
     pending_assignee_change: Option<(String, Option<String>)>,
     /// Pending fetch priorities request (issue key).
@@ -418,6 +421,7 @@ impl App {
             pending_transition: None,
             pending_fetch_transitions: None,
             pending_fetch_assignees: None,
+            assignee_fetch_for_create_issue: false,
             pending_assignee_change: None,
             pending_fetch_priorities: None,
             pending_priority_change: None,
@@ -504,6 +508,7 @@ impl App {
             pending_transition: None,
             pending_fetch_transitions: None,
             pending_fetch_assignees: None,
+            assignee_fetch_for_create_issue: false,
             pending_assignee_change: None,
             pending_fetch_priorities: None,
             pending_priority_change: None,
@@ -1168,6 +1173,11 @@ impl App {
             return self.handle_create_issue_field_input(key, CreateIssueFormField::EpicParent);
         }
 
+        // If the assignee picker is visible, route all input to it
+        if self.create_issue_view.is_assignee_picker_visible() {
+            return self.handle_create_issue_assignee_picker_input(key);
+        }
+
         match (key.code, key.modifiers) {
             // Tab - next field
             (KeyCode::Tab, KeyModifiers::NONE) => {
@@ -1199,12 +1209,13 @@ impl App {
                     None
                 }
             }
-            // Enter in other fields - move to next field (except description and dropdowns which use Enter)
+            // Enter in other fields - move to next field (except fields that use Enter for actions)
             (KeyCode::Enter, KeyModifiers::NONE)
                 if focus != CreateIssueFormField::Description
                     && focus != CreateIssueFormField::Project
                     && focus != CreateIssueFormField::IssueType
-                    && focus != CreateIssueFormField::EpicParent =>
+                    && focus != CreateIssueFormField::EpicParent
+                    && focus != CreateIssueFormField::Assignee =>
             {
                 self.sync_create_issue_from_view();
                 self.create_issue_focus_next();
@@ -1335,12 +1346,66 @@ impl App {
                 self.create_issue_view.handle_description_input(key);
                 None
             }
-            CreateIssueFormField::Assignee | CreateIssueFormField::Priority => {
-                // TODO: Implement assignee/priority pickers in future task
+            CreateIssueFormField::Assignee => {
+                // Handle Enter key to open the assignee picker
+                if key.code == crossterm::event::KeyCode::Enter
+                    && key.modifiers == crossterm::event::KeyModifiers::NONE
+                {
+                    // Check if a project is selected
+                    if self.create_issue_form.project_key.is_empty() {
+                        return None;
+                    }
+
+                    let project_key = self.create_issue_form.project_key.clone();
+                    let current_assignee = self
+                        .create_issue_form
+                        .assignee_name
+                        .clone()
+                        .unwrap_or_else(|| "Unassigned".to_string());
+
+                    // Show picker in loading state
+                    self.create_issue_view
+                        .show_assignee_picker_loading(&current_assignee);
+
+                    // Return action to fetch assignable users
+                    return Some(CreateIssueAction::FetchAssignableUsers(project_key));
+                }
+                None
+            }
+            CreateIssueFormField::Priority => {
+                // TODO: Implement priority picker in future task
                 None
             }
             CreateIssueFormField::Submit => None,
         }
+    }
+
+    /// Handle input for the create issue assignee picker.
+    fn handle_create_issue_assignee_picker_input(
+        &mut self,
+        key: crossterm::event::KeyEvent,
+    ) -> Option<CreateIssueAction> {
+        use crate::ui::AssigneeAction;
+
+        // Delegate to the view's assignee picker
+        if let Some(action) = self.create_issue_view.handle_assignee_picker_input(key) {
+            match action {
+                AssigneeAction::Select(account_id, display_name) => {
+                    // Update form with selected assignee
+                    self.create_issue_form.assignee_id = Some(account_id);
+                    self.create_issue_form.assignee_name = Some(display_name);
+                }
+                AssigneeAction::Unassign => {
+                    // Clear assignee from form
+                    self.create_issue_form.assignee_id = None;
+                    self.create_issue_form.assignee_name = None;
+                }
+                AssigneeAction::Cancel => {
+                    // Just close the picker, no changes
+                }
+            }
+        }
+        None
     }
 
     /// Get available projects for the create issue form.
@@ -2002,8 +2067,15 @@ impl App {
     /// Take the pending fetch assignees request, if any.
     ///
     /// Returns the (issue_key, project_key).
+    /// Also sets the `assignee_fetch_for_create_issue` flag based on the issue_key.
     pub fn take_pending_fetch_assignees(&mut self) -> Option<(String, String)> {
-        self.pending_fetch_assignees.take()
+        if let Some((issue_key, project_key)) = self.pending_fetch_assignees.take() {
+            // Check if this fetch is for create issue context
+            self.assignee_fetch_for_create_issue = issue_key == "__create_issue__";
+            Some((issue_key, project_key))
+        } else {
+            None
+        }
     }
 
     /// Check if there is a pending fetch assignees request.
@@ -2011,9 +2083,30 @@ impl App {
         self.pending_fetch_assignees.is_some()
     }
 
+    /// Check if the current/last assignee fetch was for create issue context.
+    pub fn is_assignee_fetch_for_create_issue(&self) -> bool {
+        self.assignee_fetch_for_create_issue
+    }
+
     /// Set the available assignable users in the detail view.
     pub fn set_assignable_users(&mut self, users: Vec<User>) {
         self.detail_view.set_assignable_users(users);
+    }
+
+    /// Set the available assignable users in the create issue view.
+    pub fn set_create_issue_assignable_users(&mut self, users: Vec<User>) {
+        let current_assignee = self
+            .create_issue_form
+            .assignee_name
+            .clone()
+            .unwrap_or_else(|| "Unassigned".to_string());
+        self.create_issue_view
+            .set_assignable_users(users, &current_assignee);
+    }
+
+    /// Hide the create issue assignee picker (e.g., on fetch failure).
+    pub fn hide_create_issue_assignee_picker(&mut self) {
+        self.create_issue_view.hide_assignee_picker();
     }
 
     /// Take the pending assignee change request, if any.
@@ -3224,6 +3317,12 @@ impl App {
                         CreateIssueAction::FetchIssueTypes(_project_key) => {
                             // Fetch is triggered by set_pending_fetch_issue_types
                             // which is handled by the main loop
+                        }
+                        CreateIssueAction::FetchAssignableUsers(project_key) => {
+                            debug!(project = %project_key, "Fetching assignable users for create issue");
+                            // Store request with special marker to indicate create issue context
+                            self.pending_fetch_assignees =
+                                Some(("__create_issue__".to_string(), project_key));
                         }
                     }
                 }

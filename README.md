@@ -6,6 +6,26 @@ A fast, keyboard-driven terminal user interface (TUI) for JIRA. Manage issues, t
 ![Rust](https://img.shields.io/badge/rust-1.70%2B-orange)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
+## Screenshots
+
+<p align="center">
+  <img src="assets/screenshots/issue-list.gif" alt="Issue List" width="700">
+  <br>
+  <em>Browse and filter your JIRA issues</em>
+</p>
+
+<p align="center">
+  <img src="assets/screenshots/issue-detail.gif" alt="Issue Detail" width="700">
+  <br>
+  <em>View and edit issue details</em>
+</p>
+
+<p align="center">
+  <img src="assets/screenshots/filter-panel.gif" alt="Filter Panel" width="700">
+  <br>
+  <em>Powerful filtering with quick filters and JQL</em>
+</p>
+
 ## Features
 
 - **Keyboard-first navigation** - Vim-style keybindings for efficient workflow
